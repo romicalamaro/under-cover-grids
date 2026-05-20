@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Topkapi Grid — 70×180cm @ 300 DPI</title>
+    <link rel="stylesheet" href="css/styles.css" />
+  </head>
+  <body>
+    <header class="toolbar">
+      <label>
+        Octagons per row (n)
+        <input
+          id="octagons-n"
+          type="range"
+          min="3"
+          max="15"
+          value="7"
+          step="1"
+        />
+        <output id="octagons-n-out" for="octagons-n">7</output>
+      </label>
+      <label>
+        Inner scale
+        <input
+          id="inner-scale"
+          type="range"
+          min="0.3"
+          max="1"
+          value="1"
+          step="0.01"
+        />
+        <output id="inner-scale-out" for="inner-scale">1</output>
+      </label>
+      <p class="toolbar__hint" id="tile-info" aria-live="polite"></p>
+      <p class="toolbar__hint toolbar__hint--mode" id="merge-hint" hidden>
+        Drag across lines to merge
+      </p>
+      <p class="toolbar__hint toolbar__hint--mode" id="restore-hint" hidden>
+        Drag from existing lines to restore connected segments only
+      </p>
+      <div class="toolbar__mode" role="group" aria-label="Interaction mode">
+        <button
+          type="button"
+          id="mode-view-btn"
+          class="toolbar__mode-btn is-active"
+          aria-pressed="true"
+        >
+          View
+        </button>
+        <button
+          type="button"
+          id="mode-merge-btn"
+          class="toolbar__mode-btn"
+          aria-pressed="false"
+        >
+          Merge
+        </button>
+        <button
+          type="button"
+          id="mode-restore-btn"
+          class="toolbar__mode-btn"
+          aria-pressed="false"
+        >
+          Restore
+        </button>
+      </div>
+      <div class="toolbar__actions">
+        <button type="button" id="reset-grid-btn" disabled>Reset grid</button>
+        <button type="button" id="export-svg-btn">Export SVG</button>
+      </div>
+    </header>
+    <div class="stage-wrap" id="stage-wrap">
+      <!-- SVG injected by js/app.js -->
+    </div>
+    <script defer src="js/constants.js"></script>
+    <script defer src="js/topkapiGeometry.js"></script>
+    <script defer src="js/app.js"></script>
+  </body>
+</html>

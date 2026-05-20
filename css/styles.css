@@ -1,0 +1,139 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  font-family: system-ui, -apple-system, sans-serif;
+  background: #f5f5f5;
+  color: #222;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem 1.5rem;
+  padding: 0.75rem 1.25rem;
+  background: #fff;
+  border-bottom: 1px solid #ddd;
+}
+
+.toolbar label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+}
+
+.toolbar input[type="range"] {
+  width: 12rem;
+}
+
+.toolbar output {
+  min-width: 2.5rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.toolbar__hint {
+  margin: 0;
+  font-size: 0.75rem;
+  color: #666;
+}
+
+.toolbar__hint--mode {
+  color: #444;
+  font-style: italic;
+}
+
+.toolbar__mode {
+  display: inline-flex;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.toolbar__mode-btn {
+  font-size: 0.875rem;
+  padding: 0.4rem 0.85rem;
+  border: none;
+  border-right: 1px solid #ccc;
+  background: #fff;
+  cursor: pointer;
+}
+
+.toolbar__mode-btn:last-child {
+  border-right: none;
+}
+
+.toolbar__mode-btn:hover {
+  background: #f0f0f0;
+}
+
+.toolbar__mode-btn.is-active {
+  background: #333;
+  color: #fff;
+}
+
+.toolbar__mode-btn.is-active:hover {
+  background: #444;
+}
+
+.toolbar__actions {
+  margin-left: auto;
+  display: flex;
+  gap: 0.5rem;
+}
+
+.toolbar button {
+  font-size: 0.875rem;
+  padding: 0.4rem 0.85rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.toolbar button:hover {
+  background: #f0f0f0;
+}
+
+.toolbar button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.stage-wrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  overflow: auto;
+}
+
+#design-svg {
+  display: block;
+  vertical-align: top;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+}
+
+#design-svg.is-merge-mode,
+#design-svg.is-restore-mode {
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.stage-wrap.is-dragging {
+  user-select: none;
+}
