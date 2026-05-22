@@ -2092,26 +2092,6 @@
   }
 
   /**
-   * Run a callback for bottom + vertically mirrored top (use for new brown-bar decorations).
-   * @param {number} innerRelY 0 at grid-facing edge, grows toward canvas outer edge
-   * @param {(
-   *   edge: "top" | "bottom",
-   *   layout: { x: number, y: number, width: number, height: number },
-   *   canvasY: number
-   * ) => void} fn
-   */
-  function withMirroredBrownBarCanvasY(innerRelY, fn) {
-    var bottomLayout = getCanvasEdgeBrownBarLayout("bottom");
-    var topLayout = getCanvasEdgeBrownBarLayout("top");
-    fn(
-      "bottom",
-      bottomLayout,
-      getBottomBrownBarCanvasY(innerRelY, bottomLayout)
-    );
-    fn("top", topLayout, getTopBrownBarMirroredCanvasY(innerRelY, topLayout));
-  }
-
-  /**
    * Outermost third on bottom bar (toward canvas edge); mirrored to innermost third on top bar.
    * @param {number} barHeight
    * @returns {{ start: number, end: number, height: number }}
@@ -2830,32 +2810,6 @@
       while (bannerGroup.firstChild) bannerGroup.removeChild(bannerGroup.firstChild);
       appendBrownBarBannerText(bannerGroup);
     }
-  }
-
-  function pushCanvasEdgeBrownBarExportSegmentLine(
-    lines,
-    x1,
-    y1,
-    x2,
-    y2,
-    stroke,
-    strokeWidth
-  ) {
-    lines.push(
-      '<line x1="' +
-        x1 +
-        '" y1="' +
-        y1 +
-        '" x2="' +
-        x2 +
-        '" y2="' +
-        y2 +
-        '" stroke="' +
-        stroke +
-        '" stroke-width="' +
-        strokeWidth +
-        '"/>'
-    );
   }
 
   function pushCanvasEdgeBrownBarExportLine(

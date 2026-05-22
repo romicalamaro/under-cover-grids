@@ -320,7 +320,6 @@
   }
 
   global.StippleEngine = {
-    MAX_PIXELS: MAX_PIXELS,
     generate: generate,
   };
 })(typeof window !== "undefined" ? window : this);

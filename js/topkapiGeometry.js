@@ -986,32 +986,6 @@
   }
 
   /**
-   * Center of each unit-cell octagon on the canvas.
-   * @param {number} octagonsN
-   * @param {number} canvasW
-   * @param {number} canvasH
-   * @returns {{ id: string, cx: number, cy: number }[]}
-   */
-  function buildOctagonCenterCatalog(octagonsN, canvasW, canvasH) {
-    var layout = computeLayout(octagonsN, canvasW, canvasH);
-    var T = layout.tileSize;
-    var half = T / 2;
-    var catalog = [];
-
-    for (var row = 0; row < layout.rows; row++) {
-      for (var col = 0; col < layout.cols; col++) {
-        catalog.push({
-          id: "oc-" + col + "-" + row,
-          cx: col * T + half,
-          cy: layout.offsetY + row * T + half,
-        });
-      }
-    }
-
-    return catalog;
-  }
-
-  /**
    * @param {number} T tile size
    * @returns {number}
    */
@@ -1461,7 +1435,6 @@
     buildVertexIncidence: buildVertexIncidence,
     buildDiamondCatalog: buildDiamondCatalog,
     buildUprightSquareCatalog: buildUprightSquareCatalog,
-    buildOctagonCenterCatalog: buildOctagonCenterCatalog,
     octagonInscribedRadius: octagonInscribedRadius,
     letterMarkerWordLengths: letterMarkerWordLengths,
     isLetterMarkerAnchorValid: isLetterMarkerAnchorValid,
