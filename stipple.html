@@ -1,0 +1,810 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Stipple / Dither Tool</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        font-family: system-ui, -apple-system, sans-serif;
+        background: #f5f5f5;
+        color: #222;
+      }
+
+      body {
+        display: flex;
+        flex-direction: row;
+        min-height: 0;
+      }
+
+      .panel {
+        flex-shrink: 0;
+        width: 17.5rem;
+        padding: 1rem 1.25rem 1.25rem;
+        background: #fff;
+        border-right: 1px solid #ddd;
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+        overflow-y: auto;
+      }
+
+      .panel.is-busy {
+        pointer-events: none;
+        opacity: 0.85;
+      }
+
+      .panel__title {
+        margin: 0;
+        font-size: 1.125rem;
+        font-weight: 600;
+      }
+
+      .panel__subtitle {
+        margin: -0.5rem 0 0;
+        font-size: 0.8125rem;
+        color: #666;
+        line-height: 1.4;
+      }
+
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+        font-size: 0.8125rem;
+        font-weight: 500;
+      }
+
+      .field__row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
+      }
+
+      .field output {
+        font-variant-numeric: tabular-nums;
+        color: #444;
+        font-weight: 400;
+      }
+
+      .field input[type="range"] {
+        width: 100%;
+        margin: 0;
+      }
+
+      .upload-wrap {
+        position: relative;
+      }
+
+      .upload-wrap input[type="file"] {
+        position: absolute;
+        width: 0.1px;
+        height: 0.1px;
+        opacity: 0;
+        overflow: hidden;
+        z-index: -1;
+      }
+
+      .file-meta {
+        margin: 0;
+        font-size: 0.75rem;
+        color: #666;
+        line-height: 1.4;
+        word-break: break-all;
+      }
+
+      .toggle {
+        display: flex;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        overflow: hidden;
+      }
+
+      .toggle__btn {
+        flex: 1;
+        padding: 0.45rem 0.5rem;
+        border: none;
+        background: #fff;
+        font: inherit;
+        font-size: 0.8125rem;
+        cursor: pointer;
+        color: #444;
+      }
+
+      .toggle__btn + .toggle__btn {
+        border-left: 1px solid #ccc;
+      }
+
+      .toggle__btn.is-active {
+        background: #222;
+        color: #fff;
+      }
+
+      .toggle__btn:focus-visible {
+        outline: 2px solid #222;
+        outline-offset: -2px;
+        z-index: 1;
+      }
+
+      .btn {
+        display: block;
+        width: 100%;
+        padding: 0.6rem 1rem;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        background: #fff;
+        font: inherit;
+        font-size: 0.875rem;
+        cursor: pointer;
+        color: #222;
+      }
+
+      .btn:hover:not(:disabled) {
+        background: #f8f8f8;
+      }
+
+      .btn:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+
+      .btn--primary {
+        background: #222;
+        color: #fff;
+        border-color: #222;
+      }
+
+      .btn--primary:hover:not(:disabled) {
+        background: #333;
+      }
+
+      .progress-wrap {
+        display: none;
+        flex-direction: column;
+        gap: 0.35rem;
+      }
+
+      .progress-wrap.is-visible {
+        display: flex;
+      }
+
+      .progress-wrap progress {
+        width: 100%;
+        height: 0.5rem;
+      }
+
+      .progress-label {
+        margin: 0;
+        font-size: 0.75rem;
+        color: #666;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .stage {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 1.5rem;
+        background: #e8e8e8;
+        overflow: auto;
+      }
+
+      .stage__inner {
+        position: relative;
+        max-width: 100%;
+        max-height: 100%;
+      }
+
+      #output-canvas {
+        display: block;
+        max-width: 100%;
+        max-height: calc(100vh - 3rem);
+        background: #fff;
+        box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
+      }
+
+      #output-canvas[hidden] {
+        display: none;
+      }
+
+      .placeholder {
+        margin: 0;
+        max-width: 20rem;
+        text-align: center;
+        font-size: 0.9375rem;
+        color: #666;
+        line-height: 1.5;
+      }
+
+      .placeholder[hidden] {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <aside class="panel" id="panel" aria-label="Stipple controls">
+      <div>
+        <h1 class="panel__title">Stipple / Dither</h1>
+        <p class="panel__subtitle">
+          Floyd–Steinberg error diffusion with stipple dots
+        </p>
+      </div>
+
+      <div class="upload-wrap field">
+        <span>Image</span>
+        <label for="file-input" class="btn">Upload JPG or PNG</label>
+        <input
+          id="file-input"
+          type="file"
+          accept="image/jpeg,image/png,.jpg,.jpeg,.png"
+        />
+        <p class="file-meta" id="file-meta">No image loaded</p>
+      </div>
+
+      <label class="field">
+        <span class="field__row">
+          Output resolution
+          <output id="resolution-out" for="resolution">100%</output>
+        </span>
+        <input
+          id="resolution"
+          type="range"
+          min="50"
+          max="300"
+          value="100"
+          step="1"
+        />
+      </label>
+
+      <label class="field">
+        <span class="field__row">
+          Dot size
+          <output id="dot-size-out" for="dot-size">2px</output>
+        </span>
+        <input id="dot-size" type="range" min="1" max="6" value="2" step="1" />
+      </label>
+
+      <label class="field">
+        <span class="field__row">
+          Dot spacing
+          <output id="dot-spacing-out" for="dot-spacing">1px</output>
+        </span>
+        <input
+          id="dot-spacing"
+          type="range"
+          min="0"
+          max="4"
+          value="1"
+          step="1"
+        />
+      </label>
+
+      <div class="field">
+        <span>Color mode</span>
+        <div class="toggle" role="group" aria-label="Color mode">
+          <button
+            type="button"
+            id="mode-bw"
+            class="toggle__btn is-active"
+            aria-pressed="true"
+          >
+            Black &amp; White
+          </button>
+          <button
+            type="button"
+            id="mode-color"
+            class="toggle__btn"
+            aria-pressed="false"
+          >
+            Color
+          </button>
+        </div>
+      </div>
+
+      <button type="button" id="generate-btn" class="btn btn--primary" disabled>
+        Generate
+      </button>
+
+      <button type="button" id="download-btn" class="btn" disabled>
+        Download PNG
+      </button>
+
+      <div class="progress-wrap" id="progress-wrap" aria-live="polite">
+        <progress id="progress" max="100" value="0"></progress>
+        <p class="progress-label" id="progress-label">Processing… 0%</p>
+      </div>
+    </aside>
+
+    <main class="stage" aria-label="Preview">
+      <div class="stage__inner">
+        <p class="placeholder" id="placeholder">
+          Upload an image and click Generate to preview stippled output.
+        </p>
+        <canvas id="output-canvas" hidden aria-label="Stipple output"></canvas>
+      </div>
+    </main>
+
+    <script>
+      (function () {
+        var MAX_PIXELS = 16000000;
+        var ROWS_PER_FRAME = 4;
+
+        var sourceImage = null;
+        var srcW = 0;
+        var srcH = 0;
+        var generationId = 0;
+        var colorMode = "bw";
+
+        var panel = document.getElementById("panel");
+        var fileInput = document.getElementById("file-input");
+        var fileMeta = document.getElementById("file-meta");
+        var resolutionInput = document.getElementById("resolution");
+        var resolutionOut = document.getElementById("resolution-out");
+        var dotSizeInput = document.getElementById("dot-size");
+        var dotSizeOut = document.getElementById("dot-size-out");
+        var dotSpacingInput = document.getElementById("dot-spacing");
+        var dotSpacingOut = document.getElementById("dot-spacing-out");
+        var modeBwBtn = document.getElementById("mode-bw");
+        var modeColorBtn = document.getElementById("mode-color");
+        var generateBtn = document.getElementById("generate-btn");
+        var downloadBtn = document.getElementById("download-btn");
+        var progressWrap = document.getElementById("progress-wrap");
+        var progressEl = document.getElementById("progress");
+        var progressLabel = document.getElementById("progress-label");
+        var placeholder = document.getElementById("placeholder");
+        var outputCanvas = document.getElementById("output-canvas");
+
+        function luminance(r, g, b) {
+          return 0.299 * r + 0.587 * g + 0.114 * b;
+        }
+
+        function getOutputSize() {
+          var pct = Number(resolutionInput.value) / 100;
+          return {
+            outW: Math.max(1, Math.round(srcW * pct)),
+            outH: Math.max(1, Math.round(srcH * pct)),
+          };
+        }
+
+        function getPitch() {
+          return Math.max(
+            1,
+            Number(dotSizeInput.value) + Number(dotSpacingInput.value)
+          );
+        }
+
+        function updateSliderOutputs() {
+          resolutionOut.textContent = resolutionInput.value + "%";
+          dotSizeOut.textContent = dotSizeInput.value + "px";
+          dotSpacingOut.textContent = dotSpacingInput.value + "px";
+        }
+
+        function setBusy(busy) {
+          panel.classList.toggle("is-busy", busy);
+          generateBtn.disabled = busy || !sourceImage;
+          if (busy) downloadBtn.disabled = true;
+        }
+
+        function showProgress(visible) {
+          progressWrap.classList.toggle("is-visible", visible);
+        }
+
+        function setProgress(doneRows, totalRows) {
+          var pct =
+            totalRows > 0 ? Math.round((doneRows / totalRows) * 100) : 0;
+          progressEl.value = pct;
+          progressEl.max = 100;
+          progressLabel.textContent = "Processing… " + pct + "%";
+        }
+
+        function loadImageFromFile(file) {
+          if (!file) return;
+          var reader = new FileReader();
+          reader.onload = function () {
+            var img = new Image();
+            img.onload = function () {
+              sourceImage = img;
+              srcW = img.naturalWidth;
+              srcH = img.naturalHeight;
+              var size = getOutputSize();
+              fileMeta.textContent =
+                file.name +
+                " — " +
+                srcW +
+                "×" +
+                srcH +
+                " → " +
+                size.outW +
+                "×" +
+                size.outH +
+                " at current resolution";
+              generateBtn.disabled = false;
+              downloadBtn.disabled = true;
+            };
+            img.onerror = function () {
+              alert("Could not load this image. Try another JPG or PNG.");
+            };
+            img.src = reader.result;
+          };
+          reader.readAsDataURL(file);
+        }
+
+        function scaleSourceToCanvas(outW, outH) {
+          var off = document.createElement("canvas");
+          off.width = outW;
+          off.height = outH;
+          var ctx = off.getContext("2d", { willReadFrequently: true });
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(0, 0, outW, outH);
+          ctx.drawImage(sourceImage, 0, 0, outW, outH);
+          return ctx.getImageData(0, 0, outW, outH);
+        }
+
+        function sampleGrid(imageData, pitch, gridCols, gridRows) {
+          var data = imageData.data;
+          var imgW = imageData.width;
+          var imgH = imageData.height;
+          var n = gridCols * gridRows;
+          var r = new Float32Array(n);
+          var g = new Float32Array(n);
+          var b = new Float32Array(n);
+          var lum = new Float32Array(n);
+
+          for (var gy = 0; gy < gridRows; gy++) {
+            var y0 = gy * pitch;
+            var y1 = Math.min(imgH, y0 + pitch);
+            for (var gx = 0; gx < gridCols; gx++) {
+              var x0 = gx * pitch;
+              var x1 = Math.min(imgW, x0 + pitch);
+              var sumR = 0;
+              var sumG = 0;
+              var sumB = 0;
+              var count = 0;
+              for (var py = y0; py < y1; py++) {
+                var rowOff = py * imgW * 4;
+                for (var px = x0; px < x1; px++) {
+                  var i = rowOff + px * 4;
+                  sumR += data[i];
+                  sumG += data[i + 1];
+                  sumB += data[i + 2];
+                  count++;
+                }
+              }
+              if (count === 0) count = 1;
+              var idx = gy * gridCols + gx;
+              var avgR = sumR / count;
+              var avgG = sumG / count;
+              var avgB = sumB / count;
+              r[idx] = avgR;
+              g[idx] = avgG;
+              b[idx] = avgB;
+              lum[idx] = luminance(avgR, avgG, avgB);
+            }
+          }
+
+          return { r: r, g: g, b: b, lum: lum };
+        }
+
+        function distributeError(
+          errBuf,
+          gridCols,
+          gridRows,
+          x,
+          y,
+          errVal
+        ) {
+          var w7 = (errVal * 7) / 16;
+          var w3 = (errVal * 3) / 16;
+          var w5 = (errVal * 5) / 16;
+          var w1 = (errVal * 1) / 16;
+          var idx;
+
+          if (x + 1 < gridCols) {
+            idx = y * gridCols + (x + 1);
+            errBuf[idx] += w7;
+          }
+          if (y + 1 < gridRows) {
+            if (x - 1 >= 0) {
+              idx = (y + 1) * gridCols + (x - 1);
+              errBuf[idx] += w3;
+            }
+            idx = (y + 1) * gridCols + x;
+            errBuf[idx] += w5;
+            if (x + 1 < gridCols) {
+              idx = (y + 1) * gridCols + (x + 1);
+              errBuf[idx] += w1;
+            }
+          }
+        }
+
+        function processRowBw(
+          y,
+          gridCols,
+          gridRows,
+          lum,
+          errLum,
+          place,
+          threshold
+        ) {
+          for (var x = 0; x < gridCols; x++) {
+            var i = y * gridCols + x;
+            var old = lum[i] + errLum[i];
+            var newVal = old >= threshold ? 255 : 0;
+            errLum[i] = old - newVal;
+            place[i] = newVal === 255 ? 1 : 0;
+            distributeError(errLum, gridCols, gridRows, x, y, errLum[i]);
+          }
+        }
+
+        function processRowColor(
+          y,
+          gridCols,
+          gridRows,
+          r,
+          g,
+          b,
+          errR,
+          errG,
+          errB,
+          place,
+          threshold
+        ) {
+          for (var x = 0; x < gridCols; x++) {
+            var i = y * gridCols + x;
+            var oldR = r[i] + errR[i];
+            var oldG = g[i] + errG[i];
+            var oldB = b[i] + errB[i];
+            var avgOld = (oldR + oldG + oldB) / 3;
+
+            var newR = oldR >= threshold ? 255 : 0;
+            var newG = oldG >= threshold ? 255 : 0;
+            var newB = oldB >= threshold ? 255 : 0;
+
+            errR[i] = oldR - newR;
+            errG[i] = oldG - newG;
+            errB[i] = oldB - newB;
+
+            place[i] = avgOld >= threshold ? 1 : 0;
+
+            distributeError(errR, gridCols, gridRows, x, y, errR[i]);
+            distributeError(errG, gridCols, gridRows, x, y, errG[i]);
+            distributeError(errB, gridCols, gridRows, x, y, errB[i]);
+          }
+        }
+
+        function drawRowDots(
+          ctx,
+          y,
+          gridCols,
+          pitch,
+          dotRadius,
+          place,
+          samples,
+          isColor,
+          outW,
+          outH
+        ) {
+          for (var x = 0; x < gridCols; x++) {
+            var i = y * gridCols + x;
+            if (!place[i]) continue;
+
+            var cx = x * pitch + pitch / 2;
+            var cy = y * pitch + pitch / 2;
+            if (cx >= outW || cy >= outH) continue;
+
+            if (isColor) {
+              ctx.fillStyle =
+                "rgb(" +
+                Math.round(samples.r[i]) +
+                "," +
+                Math.round(samples.g[i]) +
+                "," +
+                Math.round(samples.b[i]) +
+                ")";
+            } else {
+              ctx.fillStyle = "#000000";
+            }
+            ctx.beginPath();
+            ctx.arc(cx, cy, dotRadius, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+
+        function runGeneration() {
+          if (!sourceImage) return;
+
+          var size = getOutputSize();
+          var outW = size.outW;
+          var outH = size.outH;
+
+          if (outW * outH > MAX_PIXELS) {
+            alert(
+              "Output is too large (" +
+                outW +
+                "×" +
+                outH +
+                " = " +
+                (outW * outH).toLocaleString() +
+                " pixels). Lower the resolution slider and try again."
+            );
+            return;
+          }
+
+          var pitch = getPitch();
+          var dotSize = Number(dotSizeInput.value);
+          var dotRadius = dotSize / 2;
+          var gridCols = Math.ceil(outW / pitch);
+          var gridRows = Math.ceil(outH / pitch);
+          var isColor = colorMode === "color";
+          var jobId = ++generationId;
+
+          setBusy(true);
+          showProgress(true);
+          setProgress(0, gridRows);
+          downloadBtn.disabled = true;
+
+          var imageData = scaleSourceToCanvas(outW, outH);
+          var samples = sampleGrid(imageData, pitch, gridCols, gridRows);
+          var n = gridCols * gridRows;
+          var place = new Uint8Array(n);
+          var errLum = new Float32Array(n);
+          var errR = new Float32Array(n);
+          var errG = new Float32Array(n);
+          var errB = new Float32Array(n);
+          var threshold = 128;
+
+          outputCanvas.width = outW;
+          outputCanvas.height = outH;
+          var ctx = outputCanvas.getContext("2d");
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(0, 0, outW, outH);
+
+          placeholder.hidden = true;
+          outputCanvas.hidden = false;
+
+          var y0 = 0;
+
+          function frame() {
+            if (jobId !== generationId) return;
+
+            var y1 = Math.min(gridRows, y0 + ROWS_PER_FRAME);
+            for (var y = y0; y < y1; y++) {
+              if (isColor) {
+                processRowColor(
+                  y,
+                  gridCols,
+                  gridRows,
+                  samples.r,
+                  samples.g,
+                  samples.b,
+                  errR,
+                  errG,
+                  errB,
+                  place,
+                  threshold
+                );
+              } else {
+                processRowBw(
+                  y,
+                  gridCols,
+                  gridRows,
+                  samples.lum,
+                  errLum,
+                  place,
+                  threshold
+                );
+              }
+              drawRowDots(
+                ctx,
+                y,
+                gridCols,
+                pitch,
+                dotRadius,
+                place,
+                samples,
+                isColor,
+                outW,
+                outH
+              );
+            }
+
+            y0 = y1;
+            setProgress(y0, gridRows);
+
+            if (y0 < gridRows) {
+              requestAnimationFrame(frame);
+            } else {
+              if (jobId !== generationId) return;
+              showProgress(false);
+              setBusy(false);
+              downloadBtn.disabled = false;
+              fileMeta.textContent =
+                fileMeta.textContent.split(" — ")[0] +
+                " — output " +
+                outW +
+                "×" +
+                outH +
+                " px";
+            }
+          }
+
+          requestAnimationFrame(frame);
+        }
+
+        fileInput.addEventListener("change", function () {
+          var file = fileInput.files && fileInput.files[0];
+          if (file) loadImageFromFile(file);
+        });
+
+        resolutionInput.addEventListener("input", function () {
+          updateSliderOutputs();
+          if (sourceImage) {
+            var size = getOutputSize();
+            var parts = fileMeta.textContent.split(" — ");
+            var name = parts[0] || "Image";
+            fileMeta.textContent =
+              name +
+              " — " +
+              srcW +
+              "×" +
+              srcH +
+              " → " +
+              size.outW +
+              "×" +
+              size.outH +
+              " at current resolution";
+          }
+        });
+
+        dotSizeInput.addEventListener("input", updateSliderOutputs);
+        dotSpacingInput.addEventListener("input", updateSliderOutputs);
+
+        modeBwBtn.addEventListener("click", function () {
+          colorMode = "bw";
+          modeBwBtn.classList.add("is-active");
+          modeBwBtn.setAttribute("aria-pressed", "true");
+          modeColorBtn.classList.remove("is-active");
+          modeColorBtn.setAttribute("aria-pressed", "false");
+        });
+
+        modeColorBtn.addEventListener("click", function () {
+          colorMode = "color";
+          modeColorBtn.classList.add("is-active");
+          modeColorBtn.setAttribute("aria-pressed", "true");
+          modeBwBtn.classList.remove("is-active");
+          modeBwBtn.setAttribute("aria-pressed", "false");
+        });
+
+        generateBtn.addEventListener("click", function () {
+          generationId++;
+          runGeneration();
+        });
+
+        downloadBtn.addEventListener("click", function () {
+          outputCanvas.toBlob(function (blob) {
+            if (!blob) return;
+            var a = document.createElement("a");
+            a.download = "stipple-" + Date.now() + ".png";
+            a.href = URL.createObjectURL(blob);
+            a.click();
+            URL.revokeObjectURL(a.href);
+          }, "image/png");
+        });
+
+        updateSliderOutputs();
+      })();
+    </script>
+  </body>
+</html>

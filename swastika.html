@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Rotated Square Grid — 70×180cm @ 300 DPI</title>
+    <link rel="stylesheet" href="css/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell app-shell--swastika">
+      <aside class="sidebar" aria-label="Design controls">
+        <div class="sidebar__scroll">
+          <section class="sidebar__section sidebar__section--identity">
+            <h2 class="sidebar__title">Identity</h2>
+            <div class="sidebar__identity-fields">
+              <div class="sidebar__identity-field">
+                <span class="sidebar__identity-heading">Living</span>
+                <div class="sidebar__identity-slot" id="identity-living-slot">
+                  <div
+                    class="sidebar__toggle sidebar__identity-living-toggle"
+                    role="group"
+                    aria-label="In or outside Iran"
+                  >
+                    <button
+                      type="button"
+                      id="living-in-btn"
+                      class="sidebar__toggle-btn is-active"
+                      aria-pressed="true"
+                    >
+                      In
+                    </button>
+                    <button
+                      type="button"
+                      id="living-outside-btn"
+                      class="sidebar__toggle-btn"
+                      aria-pressed="false"
+                    >
+                      Outside Iran
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    id="living-family-btn"
+                    class="sidebar__btn sidebar__identity-family-btn"
+                    hidden
+                  >
+                    Family
+                  </button>
+                </div>
+              </div>
+              <div class="sidebar__identity-field">
+                <span class="sidebar__identity-heading">Name</span>
+                <div class="sidebar__identity-slot" id="identity-name-slot">
+                  <input
+                    id="identity-name-input"
+                    class="sidebar__identity-input"
+                    type="text"
+                    autocomplete="off"
+                    spellcheck="false"
+                    aria-label="Name"
+                  />
+                </div>
+              </div>
+              <div class="sidebar__identity-field">
+                <span class="sidebar__identity-heading">Age</span>
+                <div class="sidebar__identity-slot" id="identity-age-slot">
+                  <input
+                    id="identity-age-input"
+                    class="sidebar__identity-input"
+                    type="text"
+                    inputmode="numeric"
+                    pattern="[0-9]*"
+                    autocomplete="off"
+                    aria-label="Age"
+                  />
+                </div>
+              </div>
+              <div class="sidebar__identity-field">
+                <span class="sidebar__identity-heading">Regime</span>
+                <div class="sidebar__identity-slot" id="identity-regime-slot">
+                  <div
+                    class="sidebar__identity-regime"
+                    id="identity-regime-control"
+                  >
+                    <div class="sidebar__identity-regime-slider-wrap">
+                      <div
+                        class="sidebar__identity-regime-segments"
+                        aria-hidden="true"
+                      >
+                        <span
+                          class="sidebar__identity-regime-segment is-active"
+                          data-segment="1"
+                        ></span>
+                        <span
+                          class="sidebar__identity-regime-segment"
+                          data-segment="2"
+                        ></span>
+                        <span
+                          class="sidebar__identity-regime-segment"
+                          data-segment="3"
+                        ></span>
+                      </div>
+                      <input
+                        id="identity-regime-slider"
+                        class="sidebar__identity-regime-slider"
+                        type="range"
+                        min="1"
+                        max="3"
+                        value="1"
+                        step="1"
+                        aria-valuemin="1"
+                        aria-valuemax="3"
+                        aria-valuenow="1"
+                        aria-valuetext="Personal"
+                      />
+                    </div>
+                    <div
+                      class="sidebar__identity-regime-labels"
+                      role="group"
+                      aria-label="Regime"
+                    >
+                      <button
+                        type="button"
+                        class="sidebar__identity-regime-label is-active"
+                        data-regime="1"
+                      >
+                        Personal
+                      </button>
+                      <button
+                        type="button"
+                        class="sidebar__identity-regime-label"
+                        data-regime="2"
+                      >
+                        Family Members
+                      </button>
+                      <button
+                        type="button"
+                        class="sidebar__identity-regime-label"
+                        data-regime="3"
+                      >
+                        Friends
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="sidebar__identity-field">
+                <span class="sidebar__identity-heading">Lost</span>
+                <div class="sidebar__identity-slot" id="identity-lost-slot">
+                  <div
+                    class="sidebar__identity-regime"
+                    id="identity-lost-control"
+                  >
+                    <div class="sidebar__identity-regime-slider-wrap">
+                      <div
+                        class="sidebar__identity-regime-segments"
+                        aria-hidden="true"
+                      >
+                        <span
+                          class="sidebar__identity-regime-segment is-active"
+                          data-segment="1"
+                        ></span>
+                        <span
+                          class="sidebar__identity-regime-segment"
+                          data-segment="2"
+                        ></span>
+                        <span
+                          class="sidebar__identity-regime-segment"
+                          data-segment="3"
+                        ></span>
+                      </div>
+                      <input
+                        id="identity-lost-slider"
+                        class="sidebar__identity-regime-slider"
+                        type="range"
+                        min="1"
+                        max="3"
+                        value="1"
+                        step="1"
+                        aria-valuemin="1"
+                        aria-valuemax="3"
+                        aria-valuenow="1"
+                        aria-valuetext="Inner Circle"
+                      />
+                    </div>
+                    <div
+                      class="sidebar__identity-regime-labels"
+                      role="group"
+                      aria-label="Lost"
+                    >
+                      <button
+                        type="button"
+                        class="sidebar__identity-regime-label is-active"
+                        data-lost="1"
+                      >
+                        Inner Circle
+                      </button>
+                      <button
+                        type="button"
+                        class="sidebar__identity-regime-label"
+                        data-lost="2"
+                        aria-label="Middle"
+                      ></button>
+                      <button
+                        type="button"
+                        class="sidebar__identity-regime-label"
+                        data-lost="3"
+                      >
+                        Distant Circle
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="sidebar__section sidebar__section--grid-choose">
+            <h2 class="sidebar__title">Choose grid</h2>
+            <div
+              class="sidebar__grid-choose-btns"
+              role="group"
+              aria-label="Choose grid"
+            >
+              <a href="index.html" id="grid-choose-octagon-btn" class="sidebar__grid-btn"
+                >Octagon</a
+              >
+              <a
+                href="swastika.html"
+                id="grid-choose-square-btn"
+                class="sidebar__grid-btn is-active"
+                aria-current="page"
+                >square</a
+              >
+            </div>
+          </section>
+
+          <ol
+            class="sidebar__numbered sidebar__controls--square"
+            aria-label="Square grid controls"
+          >
+            <li class="sidebar__item">
+              <span class="sidebar__num" aria-hidden="true">1</span>
+              <span class="sidebar__item-label">Unit size</span>
+              <div class="sidebar__item-control">
+                <input
+                  id="swastika-unit-size"
+                  type="range"
+                  min="40"
+                  max="280"
+                  value="100"
+                  step="1"
+                />
+                <output id="swastika-unit-size-out" for="swastika-unit-size"
+                  >100 px</output
+                >
+              </div>
+            </li>
+            <li class="sidebar__item sidebar__item--action">
+              <span class="sidebar__num" aria-hidden="true">2</span>
+              <span class="sidebar__item-label">Export SVG</span>
+              <div class="sidebar__item-control">
+                <button type="button" id="export-svg-btn">Export SVG</button>
+              </div>
+            </li>
+          </ol>
+
+          <p class="sidebar__hint" id="tile-info" aria-live="polite"></p>
+        </div>
+      </aside>
+      <div class="main">
+        <div class="stage-wrap" id="stage-wrap">
+          <!-- SVG injected by js/swastikaApp.js -->
+        </div>
+      </div>
+    </div>
+    <script defer src="js/constants.js"></script>
+    <script defer src="js/swastikaGeometry.js"></script>
+    <script defer src="js/identityControls.js"></script>
+    <script defer src="js/swastikaApp.js"></script>
+  </body>
+</html>

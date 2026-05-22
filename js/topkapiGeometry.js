@@ -966,7 +966,460 @@
     return catalog;
   }
 
+  /**
+   * Largest circle that fits inside the unit-cell octagon (local center T/2, T/2).
+   * @param {number} T tile size
+   * @returns {number}
+   */
+  function octagonInscribedRadius(T) {
+    var cut = T * CUT;
+    var edges = getOctagonEdges(T, cut);
+    var px = T / 2;
+    var py = T / 2;
+    var minDistSq = Infinity;
+    for (var i = 0; i < edges.length; i++) {
+      var e = edges[i];
+      var dSq = distancePointToSegmentSq(px, py, e.x1, e.y1, e.x2, e.y2);
+      if (dSq < minDistSq) minDistSq = dSq;
+    }
+    return Math.sqrt(minDistSq);
+  }
+
+  /**
+   * Center of each unit-cell octagon on the canvas.
+   * @param {number} octagonsN
+   * @param {number} canvasW
+   * @param {number} canvasH
+   * @returns {{ id: string, cx: number, cy: number }[]}
+   */
+  function buildOctagonCenterCatalog(octagonsN, canvasW, canvasH) {
+    var layout = computeLayout(octagonsN, canvasW, canvasH);
+    var T = layout.tileSize;
+    var half = T / 2;
+    var catalog = [];
+
+    for (var row = 0; row < layout.rows; row++) {
+      for (var col = 0; col < layout.cols; col++) {
+        catalog.push({
+          id: "oc-" + col + "-" + row,
+          cx: col * T + half,
+          cy: layout.offsetY + row * T + half,
+        });
+      }
+    }
+
+    return catalog;
+  }
+
+  /**
+   * @param {number} T tile size
+   * @returns {number}
+   */
+  function letterMarkerRadius(T) {
+    var radiusRatio =
+      typeof LETTER_MARKER_RADIUS_RATIO !== "undefined"
+        ? LETTER_MARKER_RADIUS_RATIO
+        : 0.75;
+    return octagonInscribedRadius(T) * radiusRatio;
+  }
+
+  /**
+   * @param {string[]} words
+   * @returns {number[]}
+   */
+  function letterMarkerWordLengths(words) {
+    var lengths = [];
+    for (var i = 0; i < words.length; i++) {
+      lengths.push(Array.from(words[i]).length);
+    }
+    return lengths;
+  }
+
+  /**
+   * Row span when each word starts at the previous word's last circle.
+   * @param {number[]} lengths
+   * @returns {number}
+   */
+  function letterMarkerCascadeRowSpan(lengths) {
+    var sum = 0;
+    var i;
+    for (i = 0; i < lengths.length; i++) {
+      sum += lengths[i];
+    }
+    return sum - lengths.length;
+  }
+
+  /**
+   * @param {{ rows: number, cols: number }} layout
+   * @param {{ col: number, startRow: number }} anchor
+   * @param {number[]} lengths per word (index 0 = rightmost column)
+   * @returns {boolean}
+   */
+  function isLetterMarkerAnchorValid(layout, anchor, lengths) {
+    if (!anchor || !lengths.length) return false;
+    var maxColumns =
+      typeof LETTER_MARKER_MAX_COLUMNS !== "undefined"
+        ? LETTER_MARKER_MAX_COLUMNS
+        : 12;
+    if (lengths.length > maxColumns) return false;
+    if (anchor.col < lengths.length - 1) return false;
+
+    var rowSpan = letterMarkerCascadeRowSpan(lengths);
+    if (anchor.startRow < 0) return false;
+    if (anchor.startRow + rowSpan >= layout.rows) return false;
+
+    return true;
+  }
+
+  /**
+   * @param {{ rows: number, cols: number }} layout
+   * @param {number[]} lengths
+   * @returns {{ col: number, startRow: number }[]}
+   */
+  function findValidLetterMarkerAnchors(layout, lengths) {
+    if (!lengths.length) return [];
+
+    var maxColumns =
+      typeof LETTER_MARKER_MAX_COLUMNS !== "undefined"
+        ? LETTER_MARKER_MAX_COLUMNS
+        : 12;
+    if (lengths.length > maxColumns) return [];
+
+    var nCols = lengths.length;
+    var rowSpan = letterMarkerCascadeRowSpan(lengths);
+    var maxStartRow = layout.rows - 1 - rowSpan;
+    if (maxStartRow < 0) return [];
+
+    var candidates = [];
+    var col;
+    var startRow;
+
+    for (col = nCols - 1; col < layout.cols; col++) {
+      for (startRow = 0; startRow <= maxStartRow; startRow++) {
+        candidates.push({ col: col, startRow: startRow });
+      }
+    }
+
+    return candidates;
+  }
+
+  /**
+   * @param {{ rows: number, cols: number }} layout
+   * @param {number[]} lengths
+   * @returns {{ col: number, startRow: number } | null}
+   */
+  function pickRandomLetterMarkerAnchor(layout, lengths) {
+    var candidates = findValidLetterMarkerAnchors(layout, lengths);
+    if (!candidates.length) return null;
+    return candidates[Math.floor(Math.random() * candidates.length)];
+  }
+
+  /**
+   * One column per word; words[0] is rightmost. Each word starts at the last
+   * circle row of the previous word (cascade down and left).
+   * @param {{ tileSize: number, offsetY: number, rows: number }} layout
+   * @param {{ col: number, startRow: number }} anchor
+   * @param {string[]} words
+   * @returns {{ columns: { markers: { cx: number, cy: number, r: number, char: string }[] }[] }}
+   */
+  function buildLetterMarkerColumns(layout, anchor, words) {
+    var lengths = letterMarkerWordLengths(words);
+    if (!lengths.length || !anchor) {
+      return { columns: [] };
+    }
+
+    var T = layout.tileSize;
+    var half = T / 2;
+    var letterR = letterMarkerRadius(T);
+    var rowCursor = anchor.startRow;
+    var columns = [];
+    var i;
+    var j;
+
+    for (i = 0; i < words.length; i++) {
+      var colIndex = anchor.col - i;
+      var len = lengths[i];
+      var chars = Array.from(words[i]);
+      var markers = [];
+
+      for (j = 0; j < len; j++) {
+        markers.push({
+          cx: colIndex * T + half,
+          cy: layout.offsetY + (rowCursor + j) * T + half,
+          r: letterR,
+          char: chars[j],
+        });
+      }
+      columns.push({ markers: markers });
+      rowCursor += len - 1;
+    }
+
+    return { columns: columns };
+  }
+
   var VERTICAL_SEGMENT_X_EPS = 1e-6;
+  var FACE_MIN_AREA = 0.5;
+  var FACE_MAX_AREA_RATIO = 0.5;
+
+  /**
+   * @param {{x:number,y:number}[]} points
+   * @returns {number}
+   */
+  function polygonSignedArea(points) {
+    var area = 0;
+    var n = points.length;
+    if (n < 3) return 0;
+    for (var i = 0; i < n; i++) {
+      var j = (i + 1) % n;
+      area += points[i].x * points[j].y - points[j].x * points[i].y;
+    }
+    return area / 2;
+  }
+
+  /**
+   * @param {{x:number,y:number}[]} points
+   * @returns {number}
+   */
+  function polygonArea(points) {
+    return Math.abs(polygonSignedArea(points));
+  }
+
+  /**
+   * @param {{x:number,y:number}[]} points
+   * @returns {{ x: number, y: number }}
+   */
+  function polygonCentroid(points) {
+    var cx = 0;
+    var cy = 0;
+    for (var i = 0; i < points.length; i++) {
+      cx += points[i].x;
+      cy += points[i].y;
+    }
+    var n = points.length || 1;
+    return { x: cx / n, y: cy / n };
+  }
+
+  /**
+   * @param {number} px
+   * @param {number} py
+   * @param {{x:number,y:number}[]} points
+   * @returns {boolean}
+   */
+  function pointInPolygon(px, py, points) {
+    var inside = false;
+    for (var i = 0, j = points.length - 1; i < points.length; j = i++) {
+      var xi = points[i].x;
+      var yi = points[i].y;
+      var xj = points[j].x;
+      var yj = points[j].y;
+      var intersect =
+        yi > py !== yj > py &&
+        px <
+          ((xj - xi) * (py - yi)) / (yj - yi + 1e-20) + xi;
+      if (intersect) inside = !inside;
+    }
+    return inside;
+  }
+
+  /**
+   * @param {{x1:number,y1:number,x2:number,y2:number}[]} segments
+   * @returns {{ x: number, y: number, width: number, height: number }}
+   */
+  function segmentsBoundingBox(segments) {
+    var minX = Infinity;
+    var minY = Infinity;
+    var maxX = -Infinity;
+    var maxY = -Infinity;
+    for (var i = 0; i < segments.length; i++) {
+      var s = segments[i];
+      minX = Math.min(minX, s.x1, s.x2);
+      minY = Math.min(minY, s.y1, s.y2);
+      maxX = Math.max(maxX, s.x1, s.x2);
+      maxY = Math.max(maxY, s.y1, s.y2);
+    }
+    if (!segments.length) {
+      return { x: 0, y: 0, width: 0, height: 0 };
+    }
+    return {
+      x: minX,
+      y: minY,
+      width: maxX - minX,
+      height: maxY - minY,
+    };
+  }
+
+  /**
+   * @param {{ from: { key: string, x: number, y: number }, to: { key: string, x: number, y: number } }} he
+   * @returns {number}
+   */
+  function halfEdgeAngle(he) {
+    return Math.atan2(he.to.y - he.from.y, he.to.x - he.from.x);
+  }
+
+  /**
+   * @param {{x1:number,y1:number,x2:number,y2:number}[]} segments
+   * @returns {{ id: number, from: object, to: object, twin: object, next: object }[]}
+   */
+  function buildHalfEdges(segments) {
+    var verts = {};
+    var edges = [];
+
+    function getVert(x, y) {
+      var k = vertexKey(x, y);
+      if (!verts[k]) {
+        verts[k] = { key: k, x: roundCoord(x), y: roundCoord(y) };
+      }
+      return verts[k];
+    }
+
+    for (var i = 0; i < segments.length; i++) {
+      var s = segments[i];
+      var a = getVert(s.x1, s.y1);
+      var b = getVert(s.x2, s.y2);
+      var fwd = {
+        id: edges.length,
+        from: a,
+        to: b,
+        twin: null,
+        next: null,
+        indexAtVertex: -1,
+      };
+      var rev = {
+        id: edges.length + 1,
+        from: b,
+        to: a,
+        twin: fwd,
+        next: null,
+        indexAtVertex: -1,
+      };
+      fwd.twin = rev;
+      edges.push(fwd, rev);
+    }
+
+    var outgoing = {};
+    for (var j = 0; j < edges.length; j++) {
+      var e = edges[j];
+      var fk = e.from.key;
+      if (!outgoing[fk]) outgoing[fk] = [];
+      outgoing[fk].push(e);
+    }
+
+    for (var vk in outgoing) {
+      if (!Object.prototype.hasOwnProperty.call(outgoing, vk)) continue;
+      var list = outgoing[vk];
+      list.sort(function (e1, e2) {
+        return halfEdgeAngle(e1) - halfEdgeAngle(e2);
+      });
+      for (var li = 0; li < list.length; li++) {
+        list[li].indexAtVertex = li;
+      }
+    }
+
+    for (var k = 0; k < edges.length; k++) {
+      var he = edges[k];
+      var headList = outgoing[he.to.key];
+      if (!headList || headList.length === 0) continue;
+      var twinIdx = he.twin.indexAtVertex;
+      if (twinIdx < 0) continue;
+      var nextIdx = (twinIdx - 1 + headList.length) % headList.length;
+      he.next = headList[nextIdx];
+    }
+
+    return edges;
+  }
+
+  /**
+   * Enclosed faces from a segment arrangement (planar graph).
+   * @param {{x1:number,y1:number,x2:number,y2:number}[]} segments
+   * @returns {{ points: { x: number, y: number }[] }[]}
+   */
+  function traceFaces(segments) {
+    if (!segments.length) return [];
+
+    var halfEdges = buildHalfEdges(segments);
+    var used = new Set();
+    var faces = [];
+    var bbox = segmentsBoundingBox(segments);
+    var maxArea = bbox.width * bbox.height * FACE_MAX_AREA_RATIO;
+
+    for (var i = 0; i < halfEdges.length; i++) {
+      var start = halfEdges[i];
+      if (used.has(start.id)) continue;
+
+      var loop = [];
+      var cur = start;
+      var guard = 0;
+
+      do {
+        used.add(cur.id);
+        loop.push({ x: cur.from.x, y: cur.from.y });
+        cur = cur.next;
+        guard++;
+        if (!cur || guard > halfEdges.length + 2) break;
+      } while (cur !== start);
+
+      if (loop.length < 3) continue;
+
+      var area = polygonArea(loop);
+      if (area < FACE_MIN_AREA) continue;
+      if (maxArea > 0 && area >= maxArea) continue;
+
+      var c = polygonCentroid(loop);
+      if (
+        c.x < bbox.x - 1e-6 ||
+        c.y < bbox.y - 1e-6 ||
+        c.x > bbox.x + bbox.width + 1e-6 ||
+        c.y > bbox.y + bbox.height + 1e-6
+      ) {
+        continue;
+      }
+
+      faces.push({ points: loop });
+    }
+
+    return faces;
+  }
+
+  /**
+   * Baseline cell count enclosed by a current face (merged if &gt; 1).
+   * @param {{ points: { x: number, y: number }[] }} face
+   * @param {{ points: { x: number, y: number }[] }[]} baselineFaces
+   * @returns {number}
+   */
+  function countBaselineFacesInsideCurrentFace(face, baselineFaces) {
+    var count = 0;
+    for (var i = 0; i < baselineFaces.length; i++) {
+      var c = polygonCentroid(baselineFaces[i].points);
+      if (pointInPolygon(c.x, c.y, face.points)) {
+        count++;
+      }
+    }
+    return count;
+  }
+
+  /**
+   * Merged polygon regions (holes in the white mask) from removed edges.
+   * @param {{x1:number,y1:number,x2:number,y2:number}[]} allSegments
+   * @param {Set<string>} removedSet
+   * @returns {{ points: { x: number, y: number }[] }[]}
+   */
+  function getMergedPolygonRegions(allSegments, removedSet) {
+    if (!removedSet || !removedSet.size) return [];
+
+    var baselineFaces = traceFaces(allSegments);
+    var visible = getVisibleSegmentsFromRemoved(allSegments, removedSet);
+    var currentFaces = traceFaces(visible);
+    var merged = [];
+
+    for (var i = 0; i < currentFaces.length; i++) {
+      var face = currentFaces[i];
+      if (countBaselineFacesInsideCurrentFace(face, baselineFaces) > 1) {
+        merged.push(face);
+      }
+    }
+
+    return merged;
+  }
 
   /**
    * Unique X from vertical grid segments only (aligned with existing upright edges).
@@ -1008,7 +1461,16 @@
     buildVertexIncidence: buildVertexIncidence,
     buildDiamondCatalog: buildDiamondCatalog,
     buildUprightSquareCatalog: buildUprightSquareCatalog,
+    buildOctagonCenterCatalog: buildOctagonCenterCatalog,
+    octagonInscribedRadius: octagonInscribedRadius,
+    letterMarkerWordLengths: letterMarkerWordLengths,
+    isLetterMarkerAnchorValid: isLetterMarkerAnchorValid,
+    findValidLetterMarkerAnchors: findValidLetterMarkerAnchors,
+    pickRandomLetterMarkerAnchor: pickRandomLetterMarkerAnchor,
+    buildLetterMarkerColumns: buildLetterMarkerColumns,
     uprightSquareInscribedRadius: uprightSquareInscribedRadius,
     collectUniqueGridXCoords: collectUniqueGridXCoords,
+    traceFaces: traceFaces,
+    getMergedPolygonRegions: getMergedPolygonRegions,
   };
 })(typeof window !== "undefined" ? window : this);

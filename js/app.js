@@ -3,6 +3,7 @@
 
   var NS = "http://www.w3.org/2000/svg";
   var designSvg = null;
+  var cachedExportFontDataUri = null;
   var lastOctagonsN = OCTAGONS_N_DEFAULT;
   var lastTileSize = CANVAS_W / (OCTAGONS_N_DEFAULT + 1);
   var cachedAllSegments = [];
@@ -18,10 +19,32 @@
   var lastCircleLayoutSignature = "";
   var diamondFilledIds = new Set();
   var lastDiamondLayoutSignature = "";
-  var bgDirection = BG_DIRECTION_DEFAULT;
-  var bgGradientEnabled = false;
+  var cachedLetterMarkerAnchor = null;
+  var lastLetterMarkerLayoutSignature = "";
+  var letterMarkerWord =
+    typeof LETTER_MARKER_WORD_DEFAULT !== "undefined"
+      ? LETTER_MARKER_WORD_DEFAULT
+      : "";
+  /** @type {{ dots: { cx: number, cy: number, r: number, fill: string }[], outW: number, outH: number } | null} */
+  var stippleDotsCache = null;
+  /** @type {HTMLImageElement | null} */
+  var stippleSourceImage = null;
+  var stippleSrcW = 0;
+  var stippleSrcH = 0;
+  var stippleColorMode = "bw";
+  var stippleGenerationId = 0;
+  /** Frame inset overlay (lines, caps, ellipses, diagonals); default hidden */
+  var frameInsetOverlayVisible = false;
 
-  var GRADIENT_OFFSETS = ["0%", "25%", "50%", "75%", "100%"];
+  /** Persist mask holes so continued merging cannot drop earlier cutouts. */
+  var stickyMergedCutoutFaces = null;
+  /** Random column edges for brown-bar outer-third grid (regenerated on layout change). */
+  var cachedBrownBarGridXBounds = null;
+  var lastBrownBarGridLayoutSignature = "";
+
+  var magnifierCenterX = CANVAS_W / 2;
+  var magnifierCenterY = CANVAS_H / 2;
+  var magnifierListenersBound = false;
 
   /**
    * Symmetric border thickness (px) so the white ring area = CANVAS_BORDER_AREA_RATIO × canvas.
@@ -91,12 +114,30 @@
     );
   }
 
+  function getDiamondFillPercent() {
+    var slider = document.getElementById("diamond-fill-percent");
+    var v = slider ? Number(slider.value) : DIAMOND_FILL_PERCENT_DEFAULT;
+    return Math.min(
+      DIAMOND_FILL_PERCENT_MAX,
+      Math.max(DIAMOND_FILL_PERCENT_MIN, Math.round(v))
+    );
+  }
+
   function getGridStrokeWidth() {
     var slider = document.getElementById("grid-stroke-width");
     var v = slider ? Number(slider.value) : GRID_STROKE_WIDTH_DEFAULT;
     return Math.min(
       GRID_STROKE_WIDTH_MAX,
       Math.max(GRID_STROKE_WIDTH_MIN, Math.round(v))
+    );
+  }
+
+  function getBorderLeftRightSegments() {
+    var slider = document.getElementById("border-side-segments");
+    var v = slider ? Number(slider.value) : BORDER_LEFT_RIGHT_SEGMENTS_DEFAULT;
+    return Math.min(
+      BORDER_LEFT_RIGHT_SEGMENTS_MAX,
+      Math.max(BORDER_LEFT_RIGHT_SEGMENTS_MIN, Math.round(v))
     );
   }
 
@@ -113,7 +154,11 @@
   }
 
   function getDiamondFillColor() {
-    return DIAMOND_FILL_COLOR_DEFAULT;
+    var input = document.getElementById("diamond-fill-color");
+    return normalizeHexColor(
+      input ? input.value : null,
+      DIAMOND_FILL_COLOR_DEFAULT
+    );
   }
 
   function normalizeHexColor(value, fallback) {
@@ -123,272 +168,417 @@
     return fallback;
   }
 
-  function isBgGradientEnabled() {
-    return bgGradientEnabled;
-  }
-
-  function getBgDirection() {
-    return bgDirection === "horizontal" ? "horizontal" : "vertical";
-  }
-
-  function clearBgGradients(defs) {
-    var existing = defs.querySelectorAll("#bg-grad-normal, #bg-grad-mirror");
-    for (var e = 0; e < existing.length; e++) {
-      defs.removeChild(existing[e]);
-    }
-  }
-
-  function getBgColors() {
-    var c1 = document.getElementById("bg-color-1");
-    var c2 = document.getElementById("bg-color-2");
-    var c3 = document.getElementById("bg-color-3");
-    return [
-      normalizeHexColor(c1 ? c1.value : null, BG_COLOR_1_DEFAULT),
-      normalizeHexColor(c2 ? c2.value : null, BG_COLOR_2_DEFAULT),
-      normalizeHexColor(c3 ? c3.value : null, BG_COLOR_3_DEFAULT),
-    ];
-  }
-
-  /**
-   * @param {boolean} mirrored
-   * @returns {string[]}
-   */
-  function getGradientStopColors(mirrored) {
-    var colors = getBgColors();
-    if (mirrored) {
-      return [colors[2], colors[1], colors[0], colors[1], colors[2]];
-    }
-    return [colors[0], colors[1], colors[2], colors[1], colors[0]];
-  }
-
-  /**
-   * @param {string} direction
-   * @returns {{ x1: string, y1: string, x2: string, y2: string }}
-   */
-  function getGradientAxisAttrs(direction) {
-    if (direction === "horizontal") {
-      return { x1: "0%", y1: "0%", x2: "0%", y2: "100%" };
-    }
-    return { x1: "0%", y1: "0%", x2: "100%", y2: "0%" };
-  }
-
-  /**
-   * @param {string} direction
-   * @returns {{ x: number, y: number, w: number, h: number }[]}
-   */
-  function getBackgroundSections(direction) {
-    var ratios = BG_SECTION_RATIOS;
-    var sections = [];
-    var i;
-    if (direction === "horizontal") {
-      var y = 0;
-      for (i = 0; i < ratios.length; i++) {
-        var h =
-          i === ratios.length - 1
-            ? CANVAS_H - y
-            : CANVAS_H * ratios[i];
-        sections.push({ x: 0, y: y, w: CANVAS_W, h: h });
-        y += h;
-      }
-    } else {
-      var x = 0;
-      for (i = 0; i < ratios.length; i++) {
-        var w =
-          i === ratios.length - 1
-            ? CANVAS_W - x
-            : CANVAS_W * ratios[i];
-        sections.push({ x: x, y: 0, w: w, h: CANVAS_H });
-        x += w;
-      }
-    }
-    return sections;
-  }
-
-  /**
-   * @param {string[]} lines
-   * @param {string} id
-   * @param {boolean} mirrored
-   * @param {string} direction
-   */
-  function pushGradientExportLines(lines, id, mirrored, direction) {
-    var axis = getGradientAxisAttrs(direction);
-    var stops = getGradientStopColors(mirrored);
-    lines.push(
-      '<linearGradient id="' +
-        id +
-        '" gradientUnits="objectBoundingBox" x1="' +
-        axis.x1 +
-        '" y1="' +
-        axis.y1 +
-        '" x2="' +
-        axis.x2 +
-        '" y2="' +
-        axis.y2 +
-        '">'
-    );
-    for (var s = 0; s < stops.length; s++) {
-      lines.push(
-        '<stop offset="' +
-          GRADIENT_OFFSETS[s] +
-          '" stop-color="' +
-          stops[s] +
-          '"/>'
-      );
-    }
-    lines.push("</linearGradient>");
-  }
-
   /**
    * @param {string[]} lines
    */
   function pushBackgroundExportLines(lines) {
-    if (!isBgGradientEnabled()) {
-      lines.push(
-        '<rect x="0" y="0" width="' +
-          CANVAS_W +
-          '" height="' +
-          CANVAS_H +
-          '" fill="' +
-          BG_COLOR +
-          '"/>'
-      );
-      return;
-    }
-    var direction = getBgDirection();
-    lines.push("<defs>");
-    pushGradientExportLines(lines, "bg-grad-normal", false, direction);
-    pushGradientExportLines(lines, "bg-grad-mirror", true, direction);
-    lines.push("</defs>");
-    var sections = getBackgroundSections(direction);
-    for (var i = 0; i < sections.length; i++) {
-      var sec = sections[i];
-      var fill = i % 2 === 0 ? "url(#bg-grad-normal)" : "url(#bg-grad-mirror)";
-      lines.push(
-        '<rect x="' +
-          sec.x +
-          '" y="' +
-          sec.y +
-          '" width="' +
-          sec.w +
-          '" height="' +
-          sec.h +
-          '" fill="' +
-          fill +
-          '"/>'
-      );
-    }
-  }
-
-  /**
-   * @param {SVGElement} defs
-   * @param {string} direction
-   */
-  function updateDefsGradients(defs, direction) {
-    clearBgGradients(defs);
-
-    function appendGradient(id, mirrored) {
-      var grad = elSvg("linearGradient");
-      grad.setAttribute("id", id);
-      grad.setAttribute("gradientUnits", "objectBoundingBox");
-      var axis = getGradientAxisAttrs(direction);
-      grad.setAttribute("x1", axis.x1);
-      grad.setAttribute("y1", axis.y1);
-      grad.setAttribute("x2", axis.x2);
-      grad.setAttribute("y2", axis.y2);
-      var stops = getGradientStopColors(mirrored);
-      for (var s = 0; s < stops.length; s++) {
-        var stop = elSvg("stop");
-        stop.setAttribute("offset", GRADIENT_OFFSETS[s]);
-        stop.setAttribute("stop-color", stops[s]);
-        grad.appendChild(stop);
-      }
-      defs.appendChild(grad);
-    }
-
-    appendGradient("bg-grad-normal", false);
-    appendGradient("bg-grad-mirror", true);
+    lines.push(
+      '<rect x="0" y="0" width="' +
+        CANVAS_W +
+        '" height="' +
+        CANVAS_H +
+        '" fill="' +
+        BG_COLOR +
+        '"/>'
+    );
   }
 
   function renderBackgroundLayer() {
     if (!designSvg) return;
-    var defs = designSvg.querySelector("defs");
     var layer = designSvg.querySelector("#layer-background");
-    if (!defs || !layer) return;
+    if (!layer) return;
 
     while (layer.firstChild) layer.removeChild(layer.firstChild);
 
-    if (!isBgGradientEnabled()) {
-      clearBgGradients(defs);
-      var whiteRect = elSvg("rect");
-      whiteRect.setAttribute("x", "0");
-      whiteRect.setAttribute("y", "0");
-      whiteRect.setAttribute("width", String(CANVAS_W));
-      whiteRect.setAttribute("height", String(CANVAS_H));
-      whiteRect.setAttribute("fill", BG_COLOR);
-      layer.appendChild(whiteRect);
+    var whiteRect = elSvg("rect");
+    whiteRect.setAttribute("x", "0");
+    whiteRect.setAttribute("y", "0");
+    whiteRect.setAttribute("width", String(CANVAS_W));
+    whiteRect.setAttribute("height", String(CANVAS_H));
+    whiteRect.setAttribute("fill", BG_COLOR);
+    layer.appendChild(whiteRect);
+  }
+
+  var GRID_WHITE_MASK_ID = "grid-white-mask";
+  var MERGE_REGIONS_CLIP_ID = "merge-regions-clip";
+
+  /**
+   * @param {SVGElement} defs
+   * @param {{ points: { x: number, y: number }[] }[]} mergedRegions
+   */
+  function updateMergeRegionsClipPath(defs, mergedRegions) {
+    var existing = defs.querySelector("#" + MERGE_REGIONS_CLIP_ID);
+    if (existing) defs.removeChild(existing);
+
+    if (!mergedRegions.length) return;
+
+    var clip = elSvg("clipPath");
+    clip.setAttribute("id", MERGE_REGIONS_CLIP_ID);
+    var i;
+    var pts;
+    var p;
+    var pointsAttr;
+    var poly;
+
+    for (i = 0; i < mergedRegions.length; i++) {
+      pts = mergedRegions[i].points;
+      if (!pts.length) continue;
+      pointsAttr = "";
+      for (p = 0; p < pts.length; p++) {
+        if (p) pointsAttr += " ";
+        pointsAttr += pts[p].x + "," + pts[p].y;
+      }
+      poly = elSvg("polygon");
+      poly.setAttribute("points", pointsAttr);
+      clip.appendChild(poly);
+    }
+
+    if (clip.childNodes.length) defs.appendChild(clip);
+  }
+
+  function hasActiveMergeCutouts() {
+    return removedEdges.size > 0;
+  }
+
+  function updateGridWhiteMaskDef(defs, mergedRegions, bounds) {
+    var existing = defs.querySelector("#" + GRID_WHITE_MASK_ID);
+    if (existing) defs.removeChild(existing);
+
+    var mask = elSvg("mask");
+    mask.setAttribute("id", GRID_WHITE_MASK_ID);
+
+    var white = elSvg("rect");
+    white.setAttribute("x", String(bounds.x));
+    white.setAttribute("y", String(bounds.y));
+    white.setAttribute("width", String(bounds.width));
+    white.setAttribute("height", String(bounds.height));
+    white.setAttribute("fill", "white");
+    mask.appendChild(white);
+
+    for (var i = 0; i < mergedRegions.length; i++) {
+      var pts = mergedRegions[i].points;
+      if (!pts.length) continue;
+      var pointsAttr = "";
+      for (var p = 0; p < pts.length; p++) {
+        if (p) pointsAttr += " ";
+        pointsAttr += pts[p].x + "," + pts[p].y;
+      }
+      var hole = elSvg("polygon");
+      hole.setAttribute("points", pointsAttr);
+      hole.setAttribute("fill", "black");
+      mask.appendChild(hole);
+    }
+
+    defs.appendChild(mask);
+  }
+
+  /**
+   * @param {{ points: { x: number, y: number }[] }} face
+   * @returns {string}
+   */
+  function cutoutFaceKey(face) {
+    var pts = face.points;
+    if (!pts.length) return "";
+    var area = 0;
+    for (var i = 0; i < pts.length; i++) {
+      var j = (i + 1) % pts.length;
+      area += pts[i].x * pts[j].y - pts[j].x * pts[i].y;
+    }
+    return (
+      pts.length +
+      "|" +
+      Math.round(pts[0].x * 100) +
+      "," +
+      Math.round(pts[0].y * 100) +
+      "|" +
+      Math.round(Math.abs(area / 2))
+    );
+  }
+
+  /**
+   * Keep prior holes and add newly detected regions (never shrink on merge).
+   * @param {{ points: { x: number, y: number }[] }[]} sticky
+   * @param {{ points: { x: number, y: number }[] }[]} fresh
+   * @returns {{ points: { x: number, y: number }[] }[]}
+   */
+  function mergeStickyCutouts(sticky, fresh) {
+    var keys = {};
+    var out = [];
+    var i;
+    for (i = 0; i < sticky.length; i++) {
+      var k = cutoutFaceKey(sticky[i]);
+      if (!k || keys[k]) continue;
+      keys[k] = true;
+      out.push(sticky[i]);
+    }
+    for (i = 0; i < fresh.length; i++) {
+      var fk = cutoutFaceKey(fresh[i]);
+      if (!fk || keys[fk]) continue;
+      keys[fk] = true;
+      out.push(fresh[i]);
+    }
+    return out;
+  }
+
+  function renderGridMaskLayer(trigger) {
+    if (!designSvg) return;
+    var defs = designSvg.querySelector("defs");
+    var layer = designSvg.querySelector("#layer-grid-mask");
+    if (!defs || !layer) return;
+
+    var bounds = getGridContentBounds();
+    var freshRegions = TopkapiGeometry.getMergedPolygonRegions(
+      cachedAllSegments,
+      removedEdges
+    );
+    var mergedRegions;
+    if (!removedEdges.size) {
+      stickyMergedCutoutFaces = null;
+      mergedRegions = freshRegions;
+    } else if (trigger === "restore" || interactionMode === "restore") {
+      stickyMergedCutoutFaces = freshRegions;
+      mergedRegions = freshRegions;
+    } else if (!stickyMergedCutoutFaces) {
+      stickyMergedCutoutFaces = freshRegions;
+      mergedRegions = freshRegions;
+    } else {
+      stickyMergedCutoutFaces = mergeStickyCutouts(
+        stickyMergedCutoutFaces,
+        freshRegions
+      );
+      mergedRegions = stickyMergedCutoutFaces;
+    }
+
+    updateGridWhiteMaskDef(defs, mergedRegions, bounds);
+    updateMergeRegionsClipPath(defs, mergedRegions);
+
+    while (layer.firstChild) layer.removeChild(layer.firstChild);
+
+    var maskRect = elSvg("rect");
+    maskRect.setAttribute("x", String(bounds.x));
+    maskRect.setAttribute("y", String(bounds.y));
+    maskRect.setAttribute("width", String(bounds.width));
+    maskRect.setAttribute("height", String(bounds.height));
+    maskRect.setAttribute("fill", BG_COLOR);
+    maskRect.setAttribute("mask", "url(#" + GRID_WHITE_MASK_ID + ")");
+    layer.appendChild(maskRect);
+
+    applyMergeReveal();
+  }
+
+  function applyMergeReveal() {
+    if (!designSvg) return;
+
+    var active = hasActiveMergeCutouts();
+    var maskClipped = designSvg.querySelector("#inner-clipped-grid-mask");
+    var dotsClipped = designSvg.querySelector("#inner-clipped-stipple-dots");
+    var dotsLayer = designSvg.querySelector("#layer-stipple-dots");
+    var defs = designSvg.querySelector("defs");
+    if (maskClipped) {
+      maskClipped.style.display = active ? "" : "none";
+    }
+
+    if (!active) {
+      if (dotsClipped) dotsClipped.style.display = "none";
+      if (dotsLayer) dotsLayer.removeAttribute("clip-path");
       return;
     }
 
-    var direction = getBgDirection();
-    updateDefsGradients(defs, direction);
-    var sections = getBackgroundSections(direction);
-    for (var i = 0; i < sections.length; i++) {
-      var sec = sections[i];
-      var rect = elSvg("rect");
-      rect.setAttribute("x", String(sec.x));
-      rect.setAttribute("y", String(sec.y));
-      rect.setAttribute("width", String(sec.w));
-      rect.setAttribute("height", String(sec.h));
-      rect.setAttribute(
-        "fill",
-        i % 2 === 0 ? "url(#bg-grad-normal)" : "url(#bg-grad-mirror)"
+    if (dotsClipped) dotsClipped.style.display = "";
+    if (dotsLayer && defs && defs.querySelector("#" + MERGE_REGIONS_CLIP_ID)) {
+      dotsLayer.setAttribute("clip-path", "url(#" + MERGE_REGIONS_CLIP_ID + ")");
+    } else if (dotsLayer) {
+      dotsLayer.removeAttribute("clip-path");
+    }
+    renderStippleDotsLayer();
+  }
+
+  /**
+   * @returns {{ points: { x: number, y: number }[] }[]}
+   */
+  function getMergedRegionsForMask() {
+    var freshRegions = TopkapiGeometry.getMergedPolygonRegions(
+      cachedAllSegments,
+      removedEdges
+    );
+    if (!removedEdges.size) return freshRegions;
+    if (stickyMergedCutoutFaces) return stickyMergedCutoutFaces;
+    return freshRegions;
+  }
+
+  /**
+   * @param {string[]} lines
+   */
+  function pushGridMaskExportLines(lines) {
+    if (!hasActiveMergeCutouts()) return;
+
+    var bounds = getGridContentBounds();
+    var mergedRegions = getMergedRegionsForMask();
+
+    lines.push("<defs>");
+    lines.push('<mask id="' + GRID_WHITE_MASK_ID + '">');
+    lines.push(
+      '<rect x="' +
+        bounds.x +
+        '" y="' +
+        bounds.y +
+        '" width="' +
+        bounds.width +
+        '" height="' +
+        bounds.height +
+        '" fill="white"/>'
+    );
+    for (var i = 0; i < mergedRegions.length; i++) {
+      var pts = mergedRegions[i].points;
+      if (!pts.length) continue;
+      var pointsAttr = "";
+      for (var p = 0; p < pts.length; p++) {
+        if (p) pointsAttr += " ";
+        pointsAttr += pts[p].x + "," + pts[p].y;
+      }
+      lines.push(
+        '<polygon points="' + pointsAttr + '" fill="black"/>'
       );
-      layer.appendChild(rect);
+    }
+    lines.push("</mask>");
+    lines.push("</defs>");
+
+    lines.push('<g clip-path="url(#inner-content-clip)">');
+    lines.push('<g id="layer-grid-mask">');
+    lines.push(
+      '<rect x="' +
+        bounds.x +
+        '" y="' +
+        bounds.y +
+        '" width="' +
+        bounds.width +
+        '" height="' +
+        bounds.height +
+        '" fill="' +
+        BG_COLOR +
+        '" mask="url(#' +
+        GRID_WHITE_MASK_ID +
+        ')"/>'
+    );
+    lines.push("</g>");
+    lines.push("</g>");
+  }
+
+  /**
+   * Fit uploaded image into canvas at resolution percent.
+   * @param {number} resolutionPct
+   * @returns {{ outW: number, outH: number }}
+   */
+  function getStippleOutputSize(resolutionPct) {
+    if (!stippleSrcW || !stippleSrcH) {
+      return { outW: CANVAS_W, outH: CANVAS_H };
+    }
+    var pct = resolutionPct / 100;
+    var fit = Math.min(CANVAS_W / stippleSrcW, CANVAS_H / stippleSrcH) * pct;
+    return {
+      outW: Math.max(1, Math.round(stippleSrcW * fit)),
+      outH: Math.max(1, Math.round(stippleSrcH * fit)),
+    };
+  }
+
+  function renderStippleDotsLayer() {
+    if (!designSvg) return;
+    var layer = designSvg.querySelector("#layer-stipple-dots");
+    var defs = designSvg.querySelector("defs");
+    if (!layer) return;
+
+    while (layer.firstChild) layer.removeChild(layer.firstChild);
+
+    if (!hasActiveMergeCutouts() || !stippleDotsCache || !stippleDotsCache.dots.length) {
+      applyMergeReveal();
+      return;
+    }
+
+    if (defs && defs.querySelector("#" + MERGE_REGIONS_CLIP_ID)) {
+      layer.setAttribute("clip-path", "url(#" + MERGE_REGIONS_CLIP_ID + ")");
+    }
+
+    var cache = stippleDotsCache;
+    var scale = Math.min(CANVAS_W / cache.outW, CANVAS_H / cache.outH);
+    var offsetX = (CANVAS_W - cache.outW * scale) / 2;
+    var offsetY = (CANVAS_H - cache.outH * scale) / 2;
+    var dots = cache.dots;
+    var i;
+    var d;
+    var circle;
+
+    for (i = 0; i < dots.length; i++) {
+      d = dots[i];
+      circle = elSvg("circle");
+      circle.setAttribute("cx", String(offsetX + d.cx * scale));
+      circle.setAttribute("cy", String(offsetY + d.cy * scale));
+      circle.setAttribute("r", String(d.r * scale));
+      circle.setAttribute("fill", d.fill);
+      circle.setAttribute("stroke", "none");
+      layer.appendChild(circle);
     }
   }
 
-  function updateBgWhiteToggleUi() {
-    var btn = document.getElementById("bg-white-toggle-btn");
-    var controls = document.getElementById("bg-gradient-controls");
-    var isWhite = !isBgGradientEnabled();
-    if (btn) {
-      btn.classList.toggle("is-active", isWhite);
-      btn.setAttribute("aria-pressed", String(isWhite));
-      btn.textContent = isWhite ? "Show gradient" : "White background";
+  /**
+   * @param {string[]} lines
+   */
+  function pushStippleDotsExportLines(lines) {
+    if (!hasActiveMergeCutouts() || !stippleDotsCache || !stippleDotsCache.dots.length) {
+      return;
     }
-    if (controls) {
-      controls.classList.toggle("is-disabled", isWhite);
+
+    var mergedRegions = getMergedRegionsForMask();
+    if (mergedRegions.length) {
+      lines.push("<defs>");
+      lines.push('<clipPath id="' + MERGE_REGIONS_CLIP_ID + '">');
+      var i;
+      var pts;
+      var p;
+      var pointsAttr;
+      for (i = 0; i < mergedRegions.length; i++) {
+        pts = mergedRegions[i].points;
+        if (!pts.length) continue;
+        pointsAttr = "";
+        for (p = 0; p < pts.length; p++) {
+          if (p) pointsAttr += " ";
+          pointsAttr += pts[p].x + "," + pts[p].y;
+        }
+        lines.push('<polygon points="' + pointsAttr + '"/>');
+      }
+      lines.push("</clipPath>");
+      lines.push("</defs>");
     }
-  }
 
-  function setBgGradientEnabled(enabled) {
-    bgGradientEnabled = !!enabled;
-    updateBgWhiteToggleUi();
-    renderBackgroundLayer();
-  }
+    var cache = stippleDotsCache;
+    var scale = Math.min(CANVAS_W / cache.outW, CANVAS_H / cache.outH);
+    var offsetX = (CANVAS_W - cache.outW * scale) / 2;
+    var offsetY = (CANVAS_H - cache.outH * scale) / 2;
+    var dots = cache.dots;
+    var i;
+    var d;
 
-  function toggleBgWhite() {
-    setBgGradientEnabled(!bgGradientEnabled);
-  }
-
-  function updateBgDirectionUi() {
-    var verticalBtn = document.getElementById("bg-direction-vertical-btn");
-    var horizontalBtn = document.getElementById("bg-direction-horizontal-btn");
-    var isVertical = getBgDirection() === "vertical";
-    if (verticalBtn) {
-      verticalBtn.classList.toggle("is-active", isVertical);
-      verticalBtn.setAttribute("aria-pressed", String(isVertical));
+    lines.push('<g clip-path="url(#inner-content-clip)">');
+    lines.push(
+      '<g id="layer-stipple-dots" clip-path="url(#' +
+        MERGE_REGIONS_CLIP_ID +
+        ')">'
+    );
+    for (i = 0; i < dots.length; i++) {
+      d = dots[i];
+      lines.push(
+        '<circle cx="' +
+          (offsetX + d.cx * scale) +
+          '" cy="' +
+          (offsetY + d.cy * scale) +
+          '" r="' +
+          d.r * scale +
+          '" fill="' +
+          d.fill +
+          '" stroke="none"/>'
+      );
     }
-    if (horizontalBtn) {
-      horizontalBtn.classList.toggle("is-active", !isVertical);
-      horizontalBtn.setAttribute("aria-pressed", String(!isVertical));
-    }
-  }
-
-  function setBgDirection(direction) {
-    bgDirection = direction === "horizontal" ? "horizontal" : "vertical";
-    updateBgDirectionUi();
-    renderBackgroundLayer();
+    lines.push("</g>");
+    lines.push("</g>");
   }
 
   function buildLayoutSignature() {
@@ -488,7 +678,7 @@
       });
     }
 
-    var target = Math.round((catalog.length * DIAMOND_FILL_PERCENT) / 100);
+    var target = Math.round((catalog.length * getDiamondFillPercent()) / 100);
     if (target < 0) target = 0;
     if (target > catalog.length) target = catalog.length;
 
@@ -577,6 +767,172 @@
     return g;
   }
 
+  function getLetterMarkerWord() {
+    var input = document.getElementById("letter-marker-word");
+    if (input && typeof input.value === "string") {
+      return input.value;
+    }
+    return letterMarkerWord;
+  }
+
+  /**
+   * Words split on spaces; index 0 = rightmost column.
+   * @returns {string[]}
+   */
+  function getLetterMarkerWords() {
+    var text = getLetterMarkerWord().trim();
+    if (!text) return [];
+    var parts = text.split(/\s+/);
+    var words = [];
+    for (var i = 0; i < parts.length; i++) {
+      if (parts[i].length) words.push(parts[i]);
+    }
+    var maxColumns =
+      typeof LETTER_MARKER_MAX_COLUMNS !== "undefined"
+        ? LETTER_MARKER_MAX_COLUMNS
+        : 12;
+    if (words.length > maxColumns) {
+      words = words.slice(0, maxColumns);
+    }
+    return words;
+  }
+
+  function getLetterMarkerLayout() {
+    return TopkapiGeometry.computeLayout(lastOctagonsN, CANVAS_W, CANVAS_H);
+  }
+
+  /**
+   * @param {boolean} [forceRepick]
+   */
+  function ensureLetterMarkerAnchor(forceRepick) {
+    var words = getLetterMarkerWords();
+    if (!words.length) {
+      cachedLetterMarkerAnchor = null;
+      return;
+    }
+
+    var layout = getLetterMarkerLayout();
+    var lengths = TopkapiGeometry.letterMarkerWordLengths(words);
+
+    if (
+      !forceRepick &&
+      cachedLetterMarkerAnchor &&
+      TopkapiGeometry.isLetterMarkerAnchorValid(
+        layout,
+        cachedLetterMarkerAnchor,
+        lengths
+      )
+    ) {
+      return;
+    }
+
+    cachedLetterMarkerAnchor = TopkapiGeometry.pickRandomLetterMarkerAnchor(
+      layout,
+      lengths
+    );
+  }
+
+  /** New random anchor on page refresh or octagon count change. */
+  function syncLetterOctagonMarkers() {
+    cachedLetterMarkerAnchor = null;
+    ensureLetterMarkerAnchor(true);
+  }
+
+  /**
+   * @returns {{ columns: { markers: { cx: number, cy: number, r: number, char: string }[] }[] } | null}
+   */
+  function buildLetterMarkerBundle() {
+    var words = getLetterMarkerWords();
+    if (!words.length || !cachedLetterMarkerAnchor) return null;
+
+    return TopkapiGeometry.buildLetterMarkerColumns(
+      getLetterMarkerLayout(),
+      cachedLetterMarkerAnchor,
+      words
+    );
+  }
+
+  /**
+   * @param {{ markers: { cx: number, cy: number, r: number, char: string }[] }[]} columns
+   * @param {SVGElement} g
+   * @param {string} strokeColor
+   */
+  function appendLetterMarkerColumn(g, column, strokeColor) {
+    var markers = column.markers;
+    if (!markers.length) return;
+
+    var top = markers[0];
+    var bottom = markers[markers.length - 1];
+    var connector = elSvg("line");
+    connector.setAttribute("x1", String(top.cx));
+    connector.setAttribute("y1", String(top.cy));
+    connector.setAttribute("x2", String(bottom.cx));
+    connector.setAttribute("y2", String(bottom.cy));
+    connector.setAttribute("stroke", strokeColor);
+    connector.setAttribute("stroke-width", String(getCircleStrokeWidth()));
+    connector.setAttribute("fill", "none");
+    g.appendChild(connector);
+
+    var i;
+    for (i = 0; i < markers.length; i++) {
+      var m = markers[i];
+      var circle = elSvg("circle");
+      circle.setAttribute("cx", String(m.cx));
+      circle.setAttribute("cy", String(m.cy));
+      circle.setAttribute("r", String(m.r));
+      circle.setAttribute("fill", strokeColor);
+      circle.setAttribute("stroke", "none");
+      g.appendChild(circle);
+    }
+
+    for (i = 0; i < markers.length; i++) {
+      var mk = markers[i];
+      var text = elSvg("text");
+      text.setAttribute("x", String(mk.cx));
+      text.setAttribute("y", String(mk.cy));
+      text.setAttribute("fill", "#ffffff");
+      text.setAttribute("font-weight", "bold");
+      text.setAttribute("font-family", "Helvetica, Arial, sans-serif");
+      text.setAttribute("text-anchor", "middle");
+      text.setAttribute("dominant-baseline", "central");
+      text.setAttribute(
+        "font-size",
+        String(2 * mk.r * LETTER_MARKER_FONT_SIZE_RATIO)
+      );
+      text.textContent = mk.char || "";
+      g.appendChild(text);
+    }
+  }
+
+  /**
+   * @param {{ columns: { markers: object[] }[] }} bundle
+   * @returns {SVGElement}
+   */
+  function letterMarkersToGroup(bundle) {
+    var g = elSvg("g");
+    var strokeColor = getPatternStrokeColor();
+    var columns = bundle.columns;
+    var c;
+    for (c = 0; c < columns.length; c++) {
+      appendLetterMarkerColumn(g, columns[c], strokeColor);
+    }
+    return g;
+  }
+
+  function renderLetterMarkersLayer() {
+    if (!designSvg) return;
+    var layer = designSvg.querySelector("#layer-letter-markers");
+    if (!layer) return;
+
+    while (layer.firstChild) layer.removeChild(layer.firstChild);
+
+    ensureLetterMarkerAnchor(false);
+    var bundle = buildLetterMarkerBundle();
+    if (bundle && bundle.columns.length) {
+      layer.appendChild(letterMarkersToGroup(bundle));
+    }
+  }
+
   function updateLayoutState() {
     lastOctagonsN = getOctagonsN();
     lastTileSize = TopkapiGeometry.tileSizeFromN(lastOctagonsN, CANVAS_W);
@@ -608,6 +964,7 @@
 
   function clearMergeState() {
     removedEdges.clear();
+    stickyMergedCutoutFaces = null;
     updateResetButton();
   }
 
@@ -654,12 +1011,8 @@
     return getGridStrokeWidth() * 2;
   }
 
+  /** Geometry only — merge/erase state must not invalidate vertical lines. */
   function buildVerticalGridLayoutSignature() {
-    var removedKeys = [];
-    removedEdges.forEach(function (key) {
-      removedKeys.push(key);
-    });
-    removedKeys.sort();
     return (
       lastOctagonsN +
       "|" +
@@ -667,9 +1020,7 @@
       "|" +
       CANVAS_W +
       "|" +
-      CANVAS_H +
-      "|" +
-      removedKeys.join(",")
+      CANVAS_H
     );
   }
 
@@ -745,8 +1096,7 @@
     if (!force && sig === lastVerticalGridLayoutSignature) return;
     lastVerticalGridLayoutSignature = sig;
 
-    var visible = getVisibleSegments(cachedAllSegments);
-    var xs = TopkapiGeometry.collectUniqueGridXCoords(visible);
+    var xs = TopkapiGeometry.collectUniqueGridXCoords(cachedAllSegments);
     var bounds = getGridContentBounds();
     var yTop = bounds.y;
     var yBottom = bounds.y + bounds.height;
@@ -828,6 +1178,7 @@
     syncVerticalGridLines(false);
     renderVerticalGridLayer();
     renderPatternLayer();
+    renderGridMaskLayer("renderPatternAndVerticalLayers");
   }
 
   function applyGridBoundaryAttrs(rect, bounds) {
@@ -878,8 +1229,311 @@
     );
   }
 
+  /**
+   * @returns {{
+   *   left: number,
+   *   right: number,
+   *   centerX: number,
+   *   verticalTop: number,
+   *   verticalBottom: number,
+   *   horizontalTop: number,
+   *   horizontalBottom: number,
+   *   centerVerticalBottom: number
+   * }}
+   */
+  function getGridFrameInsetOverlayLayout() {
+    var bounds = getGridContentBounds();
+    var left = bounds.x + GRID_FRAME_INSET_OVERLAY_HORIZONTAL_PX;
+    var right = bounds.x + bounds.width - GRID_FRAME_INSET_OVERLAY_HORIZONTAL_PX;
+    var verticalTop = bounds.y + GRID_FRAME_INSET_OVERLAY_VERTICAL_PX;
+    var verticalBottom =
+      bounds.y + bounds.height - GRID_FRAME_INSET_OVERLAY_VERTICAL_PX;
+    var centerX = (left + right) / 2;
+    var verticalSpan = verticalBottom - verticalTop;
+    return {
+      left: left,
+      right: right,
+      centerX: centerX,
+      verticalTop: verticalTop,
+      verticalBottom: verticalBottom,
+      horizontalTop:
+        verticalTop + GRID_FRAME_INSET_OVERLAY_TOP_SHIFT_DOWN_PX,
+      horizontalBottom:
+        verticalBottom - GRID_FRAME_INSET_OVERLAY_BOTTOM_SHIFT_UP_PX,
+      centerVerticalBottom: verticalTop + verticalSpan / 3,
+    };
+  }
+
+  /**
+   * Diagonals from top cap ellipses (extreme verticals) to center vertical × bottom horizontal.
+   * @returns {{ x1: number, y1: number, x2: number, y2: number }[]}
+   */
+  function getGridFrameInsetOverlayDiagonalSegments() {
+    var L = getGridFrameInsetOverlayLayout();
+    var ellipses = getGridFrameInsetOverlayCapEllipses();
+    var midY = (L.verticalTop + L.verticalBottom) / 2;
+    var targetX = L.centerX;
+    var targetY = L.horizontalBottom;
+    var segments = [];
+    var i;
+    for (i = 0; i < ellipses.length; i++) {
+      var ell = ellipses[i];
+      if (ell.cy >= midY) continue;
+      segments.push({
+        x1: ell.cx,
+        y1: ell.cy,
+        x2: targetX,
+        y2: targetY,
+      });
+    }
+    return segments;
+  }
+
+  /**
+   * Inset frame overlay: side verticals, center vertical (⅓ height), horizontals, diagonals.
+   * @returns {{ x1: number, y1: number, x2: number, y2: number }[]}
+   */
+  function getGridFrameInsetOverlaySegments() {
+    var L = getGridFrameInsetOverlayLayout();
+    var segments = [
+      { x1: L.left, y1: L.verticalTop, x2: L.left, y2: L.verticalBottom },
+      { x1: L.right, y1: L.verticalTop, x2: L.right, y2: L.verticalBottom },
+      {
+        x1: L.centerX,
+        y1: L.verticalTop,
+        x2: L.centerX,
+        y2: L.centerVerticalBottom,
+      },
+      { x1: L.left, y1: L.horizontalTop, x2: L.right, y2: L.horizontalTop },
+      {
+        x1: L.left,
+        y1: L.horizontalBottom,
+        x2: L.right,
+        y2: L.horizontalBottom,
+      },
+    ];
+    var diagonals = getGridFrameInsetOverlayDiagonalSegments();
+    for (var d = 0; d < diagonals.length; d++) {
+      segments.push(diagonals[d]);
+    }
+    return segments;
+  }
+
+  /**
+   * Cap rectangles on vertical tops (all three) and bottoms (left/right only).
+   * @returns {{ x: number, y: number, width: number, height: number }[]}
+   */
+  function getGridFrameInsetOverlayCapRects() {
+    var L = getGridFrameInsetOverlayLayout();
+    var w = GRID_FRAME_INSET_OVERLAY_CAP_RECT_WIDTH;
+    var h = GRID_FRAME_INSET_OVERLAY_CAP_RECT_LENGTH;
+    var halfW = w / 2;
+    var rects = [];
+    var topXs = [L.left, L.centerX, L.right];
+    var i;
+    for (i = 0; i < topXs.length; i++) {
+      rects.push({
+        x: topXs[i] - halfW,
+        y: L.verticalTop - h,
+        width: w,
+        height: h,
+      });
+    }
+    rects.push({
+      x: L.left - halfW,
+      y: L.verticalBottom,
+      width: w,
+      height: h,
+    });
+    rects.push({
+      x: L.right - halfW,
+      y: L.verticalBottom,
+      width: w,
+      height: h,
+    });
+    return rects;
+  }
+
+  /**
+   * Vertical ellipses on left/right cap rects; gap measured from inner rect edge
+   * (canvas-facing) to nearest ellipse edge, then ellipse center offset by ry.
+   * @returns {{ cx: number, cy: number, rx: number, ry: number }[]}
+   */
+  function getGridFrameInsetOverlayCapEllipses() {
+    var L = getGridFrameInsetOverlayLayout();
+    var rects = getGridFrameInsetOverlayCapRects();
+    var gap = GRID_FRAME_INSET_OVERLAY_CAP_ELLIPSE_INSET_PX;
+    var rx = GRID_FRAME_INSET_OVERLAY_CAP_ELLIPSE_RX;
+    var ry = GRID_FRAME_INSET_OVERLAY_CAP_ELLIPSE_RY;
+    var ellipses = [];
+    var i;
+    for (i = 0; i < rects.length; i++) {
+      var rect = rects[i];
+      var cx = rect.x + rect.width / 2;
+      if (Math.abs(cx - L.centerX) < 1e-6) continue;
+      var isTopCap = rect.y + rect.height <= L.verticalTop + 1e-6;
+      var innerEdgeY = isTopCap ? rect.y + rect.height : rect.y;
+      var cy = isTopCap ? innerEdgeY + gap + ry : innerEdgeY - gap - ry;
+      ellipses.push({ cx: cx, cy: cy, rx: rx, ry: ry });
+    }
+    return ellipses;
+  }
+
+  function frameInsetOverlayToGroup() {
+    var g = elSvg("g");
+    g.setAttribute("fill", "none");
+    g.setAttribute("stroke", getPatternStrokeColor());
+    g.setAttribute("stroke-width", String(GRID_FRAME_INSET_OVERLAY_STROKE_WIDTH));
+    g.setAttribute("stroke-linecap", "square");
+    g.setAttribute("stroke-linejoin", "miter");
+
+    var segments = getGridFrameInsetOverlaySegments();
+    for (var i = 0; i < segments.length; i++) {
+      var s = segments[i];
+      var line = elSvg("line");
+      line.setAttribute("x1", String(s.x1));
+      line.setAttribute("y1", String(s.y1));
+      line.setAttribute("x2", String(s.x2));
+      line.setAttribute("y2", String(s.y2));
+      g.appendChild(line);
+    }
+
+    var capFill = getPatternStrokeColor();
+    var rects = getGridFrameInsetOverlayCapRects();
+    for (var r = 0; r < rects.length; r++) {
+      var rect = rects[r];
+      var el = elSvg("rect");
+      el.setAttribute("x", String(rect.x));
+      el.setAttribute("y", String(rect.y));
+      el.setAttribute("width", String(rect.width));
+      el.setAttribute("height", String(rect.height));
+      el.setAttribute("fill", capFill);
+      g.appendChild(el);
+    }
+
+    var ellipses = getGridFrameInsetOverlayCapEllipses();
+    for (var e = 0; e < ellipses.length; e++) {
+      var ell = ellipses[e];
+      var ellipseEl = elSvg("ellipse");
+      ellipseEl.setAttribute("cx", String(ell.cx));
+      ellipseEl.setAttribute("cy", String(ell.cy));
+      ellipseEl.setAttribute("rx", String(ell.rx));
+      ellipseEl.setAttribute("ry", String(ell.ry));
+      ellipseEl.setAttribute("fill", capFill);
+      g.appendChild(ellipseEl);
+    }
+    return g;
+  }
+
+  function applyFrameInsetOverlayVisibility() {
+    if (!designSvg) return;
+    var layer = designSvg.querySelector("#layer-frame-inset-overlay");
+    if (!layer) return;
+    layer.style.display = frameInsetOverlayVisible ? "" : "none";
+  }
+
+  function syncFrameOverlayToggleButton() {
+    var btn = document.getElementById("frame-overlay-toggle-btn");
+    if (!btn) return;
+    var visible = frameInsetOverlayVisible;
+    btn.classList.toggle("is-active", visible);
+    btn.setAttribute("aria-pressed", String(visible));
+    btn.textContent = visible ? "Hide frame overlay" : "Show frame overlay";
+  }
+
+  function toggleFrameInsetOverlay() {
+    frameInsetOverlayVisible = !frameInsetOverlayVisible;
+    applyFrameInsetOverlayVisibility();
+    syncFrameOverlayToggleButton();
+  }
+
+  function createFrameInsetOverlayLayer() {
+    var layer = elSvg("g");
+    layer.setAttribute("id", "layer-frame-inset-overlay");
+    layer.setAttribute("transform", getInnerContentTransformAttr());
+    layer.appendChild(frameInsetOverlayToGroup());
+    applyFrameInsetOverlayVisibility();
+    return layer;
+  }
+
+  function updateFrameInsetOverlayLayer() {
+    if (!designSvg) return;
+    var layer = designSvg.querySelector("#layer-frame-inset-overlay");
+    if (!layer) return;
+    layer.setAttribute("transform", getInnerContentTransformAttr());
+    while (layer.firstChild) layer.removeChild(layer.firstChild);
+    layer.appendChild(frameInsetOverlayToGroup());
+    applyFrameInsetOverlayVisibility();
+  }
+
+  function pushFrameInsetOverlayExportLines(lines) {
+    var segments = getGridFrameInsetOverlaySegments();
+    var rects = getGridFrameInsetOverlayCapRects();
+    var ellipses = getGridFrameInsetOverlayCapEllipses();
+    var stroke = getPatternStrokeColor();
+    lines.push(
+      '<g id="layer-frame-inset-overlay" transform="' +
+        getInnerContentTransformAttr() +
+        '">'
+    );
+    lines.push(
+      '<g fill="none" stroke="' +
+        stroke +
+        '" stroke-width="' +
+        GRID_FRAME_INSET_OVERLAY_STROKE_WIDTH +
+        '" stroke-linecap="square" stroke-linejoin="miter">'
+    );
+    for (var i = 0; i < segments.length; i++) {
+      var s = segments[i];
+      lines.push(
+        '<line x1="' +
+          s.x1 +
+          '" y1="' +
+          s.y1 +
+          '" x2="' +
+          s.x2 +
+          '" y2="' +
+          s.y2 +
+          '"/>'
+      );
+    }
+    for (var r = 0; r < rects.length; r++) {
+      var rect = rects[r];
+      lines.push(
+        '<rect x="' +
+          rect.x +
+          '" y="' +
+          rect.y +
+          '" width="' +
+          rect.width +
+          '" height="' +
+          rect.height +
+          '" fill="' +
+          stroke +
+          '"/>'
+      );
+    }
+    for (var e = 0; e < ellipses.length; e++) {
+      var ell = ellipses[e];
+      lines.push(
+        '<ellipse cx="' +
+          ell.cx +
+          '" cy="' +
+          ell.cy +
+          '" rx="' +
+          ell.rx +
+          '" ry="' +
+          ell.ry +
+          '" fill="' +
+          stroke +
+          '"/>'
+      );
+    }
+    lines.push("</g>");
+    lines.push("</g>");
+  }
+
   var BORDER_DIVISION_STROKE_WIDTH = 1;
-  var BORDER_LEFT_RIGHT_SEGMENTS = 12;
   var BORDER_TOP_BOTTOM_SEGMENTS = 8;
 
   /**
@@ -916,24 +1570,369 @@
   }
 
   /**
-   * Y of horizontal dividers in left/right strips (between corners, not at corners).
+   * Top/bottom Y for left/right horizontal divisions (inset inside grid border).
+   * @returns {{ top: number, bottom: number }}
+   */
+  function getLeftRightBorderDivisionYBounds() {
+    var frameY = getBorderDivisionFrameY();
+    var inset = BORDER_SIDE_DIVISION_INSET_PX;
+    return {
+      top: frameY.top + inset,
+      bottom: frameY.bottom - inset,
+    };
+  }
+
+  /**
+   * Interior horizontal divider Y in left/right strips, evenly spaced inside inset bounds.
+   * @returns {number[]}
+   */
+  function getLeftRightBorderInteriorYPositions() {
+    var divY = getLeftRightBorderDivisionYBounds();
+    var segments = getBorderLeftRightSegments();
+    var span = divY.bottom - divY.top;
+    var ys = [];
+    var i;
+    for (i = 1; i < segments; i++) {
+      ys.push(divY.top + (span * i) / segments);
+    }
+    return ys;
+  }
+
+  /**
+   * Cell boundaries in left/right strips: inset top/bottom, then interior dividers.
    * Diagonal cells lie only between consecutive entries.
    * @returns {number[]}
    */
   function getLeftRightBorderCellYBounds() {
-    var b = getCanvasBorderPx();
-    var bounds = [];
+    var divY = getLeftRightBorderDivisionYBounds();
+    var interior = getLeftRightBorderInteriorYPositions();
+    var bounds = [divY.top];
     var i;
-    var y;
-    for (i = 1; i < BORDER_LEFT_RIGHT_SEGMENTS; i++) {
-      y = (CANVAS_H * i) / BORDER_LEFT_RIGHT_SEGMENTS;
-      if (y > b && y < CANVAS_H - b) bounds.push(y);
-    }
+    for (i = 0; i < interior.length; i++) bounds.push(interior[i]);
+    bounds.push(divY.bottom);
     return bounds;
   }
 
   /**
-   * Corner-to-corner X in each left/right strip cell between horizontal dividers.
+   * @param {number} cellIndex 0-based row in left/right strip (0 = top)
+   * @returns {boolean}
+   */
+  function isBorderSideBrownCell(cellIndex) {
+    return cellIndex % 2 === 0;
+  }
+
+  /**
+   * 0-based index among blue-pattern rows (cellIndex must be odd).
+   * @param {number} cellIndex
+   * @returns {number}
+   */
+  function getBorderSideBlueCellSequenceIndex(cellIndex) {
+    return (cellIndex - 1) / 2;
+  }
+
+  /**
+   * Every second blue-pattern row → solid #d9d9d9 (2nd, 4th, 6th… blue row).
+   * @param {number} cellIndex
+   * @returns {boolean}
+   */
+  function isBorderSideGreySolidCell(cellIndex) {
+    if (isBorderSideBrownCell(cellIndex)) return false;
+    return getBorderSideBlueCellSequenceIndex(cellIndex) % 2 === 1;
+  }
+
+  /**
+   * @param {SVGElement} g
+   * @param {number} x
+   * @param {number} yTop
+   * @param {number} w
+   * @param {number} h
+   * @param {string} fill
+   */
+  function appendBorderSideSolidCellRect(g, x, yTop, w, h, fill) {
+    var rect = elSvg("rect");
+    rect.setAttribute("x", String(x));
+    rect.setAttribute("y", String(yTop));
+    rect.setAttribute("width", String(w));
+    rect.setAttribute("height", String(h));
+    rect.setAttribute("fill", fill);
+    g.appendChild(rect);
+  }
+
+  /**
+   * @param {SVGElement} g
+   * @param {{ x: number, y: number, width: number, height: number }} cell
+   * @param {string} fill
+   */
+  function appendBrownBarGridCellFillRect(g, cell, fill) {
+    var rect = elSvg("rect");
+    rect.setAttribute("x", String(cell.x));
+    rect.setAttribute("y", String(cell.y));
+    rect.setAttribute("width", String(cell.width));
+    rect.setAttribute("height", String(cell.height));
+    rect.setAttribute("fill", fill);
+    rect.setAttribute("stroke", "none");
+    rect.setAttribute("shape-rendering", "crispEdges");
+    g.appendChild(rect);
+  }
+
+  /**
+   * @param {SVGElement} g
+   * @param {number[][]} points
+   * @param {string} fill
+   */
+  function appendSvgPolygonFill(g, points, fill) {
+    var poly = elSvg("polygon");
+    var i;
+    var parts = [];
+    for (i = 0; i < points.length; i++) {
+      parts.push(String(points[i][0]) + "," + String(points[i][1]));
+    }
+    poly.setAttribute("points", parts.join(" "));
+    poly.setAttribute("fill", fill);
+    g.appendChild(poly);
+  }
+
+  /**
+   * X-shaped four-triangle fill inside one margin cell.
+   * @param {SVGElement} g
+   * @param {number} cellX
+   * @param {number} cellW
+   * @param {number} yTop
+   * @param {number} yBottom
+   * @param {string} topFill
+   * @param {string} leftFill
+   * @param {string} rightFill
+   * @param {string} bottomFill
+   */
+  function appendBorderSideCellXPatternFills(
+    g,
+    cellX,
+    cellW,
+    yTop,
+    yBottom,
+    topFill,
+    leftFill,
+    rightFill,
+    bottomFill
+  ) {
+    var cx = cellX + cellW / 2;
+    var cy = (yTop + yBottom) / 2;
+    var xL = cellX;
+    var xR = cellX + cellW;
+
+    appendSvgPolygonFill(
+      g,
+      [
+        [xL, yTop],
+        [xR, yTop],
+        [cx, cy],
+      ],
+      topFill
+    );
+    appendSvgPolygonFill(
+      g,
+      [
+        [xL, yTop],
+        [xL, yBottom],
+        [cx, cy],
+      ],
+      leftFill
+    );
+    appendSvgPolygonFill(
+      g,
+      [
+        [xR, yTop],
+        [xR, yBottom],
+        [cx, cy],
+      ],
+      rightFill
+    );
+    appendSvgPolygonFill(
+      g,
+      [
+        [xL, yBottom],
+        [xR, yBottom],
+        [cx, cy],
+      ],
+      bottomFill
+    );
+  }
+
+  /**
+   * @param {string[]} lines
+   * @param {number} cellX
+   * @param {number} cellW
+   * @param {number} yTop
+   * @param {number} yBottom
+   * @param {string} topFill
+   * @param {string} leftFill
+   * @param {string} rightFill
+   * @param {string} bottomFill
+   */
+  function pushBorderSideCellXPatternExport(
+    lines,
+    cellX,
+    cellW,
+    yTop,
+    yBottom,
+    topFill,
+    leftFill,
+    rightFill,
+    bottomFill
+  ) {
+    var cx = cellX + cellW / 2;
+    var cy = (yTop + yBottom) / 2;
+    var xL = cellX;
+    var xR = cellX + cellW;
+
+    function pushPoly(pts, fill) {
+      var i;
+      var attr = [];
+      for (i = 0; i < pts.length; i++) {
+        attr.push(String(pts[i][0]) + "," + String(pts[i][1]));
+      }
+      lines.push(
+        '<polygon points="' + attr.join(" ") + '" fill="' + fill + '"/>'
+      );
+    }
+
+    pushPoly(
+      [
+        [xL, yTop],
+        [xR, yTop],
+        [cx, cy],
+      ],
+      topFill
+    );
+    pushPoly(
+      [
+        [xL, yTop],
+        [xL, yBottom],
+        [cx, cy],
+      ],
+      leftFill
+    );
+    pushPoly(
+      [
+        [xR, yTop],
+        [xR, yBottom],
+        [cx, cy],
+      ],
+      rightFill
+    );
+    pushPoly(
+      [
+        [xL, yBottom],
+        [xR, yBottom],
+        [cx, cy],
+      ],
+      bottomFill
+    );
+  }
+
+  function appendBorderSideBrownCellXPatternFills(g, cellX, cellW, yTop, yBottom) {
+    appendBorderSideCellXPatternFills(
+      g,
+      cellX,
+      cellW,
+      yTop,
+      yBottom,
+      BORDER_SIDE_X_FILL_TOP,
+      BORDER_SIDE_X_FILL_LEFT,
+      BORDER_SIDE_X_FILL_RIGHT,
+      BORDER_SIDE_X_FILL_BOTTOM
+    );
+  }
+
+  function appendBorderSideBlueCellXPatternFills(g, cellX, cellW, yTop, yBottom) {
+    appendBorderSideCellXPatternFills(
+      g,
+      cellX,
+      cellW,
+      yTop,
+      yBottom,
+      BORDER_SIDE_BLUE_X_FILL_TOP,
+      BORDER_SIDE_BLUE_X_FILL_LEFT,
+      BORDER_SIDE_BLUE_X_FILL_RIGHT,
+      BORDER_SIDE_BLUE_X_FILL_BOTTOM
+    );
+  }
+
+  function pushBorderSideBrownCellXPatternExport(lines, cellX, cellW, yTop, yBottom) {
+    pushBorderSideCellXPatternExport(
+      lines,
+      cellX,
+      cellW,
+      yTop,
+      yBottom,
+      BORDER_SIDE_X_FILL_TOP,
+      BORDER_SIDE_X_FILL_LEFT,
+      BORDER_SIDE_X_FILL_RIGHT,
+      BORDER_SIDE_X_FILL_BOTTOM
+    );
+  }
+
+  function pushBorderSideBlueCellXPatternExport(lines, cellX, cellW, yTop, yBottom) {
+    pushBorderSideCellXPatternExport(
+      lines,
+      cellX,
+      cellW,
+      yTop,
+      yBottom,
+      BORDER_SIDE_BLUE_X_FILL_TOP,
+      BORDER_SIDE_BLUE_X_FILL_LEFT,
+      BORDER_SIDE_BLUE_X_FILL_RIGHT,
+      BORDER_SIDE_BLUE_X_FILL_BOTTOM
+    );
+  }
+
+  /**
+   * Alternating fills for left/right margin cells (brown / blue X / grey solid).
+   * @param {SVGElement} g
+   */
+  function appendLeftRightBorderCellFillsToGroup(g) {
+    var b = getCanvasBorderPx();
+    var yBounds = getLeftRightBorderCellYBounds();
+    var rightX = CANVAS_W - b;
+    var j;
+    var yTop;
+    var yBottom;
+    var h;
+
+    for (j = 0; j < yBounds.length - 1; j++) {
+      yTop = yBounds[j];
+      yBottom = yBounds[j + 1];
+      h = yBottom - yTop;
+
+      if (isBorderSideBrownCell(j)) {
+        appendBorderSideBrownCellXPatternFills(g, 0, b, yTop, yBottom);
+        appendBorderSideBrownCellXPatternFills(g, rightX, b, yTop, yBottom);
+      } else if (isBorderSideGreySolidCell(j)) {
+        appendBorderSideSolidCellRect(
+          g,
+          0,
+          yTop,
+          b,
+          h,
+          BORDER_SIDE_CELL_COLOR_GREY
+        );
+        appendBorderSideSolidCellRect(
+          g,
+          rightX,
+          yTop,
+          b,
+          h,
+          BORDER_SIDE_CELL_COLOR_GREY
+        );
+      } else {
+        appendBorderSideBlueCellXPatternFills(g, 0, b, yTop, yBottom);
+        appendBorderSideBlueCellXPatternFills(g, rightX, b, yTop, yBottom);
+      }
+    }
+  }
+
+  /**
+   * Corner-to-corner X strokes in brown left/right strip cells only.
    * @param {SVGElement} g
    */
   function appendLeftRightBorderCellDiagonalsToGroup(g) {
@@ -945,6 +1944,7 @@
     var rightX = CANVAS_W - b;
 
     for (j = 0; j < yBounds.length - 1; j++) {
+      if (!isBorderSideBrownCell(j)) continue;
       yTop = yBounds[j];
       yBottom = yBounds[j + 1];
       appendBorderDivisionLine(g, 0, yTop, b, yBottom);
@@ -952,6 +1952,19 @@
       appendBorderDivisionLine(g, rightX, yTop, CANVAS_W, yBottom);
       appendBorderDivisionLine(g, CANVAS_W, yTop, rightX, yBottom);
     }
+  }
+
+  /**
+   * Top/bottom cell edges in left/right strips, aligned with grid separation frame.
+   * @param {SVGElement} g
+   */
+  function appendLeftRightBorderFrameEdgeLines(g) {
+    var b = getCanvasBorderPx();
+    var divY = getLeftRightBorderDivisionYBounds();
+    appendBorderDivisionLine(g, 0, divY.top, b, divY.top);
+    appendBorderDivisionLine(g, 0, divY.bottom, b, divY.bottom);
+    appendBorderDivisionLine(g, CANVAS_W - b, divY.top, CANVAS_W, divY.top);
+    appendBorderDivisionLine(g, CANVAS_W - b, divY.bottom, CANVAS_W, divY.bottom);
   }
 
   /**
@@ -964,9 +1977,11 @@
     var y;
     var x;
 
-    for (i = 1; i < BORDER_LEFT_RIGHT_SEGMENTS; i++) {
-      y = (CANVAS_H * i) / BORDER_LEFT_RIGHT_SEGMENTS;
-      if (y <= b || y >= CANVAS_H - b) continue;
+    appendLeftRightBorderFrameEdgeLines(g);
+
+    var sideInteriorY = getLeftRightBorderInteriorYPositions();
+    for (i = 0; i < sideInteriorY.length; i++) {
+      y = sideInteriorY[i];
       appendBorderDivisionLine(g, 0, y, b, y);
       appendBorderDivisionLine(g, CANVAS_W - b, y, CANVAS_W, y);
     }
@@ -980,10 +1995,11 @@
   }
 
   /**
-   * Margin division ticks + X diagonals (pattern color) on #layer-border-divisions.
+   * Side-cell fills, then margin division ticks + X diagonals on #layer-border-divisions.
    * @param {SVGElement} g
    */
   function appendBorderDivisionLayersToGroup(g) {
+    appendLeftRightBorderCellFillsToGroup(g);
     g.setAttribute("fill", "none");
     g.setAttribute("stroke", getPatternStrokeColor());
     g.setAttribute("stroke-width", String(BORDER_DIVISION_STROKE_WIDTH));
@@ -996,6 +2012,1057 @@
     g.setAttribute("id", "layer-border-divisions");
     appendBorderDivisionLayersToGroup(g);
     return g;
+  }
+
+  /**
+   * Full-width brown bar flush to the outermost horizontal division lines
+   * in the left/right margin strips (divY.top / divY.bottom).
+   * @param {"top"|"bottom"} edge
+   * @returns {{ x: number, y: number, width: number, height: number }}
+   */
+  function getCanvasEdgeBrownBarLayout(edge) {
+    var divY = getLeftRightBorderDivisionYBounds();
+    var height =
+      CANVAS_EDGE_BROWN_BAR_HEIGHT_PX + CANVAS_EDGE_BROWN_BAR_OUTWARD_EXTEND_PX;
+    var y =
+      edge === "top"
+        ? divY.top - height
+        : divY.bottom;
+    return {
+      x: 0,
+      y: y,
+      width: CANVAS_W,
+      height: height,
+    };
+  }
+
+  function applyCanvasEdgeBrownBarAttrs(rect, edge) {
+    var layout = getCanvasEdgeBrownBarLayout(edge);
+    rect.setAttribute("x", String(layout.x));
+    rect.setAttribute("y", String(layout.y));
+    rect.setAttribute("width", String(layout.width));
+    rect.setAttribute("height", String(layout.height));
+    rect.setAttribute("fill", CANVAS_EDGE_BROWN_BAR_COLOR);
+    rect.setAttribute("stroke", "none");
+  }
+
+  function createCanvasEdgeBrownBarRect(edge) {
+    var rect = elSvg("rect");
+    rect.setAttribute("id", edge === "top" ? "top-brown-bar" : "bottom-brown-bar");
+    applyCanvasEdgeBrownBarAttrs(rect, edge);
+    return rect;
+  }
+
+  /**
+   * Y offsets from the inner edge (grid side), 0 → height toward canvas edge.
+   * Canonical geometry is defined on the bottom bar; top bar mirrors these values.
+   * @param {number} barHeight
+   * @returns {number[]}
+   */
+  function getCanvasEdgeBrownBarInnerRelativeYOffsets(barHeight) {
+    var segments =
+      typeof CANVAS_EDGE_BROWN_BAR_HORIZONTAL_SEGMENTS !== "undefined"
+        ? CANVAS_EDGE_BROWN_BAR_HORIZONTAL_SEGMENTS
+        : 3;
+    var offsets = [];
+    var i;
+    for (i = 1; i < segments; i++) {
+      offsets.push((barHeight * i) / segments);
+    }
+    return offsets;
+  }
+
+  /**
+   * @param {number} innerRelY distance from inner edge toward canvas outer edge
+   * @param {{ x: number, y: number, width: number, height: number }} bottomLayout
+   * @returns {number}
+   */
+  function getBottomBrownBarCanvasY(innerRelY, bottomLayout) {
+    return bottomLayout.y + innerRelY;
+  }
+
+  /**
+   * Vertical mirror of bottom-bar inner-relative Y onto the top bar.
+   * @param {number} innerRelY
+   * @param {{ x: number, y: number, width: number, height: number }} topLayout
+   * @returns {number}
+   */
+  function getTopBrownBarMirroredCanvasY(innerRelY, topLayout) {
+    return topLayout.y + topLayout.height - innerRelY;
+  }
+
+  /**
+   * Run a callback for bottom + vertically mirrored top (use for new brown-bar decorations).
+   * @param {number} innerRelY 0 at grid-facing edge, grows toward canvas outer edge
+   * @param {(
+   *   edge: "top" | "bottom",
+   *   layout: { x: number, y: number, width: number, height: number },
+   *   canvasY: number
+   * ) => void} fn
+   */
+  function withMirroredBrownBarCanvasY(innerRelY, fn) {
+    var bottomLayout = getCanvasEdgeBrownBarLayout("bottom");
+    var topLayout = getCanvasEdgeBrownBarLayout("top");
+    fn(
+      "bottom",
+      bottomLayout,
+      getBottomBrownBarCanvasY(innerRelY, bottomLayout)
+    );
+    fn("top", topLayout, getTopBrownBarMirroredCanvasY(innerRelY, topLayout));
+  }
+
+  /**
+   * Outermost third on bottom bar (toward canvas edge); mirrored to innermost third on top bar.
+   * @param {number} barHeight
+   * @returns {{ start: number, end: number, height: number }}
+   */
+  function getBrownBarOuterThirdInnerRelBounds(barHeight) {
+    var third = barHeight / 3;
+    return { start: third * 2, end: barHeight, height: third };
+  }
+
+  /**
+   * Innermost segment (grid-facing band) inside each top/bottom brown bar.
+   * @param {number} barHeight
+   * @returns {{ start: number, end: number, height: number }}
+   */
+  function getBrownBarFirstSegmentInnerRelBounds(barHeight) {
+    var segments =
+      typeof CANVAS_EDGE_BROWN_BAR_HORIZONTAL_SEGMENTS !== "undefined"
+        ? CANVAS_EDGE_BROWN_BAR_HORIZONTAL_SEGMENTS
+        : 3;
+    var segmentH = barHeight / segments;
+    return { start: 0, end: segmentH, height: segmentH };
+  }
+
+  /**
+   * @param {{ x: number, y: number, width: number, height: number }} layout
+   * @returns {{ x: number, centerInnerRelY: number, fontSize: number, opticalDy: number }}
+   */
+  function getBrownBarBannerTextMetrics(layout) {
+    var segment = getBrownBarFirstSegmentInnerRelBounds(layout.height);
+    var ratio =
+      typeof BROWN_BAR_BANNER_FONT_HEIGHT_RATIO !== "undefined"
+        ? BROWN_BAR_BANNER_FONT_HEIGHT_RATIO
+        : 0.85;
+    var fontSize = segment.height * ratio;
+    var dyEm =
+      typeof BROWN_BAR_BANNER_OPTICAL_CENTER_DY_EM !== "undefined"
+        ? BROWN_BAR_BANNER_OPTICAL_CENTER_DY_EM
+        : 0.12;
+    return {
+      x: layout.x + layout.width / 2,
+      centerInnerRelY: segment.start + segment.height / 2,
+      fontSize: fontSize,
+      opticalDy: fontSize * dyEm,
+    };
+  }
+
+  function getBrownBarBannerDisplayText() {
+    return typeof BROWN_BAR_BANNER_TEXT !== "undefined"
+      ? BROWN_BAR_BANNER_TEXT
+      : "FREE.IRANIAN.WOMEN";
+  }
+
+  function getBrownBarBannerStrikeWord() {
+    return typeof BROWN_BAR_BANNER_STRIKE_WORD !== "undefined"
+      ? BROWN_BAR_BANNER_STRIKE_WORD
+      : "IRANIAN";
+  }
+
+  function getBrownBarBannerStrikePrefix() {
+    var full = getBrownBarBannerDisplayText();
+    var word = getBrownBarBannerStrikeWord();
+    var i = full.indexOf(word);
+    return i >= 0 ? full.slice(0, i) : "";
+  }
+
+  function getBrownBarBannerFontFamily() {
+    return typeof BROWN_BAR_BANNER_FONT_FAMILY !== "undefined"
+      ? BROWN_BAR_BANNER_FONT_FAMILY
+      : "DIN Condensed";
+  }
+
+  function getBrownBarBannerFill() {
+    return typeof BROWN_BAR_BANNER_FILL !== "undefined"
+      ? BROWN_BAR_BANNER_FILL
+      : "#ffffff";
+  }
+
+  function getBrownBarBannerLetterSpacing() {
+    return typeof BROWN_BAR_BANNER_LETTER_SPACING !== "undefined"
+      ? BROWN_BAR_BANNER_LETTER_SPACING
+      : -1;
+  }
+
+  function applyBrownBarBannerTextAttrs(text, metrics, anchor) {
+    text.setAttribute("fill", getBrownBarBannerFill());
+    text.setAttribute("font-family", getBrownBarBannerFontFamily());
+    text.setAttribute("font-weight", "700");
+    text.setAttribute("font-size", String(metrics.fontSize));
+    text.setAttribute("letter-spacing", String(getBrownBarBannerLetterSpacing()));
+    text.setAttribute("text-anchor", anchor || "middle");
+    text.setAttribute("dominant-baseline", "middle");
+    text.setAttribute("alignment-baseline", "middle");
+    text.setAttribute("dy", String(metrics.opticalDy));
+  }
+
+  function getBrownBarBannerMeasureGroup() {
+    if (!designSvg) return null;
+    var g = designSvg.getElementById("brown-bar-banner-measure");
+    if (!g) {
+      g = elSvg("g");
+      g.setAttribute("id", "brown-bar-banner-measure");
+      g.setAttribute("opacity", "0");
+      g.setAttribute("pointer-events", "none");
+      g.setAttribute("aria-hidden", "true");
+      designSvg.appendChild(g);
+    }
+    while (g.firstChild) g.removeChild(g.firstChild);
+    return g;
+  }
+
+  function createBrownBarBannerMeasureText(metrics, canvasY, x, anchor, content) {
+    var text = elSvg("text");
+    applyBrownBarBannerTextAttrs(text, metrics, anchor);
+    text.setAttribute("x", String(x));
+    text.setAttribute("y", String(canvasY));
+    text.textContent = content;
+    return text;
+  }
+
+  /**
+   * @param {{ fontSize: number, opticalDy: number, x: number }} metrics
+   * @param {number} canvasY
+   * @returns {{ x1: number, y1: number, x2: number, y2: number, strokeWidth: number }}
+   */
+  function getBrownBarBannerStrikeLineGeometry(metrics, canvasY) {
+    var full = getBrownBarBannerDisplayText();
+    var prefix = getBrownBarBannerStrikePrefix();
+    var segment = getBrownBarBannerStrikeWord();
+    var insetRatio =
+      typeof BROWN_BAR_BANNER_STRIKE_INSET_RATIO !== "undefined"
+        ? BROWN_BAR_BANNER_STRIKE_INSET_RATIO
+        : 0.08;
+    var strokeRatio =
+      typeof BROWN_BAR_BANNER_STRIKE_STROKE_WIDTH_RATIO !== "undefined"
+        ? BROWN_BAR_BANNER_STRIKE_STROKE_WIDTH_RATIO
+        : 0.11;
+    var measureG;
+    var fullText;
+    var prefixText;
+    var segmentText;
+    var fullBb;
+    var prefixBb;
+    var segmentBb;
+    var textLeft;
+    var inset;
+
+    measureG = getBrownBarBannerMeasureGroup();
+    if (measureG) {
+      var liveBannerText =
+        designSvg &&
+        designSvg.querySelector("#edge-brown-bar-banner-text text");
+      var liveBb =
+        liveBannerText && liveBannerText.textContent === full
+          ? liveBannerText.getBBox()
+          : null;
+
+      fullText = createBrownBarBannerMeasureText(
+        metrics,
+        canvasY,
+        0,
+        "start",
+        full
+      );
+      measureG.appendChild(fullText);
+      fullBb = fullText.getBBox();
+      if (liveBb && liveBb.width > 1) {
+        textLeft = liveBb.x;
+      } else if (fullBb.width > 1) {
+        textLeft = metrics.x - fullBb.width / 2;
+      } else {
+        textLeft = metrics.x - full.length * metrics.fontSize * 0.48;
+      }
+
+      prefixText = createBrownBarBannerMeasureText(
+        metrics,
+        canvasY,
+        textLeft,
+        "start",
+        prefix
+      );
+      measureG.appendChild(prefixText);
+      prefixBb = prefixText.getBBox();
+
+      segmentText = createBrownBarBannerMeasureText(
+        metrics,
+        canvasY,
+        textLeft + prefixBb.width,
+        "start",
+        segment
+      );
+      measureG.appendChild(segmentText);
+      segmentBb = segmentText.getBBox();
+      inset = segmentBb.width * insetRatio;
+
+      if (!segmentBb.width || !fullBb.width) {
+        textLeft = metrics.x - full.length * metrics.fontSize * 0.48;
+        inset = segment.length * metrics.fontSize * 0.48 * insetRatio;
+        return {
+          x1: textLeft + prefix.length * metrics.fontSize * 0.48 + inset,
+          y1: canvasY + metrics.opticalDy,
+          x2:
+            textLeft +
+            (prefix.length + segment.length) * metrics.fontSize * 0.48 -
+            inset,
+          y2: canvasY + metrics.opticalDy,
+          strokeWidth: Math.max(1, metrics.fontSize * strokeRatio),
+        };
+      }
+
+      var strikeY = canvasY + metrics.opticalDy;
+      return {
+        x1: segmentBb.x + inset,
+        y1: strikeY,
+        x2: segmentBb.x + segmentBb.width - inset,
+        y2: strikeY,
+        strokeWidth: Math.max(1, metrics.fontSize * strokeRatio),
+      };
+    }
+
+    textLeft = metrics.x - full.length * metrics.fontSize * 0.48;
+    inset = segment.length * metrics.fontSize * 0.48 * insetRatio;
+    return {
+      x1: textLeft + prefix.length * metrics.fontSize * 0.48 + inset,
+      y1: canvasY + metrics.opticalDy,
+      x2:
+        textLeft +
+        (prefix.length + segment.length) * metrics.fontSize * 0.48 -
+        inset,
+      y2: canvasY + metrics.opticalDy,
+      strokeWidth: Math.max(1, metrics.fontSize * strokeRatio),
+    };
+  }
+
+  function createBrownBarBannerStrikeLine(metrics, canvasY) {
+    var geom = getBrownBarBannerStrikeLineGeometry(metrics, canvasY);
+    var line = elSvg("line");
+    line.setAttribute("x1", String(geom.x1));
+    line.setAttribute("y1", String(geom.y1));
+    line.setAttribute("x2", String(geom.x2));
+    line.setAttribute("y2", String(geom.y2));
+    line.setAttribute("stroke", getBrownBarBannerFill());
+    line.setAttribute("stroke-width", String(geom.strokeWidth));
+    line.setAttribute("stroke-linecap", "butt");
+    return line;
+  }
+
+  /**
+   * @param {"top"|"bottom"} edge
+   * @param {{ x: number, y: number, width: number, height: number }} layout
+   * @returns {SVGElement}
+   */
+  function createBrownBarBannerLabelGroup(edge, layout) {
+    var metrics = getBrownBarBannerTextMetrics(layout);
+    var g = elSvg("g");
+    var text = elSvg("text");
+    var canvasY =
+      edge === "bottom"
+        ? getBottomBrownBarCanvasY(metrics.centerInnerRelY, layout)
+        : getTopBrownBarMirroredCanvasY(metrics.centerInnerRelY, layout);
+
+    applyBrownBarBannerTextAttrs(text, metrics, "middle");
+    text.setAttribute("x", String(metrics.x));
+    text.setAttribute("y", String(canvasY));
+    text.textContent = getBrownBarBannerDisplayText();
+
+    g.appendChild(text);
+    g.appendChild(createBrownBarBannerStrikeLine(metrics, canvasY));
+    return g;
+  }
+
+  function appendBrownBarBannerText(g) {
+    var bottomLayout = getCanvasEdgeBrownBarLayout("bottom");
+    var topLayout = getCanvasEdgeBrownBarLayout("top");
+    g.appendChild(createBrownBarBannerLabelGroup("bottom", bottomLayout));
+    g.appendChild(createBrownBarBannerLabelGroup("top", topLayout));
+  }
+
+  function refreshBrownBarBannerAfterMount() {
+    if (!designSvg) return;
+    var bannerG = designSvg.querySelector("#edge-brown-bar-banner-text");
+    if (!bannerG) return;
+    while (bannerG.firstChild) bannerG.removeChild(bannerG.firstChild);
+    appendBrownBarBannerText(bannerG);
+  }
+
+  function createBrownBarBannerTextGroup() {
+    var g = elSvg("g");
+    g.setAttribute("id", "edge-brown-bar-banner-text");
+    appendBrownBarBannerText(g);
+    return g;
+  }
+
+  /**
+   * @param {number} innerRelY
+   * @param {"top"|"bottom"} edge
+   * @param {{ x: number, y: number, width: number, height: number }} layout
+   * @returns {number}
+   */
+  function getBrownBarCanvasYFromInnerRel(innerRelY, edge, layout) {
+    if (edge === "bottom") {
+      return getBottomBrownBarCanvasY(innerRelY, layout);
+    }
+    return getTopBrownBarMirroredCanvasY(innerRelY, layout);
+  }
+
+  /**
+   * @param {number} row 0 = top of grid band
+   * @param {number} col 0..10
+   * @returns {boolean}
+   */
+  function isOuterThirdGridCellBrownFill(row, col) {
+    if (row === 1) {
+      return col % 2 === 1;
+    }
+    return col % 2 === 0;
+  }
+
+  /**
+   * @param {{ x: number, y: number, width: number, height: number }} bottomLayout
+   * @returns {string}
+   */
+  function brownBarGridLayoutSignature(bottomLayout) {
+    return [
+      bottomLayout.x,
+      bottomLayout.y,
+      bottomLayout.width,
+      bottomLayout.height,
+      typeof CANVAS_EDGE_BROWN_BAR_OUTER_THIRD_GRID_VERTICAL_LINES !== "undefined"
+        ? CANVAS_EDGE_BROWN_BAR_OUTER_THIRD_GRID_VERTICAL_LINES
+        : 10,
+      typeof CANVAS_EDGE_BROWN_BAR_GRID_MIN_COL_WIDTH_PX !== "undefined"
+        ? CANVAS_EDGE_BROWN_BAR_GRID_MIN_COL_WIDTH_PX
+        : 10,
+      typeof CANVAS_EDGE_BROWN_BAR_GRID_MAX_MIN_COL_FRACTION !== "undefined"
+        ? CANVAS_EDGE_BROWN_BAR_GRID_MAX_MIN_COL_FRACTION
+        : 0.2,
+      typeof CANVAS_EDGE_BROWN_BAR_GRID_WIDTH_RANDOM_POWER !== "undefined"
+        ? CANVAS_EDGE_BROWN_BAR_GRID_WIDTH_RANDOM_POWER
+        : 3.2,
+      typeof CANVAS_EDGE_BROWN_BAR_GRID_ROW_RATIOS !== "undefined"
+        ? CANVAS_EDGE_BROWN_BAR_GRID_ROW_RATIOS.join(",")
+        : "0.4,0.2,0.4",
+    ].join("|");
+  }
+
+  /**
+   * @param {number} total
+   * @param {number[]} ratios
+   * @returns {number[]}
+   */
+  function distributeLengthsByRatios(total, ratios) {
+    var count = ratios.length;
+    var sumR = 0;
+    var lengths = [];
+    var used = 0;
+    var i;
+    var len;
+    for (i = 0; i < count; i++) {
+      sumR += ratios[i];
+    }
+    for (i = 0; i < count; i++) {
+      if (i === count - 1) {
+        len = total - used;
+      } else {
+        len = Math.round((ratios[i] / sumR) * total);
+      }
+      lengths.push(len);
+      used += len;
+    }
+    lengths[count - 1] += total - used;
+    return lengths;
+  }
+
+  /**
+   * @param {number} colCount
+   * @param {number} pickCount
+   * @returns {number[]}
+   */
+  function pickRandomBrownBarGridColumnIndices(colCount, pickCount) {
+    var pool = [];
+    var i;
+    var j;
+    var picked = [];
+    for (i = 0; i < colCount; i++) pool.push(i);
+    for (i = 0; i < pickCount; i++) {
+      j = Math.floor(Math.random() * pool.length);
+      picked.push(pool[j]);
+      pool.splice(j, 1);
+    }
+    return picked;
+  }
+
+  /**
+   * Split total width across count columns (each >= minEach) using skewed random weights.
+   * @param {number} count
+   * @param {number} total
+   * @param {number} minEach
+   * @param {number} widthPower
+   * @returns {number[]}
+   */
+  function distributeSkewedColumnWidths(count, total, minEach, widthPower) {
+    var remaining = total - minEach * count;
+    var weights = [];
+    var wSum = 0;
+    var i;
+    var widths = [];
+    var extraUsed = 0;
+    var extra;
+    for (i = 0; i < count; i++) {
+      weights.push(Math.pow(Math.random(), widthPower));
+      wSum += weights[i];
+    }
+    for (i = 0; i < count; i++) {
+      if (i === count - 1) {
+        extra = remaining - extraUsed;
+      } else {
+        extra = Math.round((weights[i] / wSum) * remaining);
+        extra = Math.max(0, Math.min(extra, remaining - extraUsed));
+      }
+      widths.push(minEach + extra);
+      extraUsed += extra;
+    }
+    widths[count - 1] += remaining - extraUsed;
+    return widths;
+  }
+
+  /**
+   * Random column widths: min 10px; at most 1/5 of columns at minimum, rest wider.
+   * @param {number} x0
+   * @param {number} x1
+   * @param {number} colCount
+   * @returns {number[]}
+   */
+  function buildRandomBrownBarGridXBounds(x0, x1, colCount) {
+    var totalW = x1 - x0;
+    var minColW =
+      typeof CANVAS_EDGE_BROWN_BAR_GRID_MIN_COL_WIDTH_PX !== "undefined"
+        ? CANVAS_EDGE_BROWN_BAR_GRID_MIN_COL_WIDTH_PX
+        : 10;
+    var maxMinFraction =
+      typeof CANVAS_EDGE_BROWN_BAR_GRID_MAX_MIN_COL_FRACTION !== "undefined"
+        ? CANVAS_EDGE_BROWN_BAR_GRID_MAX_MIN_COL_FRACTION
+        : 0.2;
+    var widthPower =
+      typeof CANVAS_EDGE_BROWN_BAR_GRID_WIDTH_RANDOM_POWER !== "undefined"
+        ? CANVAS_EDGE_BROWN_BAR_GRID_WIDTH_RANDOM_POWER
+        : 3.2;
+    var maxMinCols = Math.max(0, Math.floor(colCount * maxMinFraction));
+    var narrowCount = Math.floor(Math.random() * (maxMinCols + 1));
+    var i;
+    var flexCount;
+    var flexTotal;
+
+    while (
+      narrowCount > 0 &&
+      totalW - minColW * narrowCount < minColW * (colCount - narrowCount)
+    ) {
+      narrowCount--;
+    }
+
+    var widths = [];
+    var flexIndices = [];
+    var narrowSet = {};
+    var narrowIndices = pickRandomBrownBarGridColumnIndices(colCount, narrowCount);
+    var fi;
+    var flexWidths;
+    var usedW = 0;
+
+    for (i = 0; i < colCount; i++) {
+      widths.push(0);
+    }
+    for (i = 0; i < narrowIndices.length; i++) {
+      narrowSet[narrowIndices[i]] = true;
+    }
+    for (i = 0; i < colCount; i++) {
+      if (narrowSet[i]) {
+        widths[i] = minColW;
+        usedW += minColW;
+      } else {
+        flexIndices.push(i);
+      }
+    }
+
+    flexCount = flexIndices.length;
+    flexTotal = totalW - usedW;
+    if (flexCount > 0) {
+      var flexMin = minColW + 1;
+      if (flexMin * flexCount > flexTotal) {
+        flexMin = minColW;
+      }
+      flexWidths = distributeSkewedColumnWidths(
+        flexCount,
+        flexTotal,
+        flexMin,
+        widthPower
+      );
+      for (fi = 0; fi < flexCount; fi++) {
+        widths[flexIndices[fi]] = flexWidths[fi];
+        usedW += flexWidths[fi];
+      }
+    }
+
+    widths[colCount - 1] += totalW - usedW;
+
+    var xBounds = [x0];
+    var x = x0;
+    for (i = 0; i < colCount; i++) {
+      x += widths[i];
+      xBounds.push(x);
+    }
+    xBounds[colCount] = x1;
+    return xBounds;
+  }
+
+  /**
+   * @param {{ x: number, y: number, width: number, height: number }} bottomLayout
+   * @returns {number[]}
+   */
+  function ensureBrownBarGridXBounds(bottomLayout) {
+    var sig = brownBarGridLayoutSignature(bottomLayout);
+    if (cachedBrownBarGridXBounds && lastBrownBarGridLayoutSignature === sig) {
+      return cachedBrownBarGridXBounds;
+    }
+    var vCount =
+      typeof CANVAS_EDGE_BROWN_BAR_OUTER_THIRD_GRID_VERTICAL_LINES !== "undefined"
+        ? CANVAS_EDGE_BROWN_BAR_OUTER_THIRD_GRID_VERTICAL_LINES
+        : 10;
+    var x0 = Math.round(bottomLayout.x);
+    var x1 = x0 + Math.round(bottomLayout.width);
+    cachedBrownBarGridXBounds = buildRandomBrownBarGridXBounds(
+      x0,
+      x1,
+      vCount + 1
+    );
+    lastBrownBarGridLayoutSignature = sig;
+    return cachedBrownBarGridXBounds;
+  }
+
+  /**
+   * Pixel-snapped row edges; columns use random widths (shared on top/bottom bars).
+   * @param {"top"|"bottom"} edge
+   * @param {{ x: number, y: number, width: number, height: number }} layout
+   * @returns {{ xBounds: number[], yBounds: number[] }}
+   */
+  function getOuterThirdGridAxisBounds(edge, layout) {
+    var hCount =
+      typeof CANVAS_EDGE_BROWN_BAR_OUTER_THIRD_GRID_HORIZONTAL_LINES !== "undefined"
+        ? CANVAS_EDGE_BROWN_BAR_OUTER_THIRD_GRID_HORIZONTAL_LINES
+        : 2;
+    var bottomLayout = getCanvasEdgeBrownBarLayout("bottom");
+    var xBounds = ensureBrownBarGridXBounds(bottomLayout);
+    var section = getBrownBarOuterThirdInnerRelBounds(layout.height);
+    var yStart = getBrownBarCanvasYFromInnerRel(section.start, edge, layout);
+    var yEnd = getBrownBarCanvasYFromInnerRel(section.end, edge, layout);
+    var yTop = Math.round(Math.min(yStart, yEnd));
+    var yBottom = Math.round(Math.max(yStart, yEnd));
+    var totalH = yBottom - yTop;
+    var rowCount = hCount + 1;
+    var defaultRowRatios = [0.4, 0.2, 0.4];
+    var rowRatios =
+      typeof CANVAS_EDGE_BROWN_BAR_GRID_ROW_RATIOS !== "undefined" &&
+      CANVAS_EDGE_BROWN_BAR_GRID_ROW_RATIOS.length === rowCount
+        ? CANVAS_EDGE_BROWN_BAR_GRID_ROW_RATIOS
+        : defaultRowRatios;
+    var rowHeights = distributeLengthsByRatios(totalH, rowRatios);
+    var yBounds = [yTop];
+    var r;
+    var y = yTop;
+    for (r = 0; r < rowCount; r++) {
+      y += rowHeights[r];
+      yBounds.push(y);
+    }
+    yBounds[rowCount] = yBottom;
+    return { xBounds: xBounds, yBounds: yBounds };
+  }
+
+  function getOuterThirdGridCellRect(edge, layout, row, col) {
+    var axis = getOuterThirdGridAxisBounds(edge, layout);
+    return {
+      x: axis.xBounds[col],
+      y: axis.yBounds[row],
+      width: axis.xBounds[col + 1] - axis.xBounds[col],
+      height: axis.yBounds[row + 1] - axis.yBounds[row],
+    };
+  }
+
+  /**
+   * White + alternating brown cells in outer-third grid (bottom canonical, top mirrored).
+   * @param {SVGElement} g
+   */
+  function appendCanvasEdgeBrownBarOuterThirdGridFills(g) {
+    var bottomLayout = getCanvasEdgeBrownBarLayout("bottom");
+    var topLayout = getCanvasEdgeBrownBarLayout("top");
+    var vCount =
+      typeof CANVAS_EDGE_BROWN_BAR_OUTER_THIRD_GRID_VERTICAL_LINES !== "undefined"
+        ? CANVAS_EDGE_BROWN_BAR_OUTER_THIRD_GRID_VERTICAL_LINES
+        : 10;
+    var hCount =
+      typeof CANVAS_EDGE_BROWN_BAR_OUTER_THIRD_GRID_HORIZONTAL_LINES !== "undefined"
+        ? CANVAS_EDGE_BROWN_BAR_OUTER_THIRD_GRID_HORIZONTAL_LINES
+        : 2;
+    var baseFill =
+      typeof CANVAS_EDGE_BROWN_BAR_GRID_CELL_BASE_FILL !== "undefined"
+        ? CANVAS_EDGE_BROWN_BAR_GRID_CELL_BASE_FILL
+        : BG_COLOR;
+    var edges = ["bottom", "top"];
+    var ei;
+    var edge;
+    var layout;
+    var row;
+    var col;
+    var cell;
+    var fill;
+
+    for (ei = 0; ei < edges.length; ei++) {
+      edge = edges[ei];
+      layout = edge === "bottom" ? bottomLayout : topLayout;
+      for (row = 0; row <= hCount; row++) {
+        for (col = 0; col <= vCount; col++) {
+          cell = getOuterThirdGridCellRect(edge, layout, row, col);
+          fill = isOuterThirdGridCellBrownFill(row, col)
+            ? CANVAS_EDGE_BROWN_BAR_COLOR
+            : baseFill;
+          appendBrownBarGridCellFillRect(g, cell, fill);
+        }
+      }
+    }
+  }
+
+  /**
+   * @param {SVGElement} g
+   */
+  function appendCanvasEdgeBrownBarDivisionLines(g) {
+    var bottomLayout = getCanvasEdgeBrownBarLayout("bottom");
+    var topLayout = getCanvasEdgeBrownBarLayout("top");
+    var innerRelYs = getCanvasEdgeBrownBarInnerRelativeYOffsets(bottomLayout.height);
+    var yi;
+    var innerRelY;
+    var yBottom;
+    var yTop;
+
+    for (yi = 0; yi < innerRelYs.length; yi++) {
+      innerRelY = innerRelYs[yi];
+      yBottom = getBottomBrownBarCanvasY(innerRelY, bottomLayout);
+      yTop = getTopBrownBarMirroredCanvasY(innerRelY, topLayout);
+      appendBorderDivisionLine(
+        g,
+        bottomLayout.x,
+        yBottom,
+        bottomLayout.x + bottomLayout.width,
+        yBottom
+      );
+      appendBorderDivisionLine(
+        g,
+        topLayout.x,
+        yTop,
+        topLayout.x + topLayout.width,
+        yTop
+      );
+    }
+  }
+
+  function createCanvasEdgeBrownBarDivisionsGroup() {
+    var g = elSvg("g");
+    g.setAttribute("id", "edge-brown-bar-divisions");
+    var lines = elSvg("g");
+    lines.setAttribute("id", "edge-brown-bar-section-lines");
+    lines.setAttribute("fill", "none");
+    lines.setAttribute("stroke", CANVAS_EDGE_BROWN_BAR_DIVISION_STROKE);
+    lines.setAttribute("stroke-width", String(BORDER_DIVISION_STROKE_WIDTH));
+    lines.setAttribute("stroke-linecap", "butt");
+    lines.setAttribute("stroke-linejoin", "miter");
+    appendCanvasEdgeBrownBarDivisionLines(lines);
+    g.appendChild(lines);
+    var fills = elSvg("g");
+    fills.setAttribute("id", "edge-brown-bar-grid-fills");
+    fills.setAttribute("stroke", "none");
+    appendCanvasEdgeBrownBarOuterThirdGridFills(fills);
+    g.appendChild(fills);
+    return g;
+  }
+
+  function populateEdgeBrownBarsLayer(g) {
+    g.appendChild(createCanvasEdgeBrownBarRect("top"));
+    g.appendChild(createCanvasEdgeBrownBarRect("bottom"));
+    g.appendChild(createCanvasEdgeBrownBarDivisionsGroup());
+    g.appendChild(createBrownBarBannerTextGroup());
+  }
+
+  function updateCanvasEdgeBrownBars() {
+    if (!designSvg) return;
+    var top = designSvg.querySelector("#top-brown-bar");
+    var bottom = designSvg.querySelector("#bottom-brown-bar");
+    if (top) applyCanvasEdgeBrownBarAttrs(top, "top");
+    if (bottom) applyCanvasEdgeBrownBarAttrs(bottom, "bottom");
+    var divGroup = designSvg.querySelector("#edge-brown-bar-divisions");
+    if (divGroup) {
+      while (divGroup.firstChild) divGroup.removeChild(divGroup.firstChild);
+      var lines = elSvg("g");
+      lines.setAttribute("id", "edge-brown-bar-section-lines");
+      lines.setAttribute("fill", "none");
+      lines.setAttribute("stroke", CANVAS_EDGE_BROWN_BAR_DIVISION_STROKE);
+      lines.setAttribute("stroke-width", String(BORDER_DIVISION_STROKE_WIDTH));
+      lines.setAttribute("stroke-linecap", "butt");
+      lines.setAttribute("stroke-linejoin", "miter");
+      appendCanvasEdgeBrownBarDivisionLines(lines);
+      divGroup.appendChild(lines);
+      var fills = elSvg("g");
+      fills.setAttribute("id", "edge-brown-bar-grid-fills");
+      fills.setAttribute("stroke", "none");
+      appendCanvasEdgeBrownBarOuterThirdGridFills(fills);
+      divGroup.appendChild(fills);
+    }
+    var bannerGroup = designSvg.querySelector("#edge-brown-bar-banner-text");
+    if (bannerGroup) {
+      while (bannerGroup.firstChild) bannerGroup.removeChild(bannerGroup.firstChild);
+      appendBrownBarBannerText(bannerGroup);
+    }
+  }
+
+  function pushCanvasEdgeBrownBarExportSegmentLine(
+    lines,
+    x1,
+    y1,
+    x2,
+    y2,
+    stroke,
+    strokeWidth
+  ) {
+    lines.push(
+      '<line x1="' +
+        x1 +
+        '" y1="' +
+        y1 +
+        '" x2="' +
+        x2 +
+        '" y2="' +
+        y2 +
+        '" stroke="' +
+        stroke +
+        '" stroke-width="' +
+        strokeWidth +
+        '"/>'
+    );
+  }
+
+  function pushCanvasEdgeBrownBarExportLine(
+    lines,
+    layout,
+    y,
+    stroke,
+    strokeWidth
+  ) {
+    lines.push(
+      '<line x1="' +
+        layout.x +
+        '" y1="' +
+        y +
+        '" x2="' +
+        (layout.x + layout.width) +
+        '" y2="' +
+        y +
+        '" stroke="' +
+        stroke +
+        '" stroke-width="' +
+        strokeWidth +
+        '"/>'
+    );
+  }
+
+  function pushCanvasEdgeBrownBarExportLines(lines) {
+    var bottomLayout = getCanvasEdgeBrownBarLayout("bottom");
+    var topLayout = getCanvasEdgeBrownBarLayout("top");
+    var innerRelYs = getCanvasEdgeBrownBarInnerRelativeYOffsets(bottomLayout.height);
+    var yi;
+    var innerRelY;
+    var divStroke = CANVAS_EDGE_BROWN_BAR_DIVISION_STROKE;
+    var divWidth = BORDER_DIVISION_STROKE_WIDTH;
+
+    lines.push(
+      '<rect id="bottom-brown-bar" x="' +
+        bottomLayout.x +
+        '" y="' +
+        bottomLayout.y +
+        '" width="' +
+        bottomLayout.width +
+        '" height="' +
+        bottomLayout.height +
+        '" fill="' +
+        CANVAS_EDGE_BROWN_BAR_COLOR +
+        '" stroke="none"/>'
+    );
+    lines.push(
+      '<rect id="top-brown-bar" x="' +
+        topLayout.x +
+        '" y="' +
+        topLayout.y +
+        '" width="' +
+        topLayout.width +
+        '" height="' +
+        topLayout.height +
+        '" fill="' +
+        CANVAS_EDGE_BROWN_BAR_COLOR +
+        '" stroke="none"/>'
+    );
+
+    lines.push(
+      '<g id="edge-brown-bar-section-lines" fill="none" stroke="' +
+        divStroke +
+        '" stroke-width="' +
+        divWidth +
+        '" stroke-linecap="butt" stroke-linejoin="miter">'
+    );
+    for (yi = 0; yi < innerRelYs.length; yi++) {
+      innerRelY = innerRelYs[yi];
+      pushCanvasEdgeBrownBarExportLine(
+        lines,
+        bottomLayout,
+        getBottomBrownBarCanvasY(innerRelY, bottomLayout),
+        divStroke,
+        divWidth
+      );
+      pushCanvasEdgeBrownBarExportLine(
+        lines,
+        topLayout,
+        getTopBrownBarMirroredCanvasY(innerRelY, topLayout),
+        divStroke,
+        divWidth
+      );
+    }
+    lines.push("</g>");
+    lines.push('<g id="edge-brown-bar-grid-fills" stroke="none">');
+    pushCanvasEdgeBrownBarOuterThirdGridFillsExport(lines);
+    lines.push("</g>");
+    pushCanvasEdgeBrownBarBannerTextExport(lines);
+  }
+
+  function pushCanvasEdgeBrownBarBannerTextExport(lines) {
+    var bottomLayout = getCanvasEdgeBrownBarLayout("bottom");
+    var topLayout = getCanvasEdgeBrownBarLayout("top");
+    var fontFamily = getBrownBarBannerFontFamily();
+    var fill = getBrownBarBannerFill();
+    var label = getBrownBarBannerDisplayText();
+    var edges = [
+      ["bottom", bottomLayout],
+      ["top", topLayout],
+    ];
+    var ei;
+    var edge;
+    var layout;
+    var metrics;
+    var canvasY;
+    var strike;
+
+    lines.push('<g id="edge-brown-bar-banner-text">');
+    for (ei = 0; ei < edges.length; ei++) {
+      edge = edges[ei][0];
+      layout = edges[ei][1];
+      metrics = getBrownBarBannerTextMetrics(layout);
+      canvasY =
+        edge === "bottom"
+          ? getBottomBrownBarCanvasY(metrics.centerInnerRelY, layout)
+          : getTopBrownBarMirroredCanvasY(metrics.centerInnerRelY, layout);
+      strike = getBrownBarBannerStrikeLineGeometry(metrics, canvasY);
+      lines.push(
+        '<text x="' +
+          metrics.x +
+          '" y="' +
+          canvasY +
+          '" fill="' +
+          fill +
+          '" font-family="' +
+          fontFamily +
+          ', sans-serif" font-weight="700" font-size="' +
+          metrics.fontSize +
+          '" letter-spacing="' +
+          getBrownBarBannerLetterSpacing() +
+          '" text-anchor="middle" dominant-baseline="middle" alignment-baseline="middle" dy="' +
+          metrics.opticalDy +
+          '">' +
+          label +
+          "</text>"
+      );
+      lines.push(
+        '<line x1="' +
+          strike.x1 +
+          '" y1="' +
+          strike.y1 +
+          '" x2="' +
+          strike.x2 +
+          '" y2="' +
+          strike.y2 +
+          '" stroke="' +
+          fill +
+          '" stroke-width="' +
+          strike.strokeWidth +
+          '" stroke-linecap="butt"/>'
+      );
+    }
+    lines.push("</g>");
+  }
+
+  function pushCanvasEdgeBrownBarOuterThirdGridFillsExport(lines) {
+    var bottomLayout = getCanvasEdgeBrownBarLayout("bottom");
+    var topLayout = getCanvasEdgeBrownBarLayout("top");
+    var vCount =
+      typeof CANVAS_EDGE_BROWN_BAR_OUTER_THIRD_GRID_VERTICAL_LINES !== "undefined"
+        ? CANVAS_EDGE_BROWN_BAR_OUTER_THIRD_GRID_VERTICAL_LINES
+        : 10;
+    var hCount =
+      typeof CANVAS_EDGE_BROWN_BAR_OUTER_THIRD_GRID_HORIZONTAL_LINES !== "undefined"
+        ? CANVAS_EDGE_BROWN_BAR_OUTER_THIRD_GRID_HORIZONTAL_LINES
+        : 2;
+    var baseFill =
+      typeof CANVAS_EDGE_BROWN_BAR_GRID_CELL_BASE_FILL !== "undefined"
+        ? CANVAS_EDGE_BROWN_BAR_GRID_CELL_BASE_FILL
+        : BG_COLOR;
+    var edges = ["bottom", "top"];
+    var ei;
+    var edge;
+    var layout;
+    var row;
+    var col;
+    var cell;
+    var fill;
+
+    for (ei = 0; ei < edges.length; ei++) {
+      edge = edges[ei];
+      layout = edge === "bottom" ? bottomLayout : topLayout;
+      for (row = 0; row <= hCount; row++) {
+        for (col = 0; col <= vCount; col++) {
+          cell = getOuterThirdGridCellRect(edge, layout, row, col);
+          fill = isOuterThirdGridCellBrownFill(row, col)
+            ? CANVAS_EDGE_BROWN_BAR_COLOR
+            : baseFill;
+          lines.push(
+            '<rect x="' +
+              cell.x +
+              '" y="' +
+              cell.y +
+              '" width="' +
+              cell.width +
+              '" height="' +
+              cell.height +
+              '" fill="' +
+              fill +
+              '" stroke="none" shape-rendering="crispEdges"/>'
+          );
+        }
+      }
+    }
   }
 
   function updateBorderDivisionLines() {
@@ -1024,9 +3091,95 @@
         '">'
     );
 
-    for (i = 1; i < BORDER_LEFT_RIGHT_SEGMENTS; i++) {
-      y = (CANVAS_H * i) / BORDER_LEFT_RIGHT_SEGMENTS;
-      if (y <= b || y >= CANVAS_H - b) continue;
+    var yBounds = getLeftRightBorderCellYBounds();
+    var j;
+    var yTop;
+    var yBottom;
+    var h;
+    var rightX = CANVAS_W - b;
+    for (j = 0; j < yBounds.length - 1; j++) {
+      yTop = yBounds[j];
+      yBottom = yBounds[j + 1];
+      h = yBottom - yTop;
+      if (isBorderSideBrownCell(j)) {
+        pushBorderSideBrownCellXPatternExport(lines, 0, b, yTop, yBottom);
+        pushBorderSideBrownCellXPatternExport(lines, rightX, b, yTop, yBottom);
+      } else if (isBorderSideGreySolidCell(j)) {
+        lines.push(
+          '<rect x="0" y="' +
+            yTop +
+            '" width="' +
+            b +
+            '" height="' +
+            h +
+            '" fill="' +
+            BORDER_SIDE_CELL_COLOR_GREY +
+            '"/>'
+        );
+        lines.push(
+          '<rect x="' +
+            rightX +
+            '" y="' +
+            yTop +
+            '" width="' +
+            b +
+            '" height="' +
+            h +
+            '" fill="' +
+            BORDER_SIDE_CELL_COLOR_GREY +
+            '"/>'
+        );
+      } else {
+        pushBorderSideBlueCellXPatternExport(lines, 0, b, yTop, yBottom);
+        pushBorderSideBlueCellXPatternExport(lines, rightX, b, yTop, yBottom);
+      }
+    }
+
+    var divY = getLeftRightBorderDivisionYBounds();
+    lines.push(
+      '<line x1="0" y1="' +
+        divY.top +
+        '" x2="' +
+        b +
+        '" y2="' +
+        divY.top +
+        '"/>'
+    );
+    lines.push(
+      '<line x1="0" y1="' +
+        divY.bottom +
+        '" x2="' +
+        b +
+        '" y2="' +
+        divY.bottom +
+        '"/>'
+    );
+    lines.push(
+      '<line x1="' +
+        (CANVAS_W - b) +
+        '" y1="' +
+        divY.top +
+        '" x2="' +
+        CANVAS_W +
+        '" y2="' +
+        divY.top +
+        '"/>'
+    );
+    lines.push(
+      '<line x1="' +
+        (CANVAS_W - b) +
+        '" y1="' +
+        divY.bottom +
+        '" x2="' +
+        CANVAS_W +
+        '" y2="' +
+        divY.bottom +
+        '"/>'
+    );
+
+    var sideInteriorY = getLeftRightBorderInteriorYPositions();
+    for (i = 0; i < sideInteriorY.length; i++) {
+      y = sideInteriorY[i];
       lines.push(
         '<line x1="0" y1="' +
           y +
@@ -1074,12 +3227,8 @@
       );
     }
 
-    var yBounds = getLeftRightBorderCellYBounds();
-    var j;
-    var yTop;
-    var yBottom;
-    var rightX = CANVAS_W - b;
     for (j = 0; j < yBounds.length - 1; j++) {
+      if (!isBorderSideBrownCell(j)) continue;
       yTop = yBounds[j];
       yBottom = yBounds[j + 1];
       lines.push(
@@ -1148,6 +3297,7 @@
 
   function createDesignSvg() {
     var svg = elSvg("svg");
+    designSvg = svg;
     svg.setAttribute("id", "design-svg");
     svg.setAttribute("viewBox", "0 0 " + CANVAS_W + " " + CANVAS_H);
     svg.setAttribute("xmlns", NS);
@@ -1174,6 +3324,7 @@
     borderFill.setAttribute("height", String(CANVAS_H));
     borderFill.setAttribute("fill", BG_COLOR);
     svg.appendChild(borderFill);
+
     svg.appendChild(createBorderDivisionLinesGroup());
 
     var innerContent = elSvg("g");
@@ -1185,6 +3336,20 @@
     background.setAttribute("id", "layer-background");
     clippedBackground.appendChild(background);
     innerContent.appendChild(clippedBackground);
+
+    var clippedStippleDots = createInnerContentClipGroup("inner-clipped-stipple-dots");
+    var stippleDotsLayer = elSvg("g");
+    stippleDotsLayer.setAttribute("id", "layer-stipple-dots");
+    clippedStippleDots.appendChild(stippleDotsLayer);
+    innerContent.appendChild(clippedStippleDots);
+
+    var clippedGridMask = createInnerContentClipGroup("inner-clipped-grid-mask");
+    var gridMaskLayer = elSvg("g");
+    gridMaskLayer.setAttribute("id", "layer-grid-mask");
+    clippedGridMask.appendChild(gridMaskLayer);
+    innerContent.appendChild(clippedGridMask);
+
+    applyMergeReveal();
 
     var clippedVertical = createInnerContentClipGroup("inner-clipped-vertical-grid");
     var verticalLayer = elSvg("g");
@@ -1209,22 +3374,43 @@
     clippedPattern.appendChild(pattern);
     innerContent.appendChild(clippedPattern);
 
+    var clippedLetters = createInnerContentClipGroup("inner-clipped-letter-markers");
+    var letterLayer = elSvg("g");
+    letterLayer.setAttribute("id", "layer-letter-markers");
+    letterLayer.setAttribute("clip-path", "url(#canvas-clip)");
+    clippedLetters.appendChild(letterLayer);
+    innerContent.appendChild(clippedLetters);
+
     svg.appendChild(innerContent);
+
+    var edgeBrownBars = elSvg("g");
+    edgeBrownBars.setAttribute("id", "layer-edge-brown-bars");
+    populateEdgeBrownBarsLayer(edgeBrownBars);
+    svg.appendChild(edgeBrownBars);
+
+    svg.appendChild(createFrameInsetOverlayLayer());
 
     return svg;
   }
 
-  function renderPatternLayer() {
+  function renderDiamondFillsLayer() {
     if (!designSvg) return;
     var diamondLayer = designSvg.querySelector("#layer-diamond-fills");
-    var patternLayer = designSvg.querySelector("#layer-pattern");
-    if (!diamondLayer || !patternLayer) return;
+    if (!diamondLayer) return;
 
     while (diamondLayer.firstChild) diamondLayer.removeChild(diamondLayer.firstChild);
-    while (patternLayer.firstChild) patternLayer.removeChild(patternLayer.firstChild);
 
     var filled = getFilledDiamonds();
     if (filled.length) diamondLayer.appendChild(diamondsToGroup(filled));
+  }
+
+  function renderPatternLayer() {
+    if (!designSvg) return;
+    var patternLayer = designSvg.querySelector("#layer-pattern");
+    if (!patternLayer) return;
+
+    renderDiamondFillsLayer();
+    while (patternLayer.firstChild) patternLayer.removeChild(patternLayer.firstChild);
     patternLayer.appendChild(segmentsToGroup(getVisibleSegments(cachedAllSegments)));
     patternLayer.appendChild(circlesToGroup(getActiveCircles()));
   }
@@ -1260,6 +3446,7 @@
       designSvg = createDesignSvg();
       var wrap = document.getElementById("stage-wrap");
       if (wrap) wrap.appendChild(designSvg);
+      refreshBrownBarBannerAfterMount();
     }
 
     cachedAllSegments = buildAllSegments();
@@ -1268,6 +3455,11 @@
     if (layoutSig !== lastCircleLayoutSignature) {
       lastCircleLayoutSignature = layoutSig;
       syncCircleSelection(true);
+    }
+
+    if (layoutSig !== lastLetterMarkerLayoutSignature) {
+      lastLetterMarkerLayoutSignature = layoutSig;
+      syncLetterOctagonMarkers();
     }
 
     var diamondSig = buildDiamondLayoutSignature();
@@ -1279,15 +3471,31 @@
     var densityOut = document.getElementById("circle-density-out");
     if (densityOut) densityOut.textContent = String(getCircleDensity()) + "%";
 
+    var diamondPercentOut = document.getElementById("diamond-fill-percent-out");
+    if (diamondPercentOut) {
+      diamondPercentOut.textContent = String(getDiamondFillPercent()) + "%";
+    }
+
     var strokeOut = document.getElementById("grid-stroke-width-out");
     if (strokeOut) strokeOut.textContent = String(getGridStrokeWidth()) + " px";
 
+    var borderSideOut = document.getElementById("border-side-segments-out");
+    if (borderSideOut) {
+      borderSideOut.textContent = String(getBorderLeftRightSegments());
+    }
+
     renderBackgroundLayer();
+    renderGridMaskLayer("render");
+    renderStippleDotsLayer();
+    applyMergeReveal();
     syncVerticalGridLines(false);
     renderVerticalGridLayer();
     updateGridBoundaryRect();
     updateBorderDivisionLines();
+    updateCanvasEdgeBrownBars();
     renderPatternLayer();
+    renderLetterMarkersLayer();
+    updateFrameInsetOverlayLayer();
     layoutStage();
     updateResetButton();
   }
@@ -1309,12 +3517,202 @@
     svg.style.height = CANVAS_H * scale + "px";
   }
 
+  function getMagnifierZoom() {
+    var input = document.getElementById("magnifier-zoom");
+    if (!input) return 4;
+    var z = parseFloat(input.value);
+    if (!isFinite(z)) return 4;
+    return Math.min(15, Math.max(2, z));
+  }
+
+  function updateMagnifierZoomOutput() {
+    var out = document.getElementById("magnifier-zoom-out");
+    if (out) out.textContent = String(getMagnifierZoom()) + "×";
+  }
+
+  function syncMagnifierBorderColor() {
+    var color = getPatternStrokeColor();
+    document.documentElement.style.setProperty(
+      "--magnifier-border-color",
+      color
+    );
+  }
+
+  function updateMagnifierViewBox() {
+    var magnifierSvg = document.getElementById("magnifier-svg");
+    if (!magnifierSvg) return;
+
+    var zoom = getMagnifierZoom();
+    var side = Math.min(CANVAS_W, CANVAS_H) / zoom;
+    var x = magnifierCenterX - side / 2;
+    var y = magnifierCenterY - side / 2;
+
+    if (x < 0) x = 0;
+    if (y < 0) y = 0;
+    if (x + side > CANVAS_W) x = CANVAS_W - side;
+    if (y + side > CANVAS_H) y = CANVAS_H - side;
+    if (x < 0) x = 0;
+    if (y < 0) y = 0;
+
+    magnifierSvg.setAttribute(
+      "viewBox",
+      x + " " + y + " " + side + " " + side
+    );
+  }
+
+  function syncMagnifierUseGeometry() {
+    var useEl = document.getElementById("magnifier-use");
+    if (!useEl) return;
+    useEl.setAttribute("width", String(CANVAS_W));
+    useEl.setAttribute("height", String(CANVAS_H));
+  }
+
+  function onMagnifierPointerMove(e) {
+    if (!designSvg) return;
+    var pt = clientToViewBox(designSvg, e.clientX, e.clientY);
+    if (!pt) return;
+    magnifierCenterX = pt.x;
+    magnifierCenterY = pt.y;
+    updateMagnifierViewBox();
+  }
+
+  function bindMagnifierPointerListeners() {
+    if (!designSvg || magnifierListenersBound) return;
+    designSvg.addEventListener("pointermove", onMagnifierPointerMove);
+    magnifierListenersBound = true;
+  }
+
+  function initMagnifier() {
+    syncMagnifierUseGeometry();
+    syncMagnifierBorderColor();
+    updateMagnifierZoomOutput();
+    updateMagnifierViewBox();
+    bindMagnifierPointerListeners();
+
+    var zoomSlider = document.getElementById("magnifier-zoom");
+    if (zoomSlider) {
+      zoomSlider.addEventListener("input", function () {
+        updateMagnifierZoomOutput();
+        updateMagnifierViewBox();
+      });
+    }
+  }
+
+  /**
+   * @param {string[]} lines
+   * @param {{ markers: { cx: number, cy: number, r: number, char: string }[] }} column
+   * @param {string} strokeColor
+   */
+  function pushLetterMarkerColumnExport(lines, column, strokeColor) {
+    var markers = column.markers;
+    if (!markers.length) return;
+
+    var top = markers[0];
+    var bottom = markers[markers.length - 1];
+    lines.push(
+      '<line x1="' +
+        top.cx +
+        '" y1="' +
+        top.cy +
+        '" x2="' +
+        bottom.cx +
+        '" y2="' +
+        bottom.cy +
+        '" stroke="' +
+        strokeColor +
+        '" stroke-width="' +
+        getCircleStrokeWidth() +
+        '" fill="none"/>'
+    );
+
+    var i;
+    for (i = 0; i < markers.length; i++) {
+      var m = markers[i];
+      lines.push(
+        '<circle cx="' +
+          m.cx +
+          '" cy="' +
+          m.cy +
+          '" r="' +
+          m.r +
+          '" fill="' +
+          strokeColor +
+          '" stroke="none"/>'
+      );
+    }
+
+    for (i = 0; i < markers.length; i++) {
+      var mk = markers[i];
+      var fontSize = 2 * mk.r * LETTER_MARKER_FONT_SIZE_RATIO;
+      var char = mk.char || "";
+      lines.push(
+        '<text x="' +
+          mk.cx +
+          '" y="' +
+          mk.cy +
+          '" fill="#ffffff" font-weight="bold" font-family="Helvetica, Arial, sans-serif" text-anchor="middle" dominant-baseline="central" font-size="' +
+          fontSize +
+          '">' +
+          char +
+          "</text>"
+      );
+    }
+  }
+
+  function pushLetterMarkersExportLines(lines) {
+    ensureLetterMarkerAnchor(false);
+    var bundle = buildLetterMarkerBundle();
+    if (!bundle || !bundle.columns.length) return;
+
+    var strokeColor = getPatternStrokeColor();
+    lines.push('<g id="layer-letter-markers">');
+    var c;
+    for (c = 0; c < bundle.columns.length; c++) {
+      pushLetterMarkerColumnExport(lines, bundle.columns[c], strokeColor);
+    }
+    lines.push("</g>");
+  }
+
+  function getExportFontFaceCss(fontDataUri) {
+    var src = fontDataUri
+      ? 'url("' + fontDataUri + '") format("truetype")'
+      : 'url("../fonts/DIN%20Condensed%20Bold.ttf") format("truetype")';
+    return (
+      '@font-face{font-family:"DIN Condensed";src:' +
+      src +
+      ";font-weight:700;font-style:normal;}"
+    );
+  }
+
+  function loadExportFontDataUri() {
+    if (cachedExportFontDataUri) {
+      return Promise.resolve(cachedExportFontDataUri);
+    }
+    return fetch("fonts/DIN%20Condensed%20Bold.ttf")
+      .then(function (res) {
+        if (!res.ok) throw new Error("font fetch failed");
+        return res.arrayBuffer();
+      })
+      .then(function (buf) {
+        var bytes = new Uint8Array(buf);
+        var binary = "";
+        var i;
+        for (i = 0; i < bytes.length; i++) {
+          binary += String.fromCharCode(bytes[i]);
+        }
+        cachedExportFontDataUri =
+          "data:font/ttf;base64," + btoa(binary);
+        return cachedExportFontDataUri;
+      });
+  }
+
   /**
    * @param {{x1:number,y1:number,x2:number,y2:number}[]} segments
    * @param {{ cx: number, cy: number, r: number }[]} circles
+   * @param {string|null} fontDataUri
    * @returns {string}
    */
-  function buildExportSvgString(segments, circles, diamonds) {
+  function buildExportSvgString(segments, circles, diamonds, fontDataUri) {
     var lines = [];
     var gridBounds = getGridContentBounds();
     lines.push('<?xml version="1.0" encoding="UTF-8"?>');
@@ -1335,6 +3733,11 @@
         CANVAS_H +
         '"/></clipPath>'
     );
+    lines.push(
+      "<style type=\"text/css\"><![CDATA[" +
+        getExportFontFaceCss(fontDataUri) +
+        "]]></style>"
+    );
     lines.push("</defs>");
     lines.push(
       '<rect x="0" y="0" width="' +
@@ -1350,6 +3753,9 @@
     lines.push('<g clip-path="url(#inner-content-clip)">');
     pushBackgroundExportLines(lines);
     lines.push("</g>");
+
+    pushGridMaskExportLines(lines);
+    pushStippleDotsExportLines(lines);
 
     pushVerticalGridExportLines(lines);
 
@@ -1432,8 +3838,16 @@
       lines.push("</g>");
     }
 
+    pushLetterMarkersExportLines(lines);
+
     lines.push("</g>");
     lines.push("</g>");
+    lines.push('<g id="layer-edge-brown-bars">');
+    pushCanvasEdgeBrownBarExportLines(lines);
+    lines.push("</g>");
+    if (frameInsetOverlayVisible) {
+      pushFrameInsetOverlayExportLines(lines);
+    }
     lines.push("</svg>");
     return lines.join("\n");
   }
@@ -1450,22 +3864,56 @@
     var btn = document.getElementById("export-svg-btn");
     if (btn) btn.disabled = true;
 
-    try {
-      syncVerticalGridLines(false);
-      var segments = getVisibleSegments(cachedAllSegments);
-      var markup = buildExportSvgString(
-        segments,
-        getActiveCircles(),
-        getFilledDiamonds()
-      );
-      var blob = new Blob([markup], { type: "image/svg+xml;charset=utf-8" });
-      downloadBlob(blob, "topkapi-export-70x180cm.svg");
-    } catch (e) {
-      console.error(e);
-      alert("SVG export failed.");
-    } finally {
-      if (btn) btn.disabled = false;
-    }
+    var fontReady =
+      typeof document !== "undefined" && document.fonts && document.fonts.ready
+        ? document.fonts.ready
+        : Promise.resolve();
+
+    Promise.all([fontReady, loadExportFontDataUri()])
+      .then(function (results) {
+        var fontDataUri = results[1];
+        try {
+          syncVerticalGridLines(false);
+          var segments = getVisibleSegments(cachedAllSegments);
+          var markup = buildExportSvgString(
+            segments,
+            getActiveCircles(),
+            getFilledDiamonds(),
+            fontDataUri
+          );
+          var blob = new Blob([markup], {
+            type: "image/svg+xml;charset=utf-8",
+          });
+          downloadBlob(blob, "topkapi-export-70x180cm.svg");
+        } catch (e) {
+          console.error(e);
+          alert("SVG export failed.");
+        } finally {
+          if (btn) btn.disabled = false;
+        }
+      })
+      .catch(function (err) {
+        console.error(err);
+        try {
+          syncVerticalGridLines(false);
+          var segments = getVisibleSegments(cachedAllSegments);
+          var markup = buildExportSvgString(
+            segments,
+            getActiveCircles(),
+            getFilledDiamonds(),
+            null
+          );
+          var blob = new Blob([markup], {
+            type: "image/svg+xml;charset=utf-8",
+          });
+          downloadBlob(blob, "topkapi-export-70x180cm.svg");
+        } catch (e) {
+          console.error(e);
+          alert("SVG export failed.");
+        } finally {
+          if (btn) btn.disabled = false;
+        }
+      });
   }
 
   function clientToViewBox(svg, clientX, clientY) {
@@ -1565,6 +4013,7 @@
     }
 
     if (changed) {
+      stickyMergedCutoutFaces = null;
       renderPatternAndVerticalLayers();
       updateResetButton();
     }
@@ -1733,11 +4182,34 @@
         updateGridBoundaryRect();
         renderVerticalGridLayer();
         renderPatternLayer();
+        renderLetterMarkersLayer();
+        updateFrameInsetOverlayLayer();
         var borderDivisions =
           designSvg && designSvg.querySelector("#layer-border-divisions");
         if (borderDivisions) {
           borderDivisions.setAttribute("stroke", getPatternStrokeColor());
         }
+        syncMagnifierBorderColor();
+      });
+    }
+
+    var diamondFillColorInput = document.getElementById("diamond-fill-color");
+    if (diamondFillColorInput) {
+      diamondFillColorInput.value = DIAMOND_FILL_COLOR_DEFAULT;
+      diamondFillColorInput.addEventListener("input", renderDiamondFillsLayer);
+    }
+
+    var borderSideSegmentsSlider = document.getElementById("border-side-segments");
+    if (borderSideSegmentsSlider) {
+      borderSideSegmentsSlider.min = String(BORDER_LEFT_RIGHT_SEGMENTS_MIN);
+      borderSideSegmentsSlider.max = String(BORDER_LEFT_RIGHT_SEGMENTS_MAX);
+      borderSideSegmentsSlider.value = String(BORDER_LEFT_RIGHT_SEGMENTS_DEFAULT);
+      borderSideSegmentsSlider.addEventListener("input", function () {
+        var borderSideOut = document.getElementById("border-side-segments-out");
+        if (borderSideOut) {
+          borderSideOut.textContent = String(getBorderLeftRightSegments());
+        }
+        updateBorderDivisionLines();
       });
     }
 
@@ -1751,6 +4223,7 @@
         if (strokeOut) strokeOut.textContent = String(getGridStrokeWidth()) + " px";
         renderVerticalGridLayer();
         renderPatternLayer();
+        renderLetterMarkersLayer();
       });
     }
 
@@ -1767,6 +4240,31 @@
       });
     }
 
+    var diamondFillPercentSlider = document.getElementById("diamond-fill-percent");
+    if (diamondFillPercentSlider) {
+      diamondFillPercentSlider.min = String(DIAMOND_FILL_PERCENT_MIN);
+      diamondFillPercentSlider.max = String(DIAMOND_FILL_PERCENT_MAX);
+      diamondFillPercentSlider.value = String(DIAMOND_FILL_PERCENT_DEFAULT);
+      diamondFillPercentSlider.addEventListener("input", function () {
+        syncDiamondFill(true);
+        var diamondPercentOut = document.getElementById("diamond-fill-percent-out");
+        if (diamondPercentOut) {
+          diamondPercentOut.textContent = String(getDiamondFillPercent()) + "%";
+        }
+        renderDiamondFillsLayer();
+      });
+    }
+
+    var letterMarkerWordInput = document.getElementById("letter-marker-word");
+    if (letterMarkerWordInput) {
+      letterMarkerWordInput.value = letterMarkerWord;
+      letterMarkerWordInput.addEventListener("input", function () {
+        letterMarkerWord = letterMarkerWordInput.value;
+        ensureLetterMarkerAnchor(false);
+        renderLetterMarkersLayer();
+      });
+    }
+
     var randomizeCirclesBtn = document.getElementById("randomize-circles-btn");
     if (randomizeCirclesBtn) {
       randomizeCirclesBtn.addEventListener("click", function () {
@@ -1774,6 +4272,11 @@
         syncDiamondFill(true);
         renderPatternLayer();
       });
+    }
+
+    var frameOverlayToggle = document.getElementById("frame-overlay-toggle-btn");
+    if (frameOverlayToggle) {
+      frameOverlayToggle.addEventListener("click", toggleFrameInsetOverlay);
     }
 
     var exportBtn = document.getElementById("export-svg-btn");
@@ -1797,46 +4300,189 @@
     var resetBtn = document.getElementById("reset-grid-btn");
     if (resetBtn) resetBtn.addEventListener("click", onResetGrid);
 
-    var bgColor1 = document.getElementById("bg-color-1");
-    var bgColor2 = document.getElementById("bg-color-2");
-    var bgColor3 = document.getElementById("bg-color-3");
-    if (bgColor1) {
-      bgColor1.value = BG_COLOR_1_DEFAULT;
-      bgColor1.addEventListener("input", renderBackgroundLayer);
-    }
-    if (bgColor2) {
-      bgColor2.value = BG_COLOR_2_DEFAULT;
-      bgColor2.addEventListener("input", renderBackgroundLayer);
-    }
-    if (bgColor3) {
-      bgColor3.value = BG_COLOR_3_DEFAULT;
-      bgColor3.addEventListener("input", renderBackgroundLayer);
+    var dotsFileInput = document.getElementById("bg-dots-file-input");
+    var dotsFileMeta = document.getElementById("bg-dots-file-meta");
+    var dotsResolution = document.getElementById("bg-dots-resolution");
+    var dotsResolutionOut = document.getElementById("bg-dots-resolution-out");
+    var dotsDotSize = document.getElementById("bg-dots-dot-size");
+    var dotsDotSizeOut = document.getElementById("bg-dots-dot-size-out");
+    var dotsDotSpacing = document.getElementById("bg-dots-dot-spacing");
+    var dotsDotSpacingOut = document.getElementById("bg-dots-dot-spacing-out");
+    var dotsModeBw = document.getElementById("bg-dots-mode-bw-btn");
+    var dotsModeColor = document.getElementById("bg-dots-mode-color-btn");
+    var dotsGenerateBtn = document.getElementById("bg-dots-generate-btn");
+    var dotsProgressLabel = document.getElementById("bg-dots-progress-label");
+
+    function updateStippleSliderOutputs() {
+      if (dotsResolutionOut && dotsResolution) {
+        dotsResolutionOut.textContent = dotsResolution.value + "%";
+      }
+      if (dotsDotSizeOut && dotsDotSize) {
+        dotsDotSizeOut.textContent = dotsDotSize.value + "px";
+      }
+      if (dotsDotSpacingOut && dotsDotSpacing) {
+        dotsDotSpacingOut.textContent = dotsDotSpacing.value + "px";
+      }
     }
 
-    var bgDirVertical = document.getElementById("bg-direction-vertical-btn");
-    if (bgDirVertical) {
-      bgDirVertical.addEventListener("click", function () {
-        setBgDirection("vertical");
-      });
+    function updateStippleFileMeta() {
+      if (!dotsFileMeta) return;
+      if (!stippleSourceImage) {
+        dotsFileMeta.textContent = "No image loaded";
+        return;
+      }
+      var size = getStippleOutputSize(
+        dotsResolution ? Number(dotsResolution.value) : 100
+      );
+      dotsFileMeta.textContent =
+        stippleSrcW +
+        "×" +
+        stippleSrcH +
+        " → " +
+        size.outW +
+        "×" +
+        size.outH +
+        " at current resolution";
     }
-    var bgDirHorizontal = document.getElementById("bg-direction-horizontal-btn");
-    if (bgDirHorizontal) {
-      bgDirHorizontal.addEventListener("click", function () {
-        setBgDirection("horizontal");
+
+    function loadStippleImageFromFile(file) {
+      if (!file) return;
+      var reader = new FileReader();
+      reader.onload = function () {
+        var img = new Image();
+        img.onload = function () {
+          stippleSourceImage = img;
+          stippleSrcW = img.naturalWidth;
+          stippleSrcH = img.naturalHeight;
+          updateStippleFileMeta();
+          if (dotsGenerateBtn) dotsGenerateBtn.disabled = false;
+        };
+        img.onerror = function () {
+          alert("Could not load this image. Try another JPG or PNG.");
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function runStippleGeneration() {
+      if (!stippleSourceImage || typeof StippleEngine === "undefined") return;
+
+      var size = getStippleOutputSize(
+        dotsResolution ? Number(dotsResolution.value) : 100
+      );
+      var jobId = ++stippleGenerationId;
+
+      if (dotsGenerateBtn) dotsGenerateBtn.disabled = true;
+      if (dotsProgressLabel) {
+        dotsProgressLabel.hidden = false;
+        dotsProgressLabel.textContent = "Processing… 0%";
+      }
+
+      StippleEngine.generate(
+        {
+          sourceImage: stippleSourceImage,
+          outW: size.outW,
+          outH: size.outH,
+          dotSize: dotsDotSize ? Number(dotsDotSize.value) : 2,
+          dotSpacing: dotsDotSpacing ? Number(dotsDotSpacing.value) : 1,
+          colorMode: stippleColorMode,
+          jobId: jobId,
+          getJobId: function () {
+            return stippleGenerationId;
+          },
+        },
+        {
+          onProgress: function (done, total) {
+            if (dotsProgressLabel) {
+              var pct = total > 0 ? Math.round((done / total) * 100) : 0;
+              dotsProgressLabel.textContent = "Processing… " + pct + "%";
+            }
+          },
+          onComplete: function (result) {
+            if (result.jobId !== stippleGenerationId) return;
+            stippleDotsCache = {
+              dots: result.dots,
+              outW: result.outW,
+              outH: result.outH,
+            };
+            renderStippleDotsLayer();
+            applyMergeReveal();
+            if (dotsProgressLabel) dotsProgressLabel.hidden = true;
+            if (dotsGenerateBtn) dotsGenerateBtn.disabled = !stippleSourceImage;
+            updateStippleFileMeta();
+          },
+          onError: function (msg) {
+            alert(msg);
+            if (dotsProgressLabel) dotsProgressLabel.hidden = true;
+            if (dotsGenerateBtn) dotsGenerateBtn.disabled = !stippleSourceImage;
+          },
+          onCancel: function () {
+            if (dotsProgressLabel) dotsProgressLabel.hidden = true;
+            if (dotsGenerateBtn) dotsGenerateBtn.disabled = !stippleSourceImage;
+          },
+        }
+      );
+    }
+
+    if (dotsFileInput) {
+      dotsFileInput.addEventListener("change", function () {
+        var file = dotsFileInput.files && dotsFileInput.files[0];
+        if (file) loadStippleImageFromFile(file);
       });
     }
 
-    var bgWhiteToggle = document.getElementById("bg-white-toggle-btn");
-    if (bgWhiteToggle) {
-      bgWhiteToggle.addEventListener("click", toggleBgWhite);
+    if (dotsResolution) {
+      dotsResolution.addEventListener("input", function () {
+        updateStippleSliderOutputs();
+        updateStippleFileMeta();
+      });
     }
+    if (dotsDotSize) {
+      dotsDotSize.addEventListener("input", updateStippleSliderOutputs);
+    }
+    if (dotsDotSpacing) {
+      dotsDotSpacing.addEventListener("input", updateStippleSliderOutputs);
+    }
+
+    if (dotsModeBw) {
+      dotsModeBw.addEventListener("click", function () {
+        stippleColorMode = "bw";
+        dotsModeBw.classList.add("is-active");
+        dotsModeBw.setAttribute("aria-pressed", "true");
+        if (dotsModeColor) {
+          dotsModeColor.classList.remove("is-active");
+          dotsModeColor.setAttribute("aria-pressed", "false");
+        }
+      });
+    }
+    if (dotsModeColor) {
+      dotsModeColor.addEventListener("click", function () {
+        stippleColorMode = "color";
+        dotsModeColor.classList.add("is-active");
+        dotsModeColor.setAttribute("aria-pressed", "true");
+        if (dotsModeBw) {
+          dotsModeBw.classList.remove("is-active");
+          dotsModeBw.setAttribute("aria-pressed", "false");
+        }
+      });
+    }
+
+    if (dotsGenerateBtn) {
+      dotsGenerateBtn.addEventListener("click", function () {
+        stippleGenerationId++;
+        runStippleGeneration();
+      });
+    }
+
+    updateStippleSliderOutputs();
 
     window.addEventListener("resize", layoutStage);
     lastCircleLayoutSignature = "";
     lastDiamondLayoutSignature = "";
-    updateBgDirectionUi();
-    updateBgWhiteToggleUi();
     render();
+    syncFrameOverlayToggleButton();
+    initMagnifier();
     setMode("view");
   }
 
