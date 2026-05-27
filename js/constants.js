@@ -81,7 +81,6 @@ var LABEL_BAR_SVG_ASSETS = [
   "lion.svg",
   "man.svg",
   "sun.svg",
-  "Group 2155.svg",
   "IN IRAN.svg",
   "OUTSIDE IRAN.svg",
   "undercover english.svg",
@@ -104,7 +103,6 @@ var LABEL_BAR_SVG_DIMENSIONS = {
   "LOST/2 man.svg": { width: 168, height: 115 },
   "LOST/3 man.svg": { width: 247, height: 115 },
   "sun.svg": { width: 123, height: 136 },
-  "Group 2155.svg": { width: 114, height: 106 },
   "IN IRAN.svg": { width: 115, height: 103.73 },
   "OUTSIDE IRAN.svg": { width: 115, height: 106 },
   "undercover english.svg": { width: 215, height: 80 },
@@ -207,19 +205,34 @@ var EDGE_HIT_THRESHOLD_PX = 5;
 
 /**
  * Auto Merge intensity slider (0 = minimum coverage, 100 = maximum).
- * At 0%: 3 areas, 2–4 deleted edges each. At 100%: up to 10 areas, 3–10 edges each.
+ * Low %: 1 area, small merges (4–7 edges). High %: up to 8 areas, richer merges (7–16 edges).
+ * Area count rises with the slider; edge minimum stays achievable so clusters do not fail.
  */
 var AUTO_MERGE_INTENSITY_MIN = 0;
 var AUTO_MERGE_INTENSITY_MAX = 100;
-var AUTO_MERGE_INTENSITY_DEFAULT = 50;
-var AUTO_MERGE_AREA_COUNT_AT_MIN = 3;
-var AUTO_MERGE_AREA_COUNT_AT_MAX = 10;
-var AUTO_MERGE_EDGES_PER_AREA_MIN_AT_MIN = 2;
-var AUTO_MERGE_EDGES_PER_AREA_MAX_AT_MIN = 4;
-var AUTO_MERGE_EDGES_PER_AREA_MIN_AT_MAX = 3;
-var AUTO_MERGE_EDGES_PER_AREA_MAX_AT_MAX = 10;
+var AUTO_MERGE_INTENSITY_DEFAULT = 70;
+var AUTO_MERGE_AREA_COUNT_AT_MIN = 1;
+var AUTO_MERGE_AREA_COUNT_AT_MAX = 8;
+var AUTO_MERGE_EDGES_PER_AREA_MIN_AT_MIN = 4;
+var AUTO_MERGE_EDGES_PER_AREA_MAX_AT_MIN = 7;
+var AUTO_MERGE_EDGES_PER_AREA_MIN_AT_MAX = 7;
+var AUTO_MERGE_EDGES_PER_AREA_MAX_AT_MAX = 16;
+/** Extra seed tries per target area when forming clusters */
+var AUTO_MERGE_SEED_ATTEMPTS_PER_AREA = 12;
 /** Inset from grid content bounds when placing random seeds (px) */
 var AUTO_MERGE_SEED_BOUNDS_INSET_PX = 40;
+/** Connected auto-merge regions: neon outline + cast shadow (left + down) */
+var AUTO_MERGE_OUTLINE_COLOR = "#B2FF00";
+/** Outline stroke = grid stroke × this multiplier */
+var AUTO_MERGE_OUTLINE_WIDTH_GRID_MULTIPLIER = 3;
+var AUTO_MERGE_SHADOW_COLOR = "#685450";
+/** Softens cast shadow (direction still from offset below) */
+var AUTO_MERGE_SHADOW_BLUR_PX = 4;
+/** Negative dx = shadow to the left; positive dy = shadow downward */
+var AUTO_MERGE_SHADOW_OFFSET_X_PX = -5;
+var AUTO_MERGE_SHADOW_OFFSET_Y_PX = 5;
+var AUTO_MERGE_SHADOW_OPACITY = 0.9;
+var AUTO_MERGE_SHADOW_FILTER_ID = "auto-merge-region-shadow";
 
 /** Random circles in upright squares (% of all upright squares on canvas) */
 var CIRCLE_DENSITY_MIN = 10;
@@ -276,16 +289,6 @@ var BORDER_SIDE_CELL_COLOR_GREY = "#d9d9d9";
 /** Empty margin row after outside — same as outside X right triangle */
 var BORDER_SIDE_CELL_COLOR_BEIGE = BORDER_SIDE_X_FILL_RIGHT;
 
-/** A/B/C letter markers on center octagons (connector stroke = 2 × grid line weight) */
-/** Circle radius = inscribedRadius × this (0.75 = 2× previous 0.375) */
-var LETTER_MARKER_RADIUS_RATIO = 0.75;
-/** Font size ≈ 48% of circle diameter (0.4 × 1.2, +20%) */
-var LETTER_MARKER_FONT_SIZE_RATIO = 0.48;
-/** Max word columns (space-separated) on the grid */
-var LETTER_MARKER_MAX_COLUMNS = 12;
-/** Default phrase: woman, life, freedom (Arabic) */
-var LETTER_MARKER_WORD_DEFAULT = "امرأة حياة حرية";
-
 /** Default fill for pride diamonds — #FF3C3C */
 var DIAMOND_FILL_COLOR_DEFAULT = "#ff3c3c";
 
@@ -294,10 +297,10 @@ var PRIDE_FILL_PERCENT_MIN = 10;
 var PRIDE_FILL_PERCENT_MAX = 40;
 var PRIDE_FILL_PERCENT_DEFAULT = 25;
 
-/** Anger slider: visible length of left-third vertical grid lines (% of full span) */
+/** Anger slider: visible length of vertical grid lines across full width (% of full span) */
 var ANGER_VERTICAL_LENGTH_MIN = 0;
-var ANGER_VERTICAL_LENGTH_MAX = 100;
-var ANGER_VERTICAL_LENGTH_DEFAULT = 100;
+var ANGER_VERTICAL_LENGTH_MAX = 40;
+var ANGER_VERTICAL_LENGTH_DEFAULT = 40;
 /** At slider 0%, line span = this × the previous minimum (0.5 = 2× shorter than before) */
 var ANGER_VERTICAL_LENGTH_MIN_SPAN_RATIO = 0.5;
 
@@ -306,3 +309,16 @@ var SWASTIKA_UNIT_MIN = 40;
 var SWASTIKA_UNIT_MAX = 280;
 var SWASTIKA_UNIT_DEFAULT = 100;
 var SWASTIKA_STROKE_WIDTH = 1;
+
+/** Nested star octagons grid (nested-star-octagons.html): minimum tile size in px */
+var NESTED_STAR_TILE_MIN = 40;
+var NESTED_STAR_CUT_RATIO = 1 / (2 + Math.SQRT2);
+var NESTED_STAR_INNER_STAR_MIN_T = 6;
+var NESTED_STAR_STROKE_WIDTH = 1;
+
+/** Main app grid type (index.html) */
+var GRID_TYPE_OCTAGON = "octagon";
+var GRID_TYPE_STAR = "star";
+
+/** Star grid only: max value on “Iranian community” density slider (octagons-n) */
+var STAR_GRID_OCTAGONS_N_MAX = 11;

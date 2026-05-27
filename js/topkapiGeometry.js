@@ -940,66 +940,6 @@
   }
 
   /**
-   * Four corner triangles per junction (inside upright square, outside diamond).
-   * @param {number} octagonsN
-   * @param {number} canvasW
-   * @param {number} canvasH
-   * @param {number} innerScale shrinks with diamond (matches buildDiamondCatalog)
-   * @returns {{ id: string, points: { x: number, y: number }[] }[]}
-   */
-  function buildCornerTriangleCatalog(octagonsN, canvasW, canvasH, innerScale) {
-    if (typeof innerScale !== "number") {
-      innerScale = 1;
-    }
-    var layout = computeLayout(octagonsN, canvasW, canvasH);
-    var T = layout.tileSize;
-    var cut = T * CUT;
-    var h = cut * innerScale;
-    var catalog = [];
-
-    for (var row = 0; row <= layout.rows; row++) {
-      for (var col = 0; col <= layout.cols; col++) {
-        var cx = col * T;
-        var cy = layout.offsetY + row * T;
-        catalog.push({
-          id: "pt-tl-" + col + "-" + row,
-          points: [
-            { x: roundCoord(cx - h), y: roundCoord(cy - h) },
-            { x: roundCoord(cx), y: roundCoord(cy - h) },
-            { x: roundCoord(cx - h), y: roundCoord(cy) },
-          ],
-        });
-        catalog.push({
-          id: "pt-tr-" + col + "-" + row,
-          points: [
-            { x: roundCoord(cx + h), y: roundCoord(cy - h) },
-            { x: roundCoord(cx + h), y: roundCoord(cy) },
-            { x: roundCoord(cx), y: roundCoord(cy - h) },
-          ],
-        });
-        catalog.push({
-          id: "pt-br-" + col + "-" + row,
-          points: [
-            { x: roundCoord(cx + h), y: roundCoord(cy + h) },
-            { x: roundCoord(cx), y: roundCoord(cy + h) },
-            { x: roundCoord(cx + h), y: roundCoord(cy) },
-          ],
-        });
-        catalog.push({
-          id: "pt-bl-" + col + "-" + row,
-          points: [
-            { x: roundCoord(cx - h), y: roundCoord(cy + h) },
-            { x: roundCoord(cx - h), y: roundCoord(cy) },
-            { x: roundCoord(cx), y: roundCoord(cy + h) },
-          ],
-        });
-      }
-    }
-
-    return catalog;
-  }
-
-  /**
    * Inner diamonds at cell junctions (upright square midpoints between octagons).
    * @param {number} octagonsN
    * @param {number} canvasW
@@ -1024,171 +964,6 @@
     }
 
     return catalog;
-  }
-
-  /**
-   * Largest circle that fits inside the unit-cell octagon (local center T/2, T/2).
-   * @param {number} T tile size
-   * @returns {number}
-   */
-  function octagonInscribedRadius(T) {
-    var cut = T * CUT;
-    var edges = getOctagonEdges(T, cut);
-    var px = T / 2;
-    var py = T / 2;
-    var minDistSq = Infinity;
-    for (var i = 0; i < edges.length; i++) {
-      var e = edges[i];
-      var dSq = distancePointToSegmentSq(px, py, e.x1, e.y1, e.x2, e.y2);
-      if (dSq < minDistSq) minDistSq = dSq;
-    }
-    return Math.sqrt(minDistSq);
-  }
-
-  /**
-   * @param {number} T tile size
-   * @returns {number}
-   */
-  function letterMarkerRadius(T) {
-    var radiusRatio =
-      typeof LETTER_MARKER_RADIUS_RATIO !== "undefined"
-        ? LETTER_MARKER_RADIUS_RATIO
-        : 0.75;
-    return octagonInscribedRadius(T) * radiusRatio;
-  }
-
-  /**
-   * @param {string[]} words
-   * @returns {number[]}
-   */
-  function letterMarkerWordLengths(words) {
-    var lengths = [];
-    for (var i = 0; i < words.length; i++) {
-      lengths.push(Array.from(words[i]).length);
-    }
-    return lengths;
-  }
-
-  /**
-   * Row span when each word starts at the previous word's last circle.
-   * @param {number[]} lengths
-   * @returns {number}
-   */
-  function letterMarkerCascadeRowSpan(lengths) {
-    var sum = 0;
-    var i;
-    for (i = 0; i < lengths.length; i++) {
-      sum += lengths[i];
-    }
-    return sum - lengths.length;
-  }
-
-  /**
-   * @param {{ rows: number, cols: number }} layout
-   * @param {{ col: number, startRow: number }} anchor
-   * @param {number[]} lengths per word (index 0 = rightmost column)
-   * @returns {boolean}
-   */
-  function isLetterMarkerAnchorValid(layout, anchor, lengths) {
-    if (!anchor || !lengths.length) return false;
-    var maxColumns =
-      typeof LETTER_MARKER_MAX_COLUMNS !== "undefined"
-        ? LETTER_MARKER_MAX_COLUMNS
-        : 12;
-    if (lengths.length > maxColumns) return false;
-    if (anchor.col < lengths.length - 1) return false;
-
-    var rowSpan = letterMarkerCascadeRowSpan(lengths);
-    if (anchor.startRow < 0) return false;
-    if (anchor.startRow + rowSpan >= layout.rows) return false;
-
-    return true;
-  }
-
-  /**
-   * @param {{ rows: number, cols: number }} layout
-   * @param {number[]} lengths
-   * @returns {{ col: number, startRow: number }[]}
-   */
-  function findValidLetterMarkerAnchors(layout, lengths) {
-    if (!lengths.length) return [];
-
-    var maxColumns =
-      typeof LETTER_MARKER_MAX_COLUMNS !== "undefined"
-        ? LETTER_MARKER_MAX_COLUMNS
-        : 12;
-    if (lengths.length > maxColumns) return [];
-
-    var nCols = lengths.length;
-    var rowSpan = letterMarkerCascadeRowSpan(lengths);
-    var maxStartRow = layout.rows - 1 - rowSpan;
-    if (maxStartRow < 0) return [];
-
-    var candidates = [];
-    var col;
-    var startRow;
-
-    for (col = nCols - 1; col < layout.cols; col++) {
-      for (startRow = 0; startRow <= maxStartRow; startRow++) {
-        candidates.push({ col: col, startRow: startRow });
-      }
-    }
-
-    return candidates;
-  }
-
-  /**
-   * @param {{ rows: number, cols: number }} layout
-   * @param {number[]} lengths
-   * @returns {{ col: number, startRow: number } | null}
-   */
-  function pickRandomLetterMarkerAnchor(layout, lengths) {
-    var candidates = findValidLetterMarkerAnchors(layout, lengths);
-    if (!candidates.length) return null;
-    return candidates[Math.floor(Math.random() * candidates.length)];
-  }
-
-  /**
-   * One column per word; words[0] is rightmost. Each word starts at the last
-   * circle row of the previous word (cascade down and left).
-   * @param {{ tileSize: number, offsetY: number, rows: number }} layout
-   * @param {{ col: number, startRow: number }} anchor
-   * @param {string[]} words
-   * @returns {{ columns: { markers: { cx: number, cy: number, r: number, char: string }[] }[] }}
-   */
-  function buildLetterMarkerColumns(layout, anchor, words) {
-    var lengths = letterMarkerWordLengths(words);
-    if (!lengths.length || !anchor) {
-      return { columns: [] };
-    }
-
-    var T = layout.tileSize;
-    var half = T / 2;
-    var letterR = letterMarkerRadius(T);
-    var rowCursor = anchor.startRow;
-    var columns = [];
-    var i;
-    var j;
-
-    for (i = 0; i < words.length; i++) {
-      var colIndex = anchor.col - i;
-      var len = lengths[i];
-      var chars = Array.from(words[i]);
-      var markers = [];
-
-      for (j = 0; j < len; j++) {
-        markers.push({
-          cx: colIndex * T + half,
-          cy: layout.offsetY + (rowCursor + j) * T + half,
-          r: letterR,
-          char: chars[j],
-        });
-      }
-      columns.push({ markers: markers });
-      rowCursor += len - 1;
-    }
-
-    return { columns: columns };
   }
 
   var VERTICAL_SEGMENT_X_EPS = 1e-6;
@@ -1450,11 +1225,6 @@
     return n >= 8;
   }
 
-  /** @deprecated alias */
-  function isOctagonFace(face) {
-    return isOctagonUnitFace(face);
-  }
-
   /**
    * True if merged region encloses at least one square/kite cell (not octagon-only).
    * @param {{ points: { x: number, y: number }[] }} face
@@ -1510,6 +1280,52 @@
    * @param {{ points: { x: number, y: number }[] }[]} baselineFaces
    * @returns {{ points: { x: number, y: number }[] }[]}
    */
+  /**
+   * Fill merged regions created by prune/orphan removals not covered by cluster fills.
+   * @param {{ points: { x: number, y: number }[] }[]} fillRegions
+   * @param {{x1:number,y1:number,x2:number,y2:number}[]} allSegments
+   * @param {{ points: { x: number, y: number }[] }[]} baselineFaces
+   * @param {Set<string>} removedSet
+   * @returns {{ points: { x: number, y: number }[] }[]}
+   */
+  function appendOrphanAutoMergeFillRegions(
+    fillRegions,
+    allSegments,
+    baselineFaces,
+    removedSet
+  ) {
+    var merged = getMergedPolygonRegions(allSegments, removedSet);
+    var out = fillRegions.slice();
+    var mi;
+    var region;
+    var c;
+    var fi;
+    var dup;
+
+    for (mi = 0; mi < merged.length; mi++) {
+      region = merged[mi];
+      if (countBaselineFacesInsideCurrentFace(region, baselineFaces) <= 1) {
+        continue;
+      }
+      if (isOctagonOnlyMergedRegion(region, baselineFaces)) continue;
+      if (!mergedRegionIncludesSquareCell(region, baselineFaces)) continue;
+
+      c = polygonCentroid(region.points);
+      dup = false;
+      for (fi = 0; fi < out.length; fi++) {
+        if (pointInPolygon(c.x, c.y, out[fi].points)) {
+          dup = true;
+          break;
+        }
+      }
+      if (!dup) {
+        out.push({ points: simplifyPolygonRing(region.points) });
+      }
+    }
+
+    return out;
+  }
+
   function filterAutoMergeFillRegions(regions, baselineFaces) {
     var out = [];
     var i;
@@ -1691,7 +1507,6 @@
       var currentKeys = collectInternalEdgeKeys(cluster, edgeToFaces);
       var currentCount = currentKeys.length;
 
-      if (currentCount >= targetEdges) break;
       if (currentCount >= edgesMax) break;
 
       var candidates = [];
@@ -1702,7 +1517,6 @@
       var trial;
       var trialKeys;
       var trialCount;
-      var ci;
 
       for (fi = 0; fi < cluster.length; fi++) {
         neighbors = adjacency[cluster[fi]].slice();
@@ -1739,27 +1553,21 @@
           var aSq = isSquareUnitFace(faces[a.face]) ? 0 : 1;
           var bSq = isSquareUnitFace(faces[b.face]) ? 0 : 1;
           if (aSq !== bSq) return aSq - bSq;
-          return (
-            Math.abs(a.edgeCount - targetEdges) -
-            Math.abs(b.edgeCount - targetEdges)
-          );
+          var sqScoreA = Math.abs(a.edgeCount - targetEdges);
+          var sqScoreB = Math.abs(b.edgeCount - targetEdges);
+          if (sqScoreA !== sqScoreB) return sqScoreA - sqScoreB;
+          return b.edgeCount - a.edgeCount;
         });
       } else {
-        shuffleArray(candidates);
+        candidates.sort(function (a, b) {
+          var scoreA = Math.abs(a.edgeCount - targetEdges);
+          var scoreB = Math.abs(b.edgeCount - targetEdges);
+          if (scoreA !== scoreB) return scoreA - scoreB;
+          return b.edgeCount - a.edgeCount;
+        });
       }
 
       var best = candidates[0];
-      var bestScore = Math.abs(best.edgeCount - targetEdges);
-      for (ci = 1; ci < candidates.length; ci++) {
-        var score = Math.abs(candidates[ci].edgeCount - targetEdges);
-        if (
-          score < bestScore ||
-          (score === bestScore && candidates[ci].edgeCount > best.edgeCount)
-        ) {
-          best = candidates[ci];
-          bestScore = score;
-        }
-      }
 
       if (clusterSet[best.face]) break;
       clusterSet[best.face] = true;
@@ -1771,6 +1579,128 @@
     if (!isValidAutoMergeCluster(faces, cluster)) return [];
 
     return cluster;
+  }
+
+  /**
+   * @param {{ x: number, y: number }} pt
+   * @param {number[]} clusterFaceIndices
+   * @param {{ points: { x: number, y: number }[] }[]} baselineFaces
+   * @returns {boolean}
+   */
+  function pointInClusterCellUnion(pt, clusterFaceIndices, baselineFaces) {
+    var i;
+    for (i = 0; i < clusterFaceIndices.length; i++) {
+      if (
+        pointInPolygon(
+          pt.x,
+          pt.y,
+          baselineFaces[clusterFaceIndices[i]].points
+        )
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * All auto-merge removals that belong to this cluster (internal + pruned spikes).
+   * @param {number[]} clusterFaceIndices
+   * @param {{ points: { x: number, y: number }[] }[]} baselineFaces
+   * @param {Set<string>} autoMergeRemovedSet
+   * @param {{x1:number,y1:number,x2:number,y2:number}[]} allSegments
+   * @returns {string[]}
+   */
+  function collectClusterRemovedEdgeKeys(
+    clusterFaceIndices,
+    baselineFaces,
+    autoMergeRemovedSet,
+    allSegments
+  ) {
+    if (!autoMergeRemovedSet || !autoMergeRemovedSet.size) return [];
+
+    var clusterSet = {};
+    var i;
+    var keys = {};
+    var graph = buildFaceAdjacency(baselineFaces);
+    var edgeToFaces = graph.edgeToFaces;
+
+    for (i = 0; i < clusterFaceIndices.length; i++) {
+      clusterSet[clusterFaceIndices[i]] = true;
+    }
+
+    autoMergeRemovedSet.forEach(function (key) {
+      var facesOnEdge = edgeToFaces[key];
+      if (facesOnEdge && facesOnEdge.length === 2) {
+        if (clusterSet[facesOnEdge[0]] && clusterSet[facesOnEdge[1]]) {
+          keys[key] = true;
+        }
+        return;
+      }
+
+      var seg = segmentForKey(allSegments, key);
+      if (!seg) return;
+      var mid = {
+        x: (seg.x1 + seg.x2) / 2,
+        y: (seg.y1 + seg.y2) / 2,
+      };
+      if (pointInClusterCellUnion(mid, clusterFaceIndices, baselineFaces)) {
+        keys[key] = true;
+      }
+    });
+
+    return Object.keys(keys);
+  }
+
+  /**
+   * Drop duplicate and nearly-collinear vertices (avoids stray outline segments).
+   * @param {{ x: number, y: number }[]} points
+   * @param {number} [eps]
+   * @returns {{ x: number, y: number }[]}
+   */
+  function simplifyPolygonRing(points, eps) {
+    if (!points || points.length < 3) return points;
+    eps = typeof eps === "number" ? eps : 1e-4;
+
+    var deduped = [];
+    var i;
+    for (i = 0; i < points.length; i++) {
+      var cur = points[i];
+      var prev = deduped[deduped.length - 1];
+      if (
+        prev &&
+        Math.abs(prev.x - cur.x) <= eps &&
+        Math.abs(prev.y - cur.y) <= eps
+      ) {
+        continue;
+      }
+      deduped.push(cur);
+    }
+    if (deduped.length > 1) {
+      var first = deduped[0];
+      var last = deduped[deduped.length - 1];
+      if (
+        Math.abs(first.x - last.x) <= eps &&
+        Math.abs(first.y - last.y) <= eps
+      ) {
+        deduped.pop();
+      }
+    }
+    if (deduped.length < 3) return points;
+
+    var simplified = [];
+    var n = deduped.length;
+    for (i = 0; i < n; i++) {
+      var pPrev = deduped[(i - 1 + n) % n];
+      var pCur = deduped[i];
+      var pNext = deduped[(i + 1) % n];
+      var cross =
+        (pCur.x - pPrev.x) * (pNext.y - pPrev.y) -
+        (pCur.y - pPrev.y) * (pNext.x - pPrev.x);
+      if (Math.abs(cross) > eps) simplified.push(pCur);
+    }
+
+    return simplified.length >= 3 ? simplified : deduped;
   }
 
   /**
@@ -1830,13 +1760,21 @@
     var edgeToFaces = graph.edgeToFaces;
     var claimedGlobal = {};
     var allKeys = {};
-    var areaCount = randomIntInRange(areaCountMin, areaCountMax);
+    var targetAreas = randomIntInRange(areaCountMin, areaCountMax);
+    var seedAttemptsPerArea =
+      typeof AUTO_MERGE_SEED_ATTEMPTS_PER_AREA !== "undefined"
+        ? AUTO_MERGE_SEED_ATTEMPTS_PER_AREA
+        : 12;
+    var maxSeedAttempts = Math.max(
+      targetAreas * seedAttemptsPerArea,
+      seedAttemptsPerArea * 2
+    );
     var inset = boundsInset;
     var minX = bounds.x + inset;
     var maxX = bounds.x + bounds.width - inset;
     var minY = bounds.y + inset;
     var maxY = bounds.y + bounds.height - inset;
-    var s;
+    var seedAttempts = 0;
     var sx;
     var sy;
     var seedIdx;
@@ -1846,7 +1784,7 @@
     var ki;
     var targetEdges;
     var attempt;
-    var maxAttempts = 8;
+    var growAttempts = 8;
 
     function isSeedCandidate(faceIdx) {
       if (claimedGlobal[faceIdx]) return false;
@@ -1858,7 +1796,8 @@
       return true;
     }
 
-    for (s = 0; s < areaCount; s++) {
+    while (clusters.length < targetAreas && seedAttempts < maxSeedAttempts) {
+      seedAttempts++;
       if (maxX <= minX || maxY <= minY) break;
       sx = minX + Math.random() * (maxX - minX);
       sy = minY + Math.random() * (maxY - minY);
@@ -1868,7 +1807,7 @@
       targetEdges = randomIntInRange(edgesPerAreaMin, edgesPerAreaMax);
       cluster = [];
 
-      for (attempt = 0; attempt < maxAttempts; attempt++) {
+      for (attempt = 0; attempt < growAttempts; attempt++) {
         cluster = growClusterByEdges(
           seedIdx,
           faces,
@@ -1910,17 +1849,34 @@
    * @param {{ points: { x: number, y: number }[] }[]} baselineFaces
    * @param {number[]} clusterFaceIndices
    * @param {string[]} clusterEdgeKeys
+   * @param {Set<string>} [autoMergeRemovedSet]
    * @returns {{ points: { x: number, y: number }[] } | null}
    */
   function getClusterFillRegion(
     allSegments,
     baselineFaces,
     clusterFaceIndices,
-    clusterEdgeKeys
+    clusterEdgeKeys,
+    autoMergeRemovedSet
   ) {
-    if (!clusterFaceIndices.length || !clusterEdgeKeys.length) return null;
+    if (!clusterFaceIndices.length) return null;
 
-    var removed = new Set(clusterEdgeKeys);
+    var removedKeys = clusterEdgeKeys.slice();
+    if (autoMergeRemovedSet && autoMergeRemovedSet.size) {
+      removedKeys = collectClusterRemovedEdgeKeys(
+        clusterFaceIndices,
+        baselineFaces,
+        autoMergeRemovedSet,
+        allSegments
+      );
+    }
+    if (!removedKeys.length) return null;
+
+    var removed = new Set(removedKeys);
+    var ki;
+    for (ki = 0; ki < clusterEdgeKeys.length; ki++) {
+      removed.add(clusterEdgeKeys[ki]);
+    }
     var visible = getVisibleSegmentsFromRemoved(allSegments, removed);
     var currentFaces = traceFaces(visible);
     var centroids = [];
@@ -1933,6 +1889,9 @@
         polygonCentroid(baselineFaces[clusterFaceIndices[i]].points)
       );
     }
+
+    var bestFace = null;
+    var bestArea = 0;
 
     for (i = 0; i < currentFaces.length; i++) {
       face = currentFaces[i];
@@ -1954,10 +1913,56 @@
       ) {
         continue;
       }
-      return face;
+      var area = polygonArea(face.points);
+      if (area > bestArea) {
+        bestArea = area;
+        bestFace = face;
+      }
     }
 
-    return null;
+    if (!bestFace) {
+      var mergedCandidates = getMergedPolygonRegions(allSegments, removed);
+      var bestInside = 0;
+      var mi;
+      var insideCount;
+      var rc;
+      for (mi = 0; mi < mergedCandidates.length; mi++) {
+        var candidate = mergedCandidates[mi];
+        if (isOctagonOnlyMergedRegion(candidate, baselineFaces)) continue;
+        if (!mergedRegionIncludesSquareCell(candidate, baselineFaces)) continue;
+        if (
+          countBaselineFacesInsideCurrentFace(candidate, baselineFaces) <
+          clusterFaceIndices.length
+        ) {
+          continue;
+        }
+        insideCount = 0;
+        for (rc = 0; rc < centroids.length; rc++) {
+          if (
+            pointInPolygon(
+              centroids[rc].x,
+              centroids[rc].y,
+              candidate.points
+            )
+          ) {
+            insideCount++;
+          }
+        }
+        if (insideCount < centroids.length) continue;
+        if (
+          insideCount > bestInside ||
+          (insideCount === bestInside &&
+            polygonArea(candidate.points) > bestArea)
+        ) {
+          bestInside = insideCount;
+          bestFace = candidate;
+          bestArea = polygonArea(candidate.points);
+        }
+      }
+    }
+
+    if (!bestFace) return null;
+    return { points: simplifyPolygonRing(bestFace.points) };
   }
 
   function collectUniqueGridXCoords(segments) {
@@ -1980,40 +1985,22 @@
 
   global.TopkapiGeometry = {
     buildPatternSegments: buildPatternSegments,
-    addUnitCellSegments: addUnitCellSegments,
     computeLayout: computeLayout,
     getGridContentBounds: getGridContentBounds,
     tileSizeFromN: tileSizeFromN,
     segmentKey: segmentKey,
-    vertexKey: vertexKey,
-    distancePointToSegmentSq: distancePointToSegmentSq,
     findSegmentsNearPolyline: findSegmentsNearPolyline,
-    findDanglingSegmentKeys: findDanglingSegmentKeys,
     findDanglingPruneKeys: findDanglingPruneKeys,
     findRestoreCandidateKeys: findRestoreCandidateKeys,
     filterValidRestoreKeys: filterValidRestoreKeys,
-    buildVertexIncidence: buildVertexIncidence,
     buildDiamondCatalog: buildDiamondCatalog,
-    buildCornerTriangleCatalog: buildCornerTriangleCatalog,
     buildUprightSquareCatalog: buildUprightSquareCatalog,
-    octagonInscribedRadius: octagonInscribedRadius,
-    letterMarkerWordLengths: letterMarkerWordLengths,
-    isLetterMarkerAnchorValid: isLetterMarkerAnchorValid,
-    findValidLetterMarkerAnchors: findValidLetterMarkerAnchors,
-    pickRandomLetterMarkerAnchor: pickRandomLetterMarkerAnchor,
-    buildLetterMarkerColumns: buildLetterMarkerColumns,
-    uprightSquareInscribedRadius: uprightSquareInscribedRadius,
     collectUniqueGridXCoords: collectUniqueGridXCoords,
     traceFaces: traceFaces,
     getMergedPolygonRegions: getMergedPolygonRegions,
     filterAutoMergeFillRegions: filterAutoMergeFillRegions,
+    appendOrphanAutoMergeFillRegions: appendOrphanAutoMergeFillRegions,
     getClusterFillRegion: getClusterFillRegion,
-    isOctagonFace: isOctagonFace,
-    isValidAutoMergeCluster: isValidAutoMergeCluster,
-    buildFaceAdjacency: buildFaceAdjacency,
-    findNearestFaceIndex: findNearestFaceIndex,
-    growClusterByEdges: growClusterByEdges,
-    collectInternalEdgeKeys: collectInternalEdgeKeys,
     computeAutoMergePlan: computeAutoMergePlan,
   };
 })(typeof window !== "undefined" ? window : this);

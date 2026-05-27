@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Rotated Square Grid — 70×180cm @ 300 DPI</title>
+    <title>Nested Star Octagons — 70×180cm @ 300 DPI</title>
     <link rel="stylesheet" href="css/styles.css" />
   </head>
   <body>
@@ -330,17 +330,14 @@
               <a href="index.html" id="grid-choose-octagon-btn" class="sidebar__grid-btn"
                 >Octagon</a
               >
-              <a
-                href="swastika.html"
-                id="grid-choose-square-btn"
-                class="sidebar__grid-btn is-active"
-                aria-current="page"
+              <a href="swastika.html" id="grid-choose-square-btn" class="sidebar__grid-btn"
                 >square</a
               >
               <a
                 href="nested-star-octagons.html"
                 id="grid-choose-nested-star-btn"
-                class="sidebar__grid-btn"
+                class="sidebar__grid-btn is-active"
+                aria-current="page"
                 >Nested star</a
               >
             </div>
@@ -353,18 +350,19 @@
               aria-label="Grid and export"
             >
             <li class="sidebar__item">
-              <span class="sidebar__item-label">Unit size</span>
+              <span class="sidebar__item-label">Complete octagons per row</span>
               <div class="sidebar__item-control">
                 <input
-                  id="swastika-unit-size"
+                  id="nested-star-octagons-n"
                   type="range"
-                  min="40"
-                  max="280"
-                  value="100"
+                  min="3"
+                  max="15"
+                  value="7"
                   step="1"
+                  aria-label="Number of complete octagons per row"
                 />
-                <output id="swastika-unit-size-out" for="swastika-unit-size"
-                  >100 px</output
+                <output id="nested-star-octagons-n-out" for="nested-star-octagons-n"
+                  >7</output
                 >
               </div>
             </li>
@@ -382,13 +380,13 @@
       </aside>
       <div class="main">
         <div class="stage-wrap" id="stage-wrap">
-          <!-- SVG injected by js/swastikaApp.js -->
+          <!-- SVG injected by js/nestedStarOctagonsApp.js -->
         </div>
       </div>
     </div>
     <script defer src="js/constants.js"></script>
-    <script defer src="js/swastikaGeometry.js"></script>
+    <script defer src="js/nestedStarOctagonsGeometry.js"></script>
     <script defer src="js/identityControls.js"></script>
-    <script defer src="js/swastikaApp.js"></script>
+    <script defer src="js/nestedStarOctagonsApp.js"></script>
   </body>
 </html>

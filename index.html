@@ -327,19 +327,28 @@
               role="group"
               aria-label="Identity grid type"
             >
-              <a
-                href="index.html"
+              <button
+                type="button"
                 id="grid-choose-octagon-btn"
                 class="sidebar__grid-btn is-active"
-                aria-current="page"
-                >Octagon</a
+                aria-pressed="true"
               >
+                Octagon
+              </button>
               <a
                 href="swastika.html"
-                id="grid-choose-square-btn"
+                id="grid-choose-sixfold-btn"
                 class="sidebar__grid-btn"
-                >square</a
+                >6-fold</a
               >
+              <button
+                type="button"
+                id="grid-choose-star-btn"
+                class="sidebar__grid-btn"
+                aria-pressed="false"
+              >
+                Star grid
+              </button>
             </div>
             <div class="sidebar__grid-choose-sliders">
               <div class="sidebar__grid-density sidebar__grid-density--long-label">
@@ -543,26 +552,6 @@
             <button type="button" id="reset-grid-btn" class="sidebar__btn" disabled>
               Reset grid
             </button>
-            <label class="sidebar__field">
-              <span class="sidebar__label">Merged area</span>
-              <div class="sidebar__item-control">
-                <input
-                  id="auto-merge-intensity"
-                  type="range"
-                  min="0"
-                  max="100"
-                  value="50"
-                  step="1"
-                  aria-label="Auto merge area amount and size"
-                />
-                <output id="auto-merge-intensity-out" for="auto-merge-intensity"
-                  >50%</output
-                >
-              </div>
-            </label>
-            <button type="button" id="auto-merge-btn" class="sidebar__btn">
-              Auto Merge
-            </button>
           </section>
 
           <section class="sidebar__section sidebar__section--bg">
@@ -670,34 +659,130 @@
             <h2 class="sidebar__title">Feelings</h2>
             <div class="sidebar__feelings-emotions">
               <div class="sidebar__feelings-emotion">
-                <span class="sidebar__feelings-heading">Anger</span>
+                <div class="sidebar__feelings-emotion-header">
+                  <span class="sidebar__feelings-heading">Anger</span>
+                  <div
+                    class="sidebar__toggle sidebar__feelings-canvas-toggle"
+                    role="group"
+                    aria-label="Show Anger on canvas"
+                  >
+                    <button
+                      type="button"
+                      id="feelings-anger-canvas-on"
+                      class="sidebar__toggle-btn is-active"
+                      aria-pressed="true"
+                    >
+                      On
+                    </button>
+                    <button
+                      type="button"
+                      id="feelings-anger-canvas-off"
+                      class="sidebar__toggle-btn"
+                      aria-pressed="false"
+                    >
+                      Off
+                    </button>
+                  </div>
+                </div>
                 <div class="sidebar__feelings-slot" id="feelings-anger-slot">
                   <div class="sidebar__feelings-control sidebar__item-control">
                     <input
                       id="anger-vertical-length"
                       type="range"
                       min="0"
-                      max="100"
-                      value="100"
+                      max="40"
+                      value="40"
                       step="1"
-                      aria-label="Left third vertical line length"
+                      aria-label="Vertical line length"
                     />
                     <output id="anger-vertical-length-out" for="anger-vertical-length"
-                      >100%</output
+                      >40%</output
                     >
                   </div>
                 </div>
               </div>
               <div class="sidebar__feelings-emotion">
-                <span class="sidebar__feelings-heading">Fear</span>
+                <div class="sidebar__feelings-emotion-header">
+                  <span class="sidebar__feelings-heading">Fear</span>
+                  <div
+                    class="sidebar__toggle sidebar__feelings-canvas-toggle"
+                    role="group"
+                    aria-label="Show Fear on canvas"
+                  >
+                    <button
+                      type="button"
+                      id="feelings-fear-canvas-on"
+                      class="sidebar__toggle-btn is-active"
+                      aria-pressed="true"
+                    >
+                      On
+                    </button>
+                    <button
+                      type="button"
+                      id="feelings-fear-canvas-off"
+                      class="sidebar__toggle-btn"
+                      aria-pressed="false"
+                    >
+                      Off
+                    </button>
+                  </div>
+                </div>
                 <div class="sidebar__feelings-slot" id="feelings-fear-slot"></div>
               </div>
               <div class="sidebar__feelings-emotion">
-                <span class="sidebar__feelings-heading">Hope</span>
+                <div class="sidebar__feelings-emotion-header">
+                  <span class="sidebar__feelings-heading">Hope</span>
+                  <div
+                    class="sidebar__toggle sidebar__feelings-canvas-toggle"
+                    role="group"
+                    aria-label="Show Hope on canvas"
+                  >
+                    <button
+                      type="button"
+                      id="feelings-hope-canvas-on"
+                      class="sidebar__toggle-btn is-active"
+                      aria-pressed="true"
+                    >
+                      On
+                    </button>
+                    <button
+                      type="button"
+                      id="feelings-hope-canvas-off"
+                      class="sidebar__toggle-btn"
+                      aria-pressed="false"
+                    >
+                      Off
+                    </button>
+                  </div>
+                </div>
                 <div class="sidebar__feelings-slot" id="feelings-hope-slot"></div>
               </div>
               <div class="sidebar__feelings-emotion">
-                <span class="sidebar__feelings-heading">Sadness</span>
+                <div class="sidebar__feelings-emotion-header">
+                  <span class="sidebar__feelings-heading">Sadness</span>
+                  <div
+                    class="sidebar__toggle sidebar__feelings-canvas-toggle"
+                    role="group"
+                    aria-label="Show Sadness on canvas"
+                  >
+                    <button
+                      type="button"
+                      id="feelings-sadness-canvas-on"
+                      class="sidebar__toggle-btn is-active"
+                      aria-pressed="true"
+                    >
+                      On
+                    </button>
+                    <button
+                      type="button"
+                      id="feelings-sadness-canvas-off"
+                      class="sidebar__toggle-btn"
+                      aria-pressed="false"
+                    >
+                      Off
+                    </button>
+                  </div>
+                </div>
                 <div class="sidebar__feelings-slot" id="feelings-sadness-slot">
                   <div class="sidebar__feelings-control sidebar__item-control">
                     <input
@@ -725,15 +810,102 @@
                 </div>
               </div>
               <div class="sidebar__feelings-emotion">
-                <span class="sidebar__feelings-heading">Pain</span>
-                <div class="sidebar__feelings-slot" id="feelings-pain-slot"></div>
+                <div class="sidebar__feelings-emotion-header">
+                  <span class="sidebar__feelings-heading">Pride</span>
+                  <div
+                    class="sidebar__toggle sidebar__feelings-canvas-toggle"
+                    role="group"
+                    aria-label="Show Pride on canvas"
+                  >
+                    <button
+                      type="button"
+                      id="feelings-pride-canvas-on"
+                      class="sidebar__toggle-btn is-active"
+                      aria-pressed="true"
+                    >
+                      On
+                    </button>
+                    <button
+                      type="button"
+                      id="feelings-pride-canvas-off"
+                      class="sidebar__toggle-btn"
+                      aria-pressed="false"
+                    >
+                      Off
+                    </button>
+                  </div>
+                </div>
+                <div class="sidebar__feelings-slot" id="feelings-pain-slot">
+                  <div class="sidebar__feelings-control sidebar__item-control">
+                    <input
+                      id="auto-merge-intensity"
+                      type="range"
+                      min="0"
+                      max="100"
+                      value="70"
+                      step="1"
+                      aria-label="Pride merged area amount and size"
+                    />
+                    <output id="auto-merge-intensity-out" for="auto-merge-intensity"
+                      >70% · 3–6 areas</output
+                    >
+                  </div>
+                </div>
               </div>
               <div class="sidebar__feelings-emotion">
-                <span class="sidebar__feelings-heading">Happiness</span>
+                <div class="sidebar__feelings-emotion-header">
+                  <span class="sidebar__feelings-heading">Happiness</span>
+                  <div
+                    class="sidebar__toggle sidebar__feelings-canvas-toggle"
+                    role="group"
+                    aria-label="Show Happiness on canvas"
+                  >
+                    <button
+                      type="button"
+                      id="feelings-happiness-canvas-on"
+                      class="sidebar__toggle-btn is-active"
+                      aria-pressed="true"
+                    >
+                      On
+                    </button>
+                    <button
+                      type="button"
+                      id="feelings-happiness-canvas-off"
+                      class="sidebar__toggle-btn"
+                      aria-pressed="false"
+                    >
+                      Off
+                    </button>
+                  </div>
+                </div>
                 <div class="sidebar__feelings-slot" id="feelings-happiness-slot"></div>
               </div>
               <div class="sidebar__feelings-emotion">
-                <span class="sidebar__feelings-heading">Pride</span>
+                <div class="sidebar__feelings-emotion-header">
+                  <span class="sidebar__feelings-heading">Pain</span>
+                  <div
+                    class="sidebar__toggle sidebar__feelings-canvas-toggle"
+                    role="group"
+                    aria-label="Show Pain on canvas"
+                  >
+                    <button
+                      type="button"
+                      id="feelings-pain-canvas-on"
+                      class="sidebar__toggle-btn is-active"
+                      aria-pressed="true"
+                    >
+                      On
+                    </button>
+                    <button
+                      type="button"
+                      id="feelings-pain-canvas-off"
+                      class="sidebar__toggle-btn"
+                      aria-pressed="false"
+                    >
+                      Off
+                    </button>
+                  </div>
+                </div>
                 <div class="sidebar__feelings-slot" id="feelings-pride-slot">
                   <div class="sidebar__feelings-control sidebar__item-control">
                     <input
@@ -743,7 +915,7 @@
                       max="40"
                       value="25"
                       step="1"
-                      aria-label="Pride diamond fill amount"
+                      aria-label="Pain diamond fill amount"
                     />
                     <output id="pride-fill-percent-out" for="pride-fill-percent"
                       >25%</output
@@ -911,6 +1083,7 @@
     <script defer src="js/constants.js"></script>
     <script defer src="js/labelBarSvgAssets.js"></script>
     <script defer src="js/topkapiGeometry.js"></script>
+    <script defer src="js/nestedStarOctagonsGeometry.js"></script>
     <script defer src="js/identityControls.js"></script>
     <script defer src="js/labelBarControls.js"></script>
     <script defer src="js/stippleEngine.js"></script>

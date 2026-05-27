@@ -6,7 +6,11 @@
   var cachedExportFontDataUri = null;
   var lastOctagonsN = OCTAGONS_N_DEFAULT;
   var lastTileSize = CANVAS_W / (OCTAGONS_N_DEFAULT + 1);
+  var gridType = GRID_TYPE_OCTAGON;
+  var starValidLayouts = [];
   var cachedAllSegments = [];
+  /** @type {{ outline: {x:number,y:number}[] }[]} */
+  var cachedStarFills = [];
   var cachedVerticalGridLines = [];
   var lastVerticalGridLayoutSignature = "";
 
@@ -33,6 +37,27 @@
   var stippleGenerationId = 0;
   /** Frame inset overlay (lines, caps, ellipses, diagonals); default hidden */
   var frameInsetOverlayVisible = false;
+
+  /** Feelings On/Off toggles — which emotion layers are drawn on the canvas. */
+  var emotionCanvasVisible = {
+    anger: true,
+    fear: true,
+    hope: true,
+    sadness: true,
+    pride: true,
+    happiness: true,
+    pain: true,
+  };
+
+  var FEELINGS_CANVAS_KEYS = [
+    "anger",
+    "fear",
+    "hope",
+    "sadness",
+    "pride",
+    "happiness",
+    "pain",
+  ];
 
   /** Persist mask holes so continued merging cannot drop earlier cutouts. */
   var stickyMergedCutoutFaces = null;
@@ -95,10 +120,264 @@
     return document.createElementNS(NS, name);
   }
 
+  function isEmotionCanvasVisible(key) {
+    return emotionCanvasVisible[key] !== false;
+  }
+
+  function syncFeelingsCanvasToggleButtons(key) {
+    var onBtn = document.getElementById("feelings-" + key + "-canvas-on");
+    var offBtn = document.getElementById("feelings-" + key + "-canvas-off");
+    if (!onBtn || !offBtn) return;
+    var visible = isEmotionCanvasVisible(key);
+    onBtn.classList.toggle("is-active", visible);
+    offBtn.classList.toggle("is-active", !visible);
+    onBtn.setAttribute("aria-pressed", String(visible));
+    offBtn.setAttribute("aria-pressed", String(!visible));
+  }
+
+  function setEmotionCanvasVisible(key, visible) {
+    if (FEELINGS_CANVAS_KEYS.indexOf(key) < 0) return;
+    emotionCanvasVisible[key] = !!visible;
+    syncFeelingsCanvasToggleButtons(key);
+    refreshEmotionCanvasLayers();
+  }
+
+  function refreshEmotionCanvasLayers() {
+    renderVerticalGridLayer();
+    renderDiamondFillsLayer();
+    renderPatternLayer();
+    renderAutoMergeFillsLayer();
+    applyMergeReveal();
+    renderStippleDotsLayer();
+  }
+
+  function initFeelingsCanvasToggles() {
+    var i;
+    var key;
+    for (i = 0; i < FEELINGS_CANVAS_KEYS.length; i++) {
+      key = FEELINGS_CANVAS_KEYS[i];
+      syncFeelingsCanvasToggleButtons(key);
+      (function (emotionKey) {
+        var onBtn = document.getElementById(
+          "feelings-" + emotionKey + "-canvas-on"
+        );
+        var offBtn = document.getElementById(
+          "feelings-" + emotionKey + "-canvas-off"
+        );
+        if (onBtn) {
+          onBtn.addEventListener("click", function () {
+            setEmotionCanvasVisible(emotionKey, true);
+          });
+        }
+        if (offBtn) {
+          offBtn.addEventListener("click", function () {
+            setEmotionCanvasVisible(emotionKey, false);
+          });
+        }
+      })(key);
+    }
+  }
+
+  function getStarGridOctagonsNMax() {
+    return typeof STAR_GRID_OCTAGONS_N_MAX !== "undefined"
+      ? STAR_GRID_OCTAGONS_N_MAX
+      : OCTAGONS_N_MAX;
+  }
+
+  function getOctagonsNMaxForActiveGrid() {
+    return isStarGrid() ? getStarGridOctagonsNMax() : OCTAGONS_N_MAX;
+  }
+
   function getOctagonsN() {
     var slider = document.getElementById("octagons-n");
     var v = slider ? Number(slider.value) : OCTAGONS_N_DEFAULT;
-    return Math.min(OCTAGONS_N_MAX, Math.max(OCTAGONS_N_MIN, Math.round(v)));
+    return Math.min(
+      getOctagonsNMaxForActiveGrid(),
+      Math.max(OCTAGONS_N_MIN, Math.round(v))
+    );
+  }
+
+  function isStarGrid() {
+    return gridType === GRID_TYPE_STAR;
+  }
+
+  function isOctagonGrid() {
+    return gridType === GRID_TYPE_OCTAGON;
+  }
+
+  function ensureStarValidLayouts() {
+    if (
+      typeof NestedStarOctagonsGeometry === "undefined" ||
+      !NestedStarOctagonsGeometry.buildValidLayouts
+    ) {
+      return;
+    }
+    var starMaxN = getStarGridOctagonsNMax();
+    starValidLayouts = NestedStarOctagonsGeometry.buildValidLayouts(
+      CANVAS_W,
+      CANVAS_H
+    ).filter(function (layout) {
+      return layout.n <= starMaxN;
+    });
+    if (!starValidLayouts.length) {
+      starValidLayouts = [
+        NestedStarOctagonsGeometry.computeLayoutFromN(
+          OCTAGONS_N_DEFAULT,
+          CANVAS_W,
+          CANVAS_H
+        ),
+      ];
+    }
+  }
+
+  function getStarLayout() {
+    if (!starValidLayouts.length) ensureStarValidLayouts();
+    return NestedStarOctagonsGeometry.snapLayoutToN(
+      lastOctagonsN,
+      starValidLayouts,
+      CANVAS_W,
+      CANVAS_H
+    );
+  }
+
+  function syncOctagonDensitySliderRange() {
+    var slider = document.getElementById("octagons-n");
+    if (!slider) return;
+    if (isStarGrid() && starValidLayouts.length) {
+      var minN = starValidLayouts[0].n;
+      var maxN = Math.min(
+        starValidLayouts[starValidLayouts.length - 1].n,
+        getStarGridOctagonsNMax()
+      );
+      slider.min = String(minN);
+      slider.max = String(maxN);
+      if (Number(slider.value) > maxN) {
+        slider.value = String(maxN);
+      }
+    } else {
+      slider.min = String(OCTAGONS_N_MIN);
+      slider.max = String(OCTAGONS_N_MAX);
+    }
+  }
+
+  function syncGridTypeButtons() {
+    var octBtn = document.getElementById("grid-choose-octagon-btn");
+    var starBtn = document.getElementById("grid-choose-star-btn");
+    if (octBtn) {
+      octBtn.classList.toggle("is-active", isOctagonGrid());
+      octBtn.setAttribute("aria-pressed", String(isOctagonGrid()));
+    }
+    if (starBtn) {
+      starBtn.classList.toggle("is-active", isStarGrid());
+      starBtn.setAttribute("aria-pressed", String(isStarGrid()));
+    }
+  }
+
+  function syncGridSlidersForGridType() {
+    var innerScaleWrap = document.querySelector(
+      "#inner-scale"
+    );
+    innerScaleWrap =
+      innerScaleWrap &&
+      innerScaleWrap.closest(".sidebar__grid-density");
+    if (innerScaleWrap) innerScaleWrap.hidden = isStarGrid();
+  }
+
+  /** Star grid: deferred until later integration steps (gradient, emotions, etc.). */
+  var STAR_GRID_DEFERRED_LAYER_SELECTORS = [
+    "#inner-clipped-background",
+    "#inner-clipped-stipple-dots",
+    "#inner-clipped-grid-mask",
+    "#inner-clipped-auto-merge-fills",
+    "#layer-frame-inset-overlay",
+  ];
+
+  function setSvgSubtreeVisible(selector, visible) {
+    if (!designSvg) return;
+    var el = designSvg.querySelector(selector);
+    if (el) el.style.display = visible ? "" : "none";
+  }
+
+  function applyStarGridLayerVisibility() {
+    var i;
+    for (i = 0; i < STAR_GRID_DEFERRED_LAYER_SELECTORS.length; i++) {
+      setSvgSubtreeVisible(STAR_GRID_DEFERRED_LAYER_SELECTORS[i], false);
+    }
+    setSvgSubtreeVisible("#layer-border-divisions", true);
+    setSvgSubtreeVisible("#grid-boundary", true);
+    setSvgSubtreeVisible("#layer-edge-brown-bars", true);
+    setSvgSubtreeVisible("#edge-brown-bar-label-content", true);
+    setSvgSubtreeVisible("#layer-edge-serial", true);
+    setSvgSubtreeVisible("#inner-clipped-pattern", true);
+    setSvgSubtreeVisible("#inner-clipped-vertical-grid", false);
+    setSvgSubtreeVisible("#inner-clipped-vertical-grid-overlay", true);
+    setSvgSubtreeVisible("#inner-content", true);
+    setSvgSubtreeVisible("#canvas-background-fill", true);
+  }
+
+  function applyOctagonGridLayerVisibility() {
+    var i;
+    for (i = 0; i < STAR_GRID_DEFERRED_LAYER_SELECTORS.length; i++) {
+      setSvgSubtreeVisible(STAR_GRID_DEFERRED_LAYER_SELECTORS[i], true);
+    }
+    setSvgSubtreeVisible("#layer-border-divisions", true);
+    setSvgSubtreeVisible("#grid-boundary", true);
+    setSvgSubtreeVisible("#layer-edge-brown-bars", true);
+    setSvgSubtreeVisible("#edge-brown-bar-label-content", true);
+    setSvgSubtreeVisible("#layer-edge-serial", true);
+    setSvgSubtreeVisible("#inner-clipped-pattern", true);
+    setSvgSubtreeVisible("#inner-clipped-vertical-grid", true);
+    setSvgSubtreeVisible("#inner-clipped-vertical-grid-overlay", false);
+    setSvgSubtreeVisible("#inner-content", true);
+    setSvgSubtreeVisible("#canvas-background-fill", true);
+  }
+
+  function updateInnerContentTransformForGridType() {
+    if (!designSvg) return;
+    var inner = designSvg.querySelector("#inner-content");
+    if (!inner) return;
+    inner.setAttribute("transform", getInnerContentTransformAttr());
+  }
+
+  function refreshBorderFrameAndLabelBars() {
+    updateGridBoundaryRect();
+    updateBorderDivisionLines();
+    updateCanvasEdgeBrownBars();
+  }
+
+  function setGridType(nextType) {
+    if (nextType !== GRID_TYPE_OCTAGON && nextType !== GRID_TYPE_STAR) return;
+    if (gridType === nextType) return;
+    gridType = nextType;
+    clearMergeState();
+    clearAutoMergeState();
+    if (isStarGrid()) {
+      ensureStarValidLayouts();
+      syncOctagonDensitySliderRange();
+      setMode("view");
+    } else {
+      syncOctagonDensitySliderRange();
+    }
+    syncGridTypeButtons();
+    syncGridSlidersForGridType();
+    render();
+  }
+
+  function initGridTypeButtons() {
+    var octBtn = document.getElementById("grid-choose-octagon-btn");
+    var starBtn = document.getElementById("grid-choose-star-btn");
+    if (octBtn) {
+      octBtn.addEventListener("click", function () {
+        setGridType(GRID_TYPE_OCTAGON);
+      });
+    }
+    if (starBtn) {
+      starBtn.addEventListener("click", function () {
+        setGridType(GRID_TYPE_STAR);
+      });
+    }
+    syncGridTypeButtons();
+    syncGridSlidersForGridType();
   }
 
   function getInnerScale() {
@@ -187,8 +466,11 @@
         ? AUTO_MERGE_EDGES_PER_AREA_MAX_AT_MAX
         : 10;
 
-    var areaCountMin = areasAtMin;
-    var areaCountMax = Math.round(areasAtMin + t * (areasAtMax - areasAtMin));
+    var areaSpan = areasAtMax - areasAtMin;
+    var areaCountMin = Math.round(areasAtMin + t * areaSpan * 0.35);
+    var areaCountMax = Math.round(areasAtMin + t * areaSpan);
+    if (areaCountMax < areasAtMin) areaCountMax = areasAtMin;
+    if (areaCountMin < areasAtMin) areaCountMin = areasAtMin;
     if (areaCountMax < areaCountMin) areaCountMax = areaCountMin;
 
     var edgesPerAreaMin = Math.round(edgeMinAtMin + t * (edgeMinAtMax - edgeMinAtMin));
@@ -209,7 +491,15 @@
 
   function updateAutoMergeIntensityOutput() {
     var out = document.getElementById("auto-merge-intensity-out");
-    if (out) out.textContent = String(getAutoMergeIntensity()) + "%";
+    if (!out) return;
+    var opts = getAutoMergePlanOptions();
+    out.textContent =
+      String(getAutoMergeIntensity()) +
+      "% · " +
+      opts.areaCountMin +
+      "–" +
+      opts.areaCountMax +
+      " areas";
   }
 
   function getGridStrokeWidth() {
@@ -333,6 +623,10 @@
     var fill = getCanvasBackgroundColor();
     var borderFill = designSvg.querySelector("#canvas-background-fill");
     if (borderFill) borderFill.setAttribute("fill", fill);
+    if (isStarGrid()) {
+      updateBorderDivisionLines();
+      return;
+    }
     renderBackgroundLayer();
     renderGridMaskLayer("canvas-background-color");
   }
@@ -508,6 +802,7 @@
     if (!designSvg) return;
 
     var active = hasActiveMergeCutouts();
+    var showHope = isEmotionCanvasVisible("hope");
     var maskClipped = designSvg.querySelector("#inner-clipped-grid-mask");
     var dotsClipped = designSvg.querySelector("#inner-clipped-stipple-dots");
     var dotsLayer = designSvg.querySelector("#layer-stipple-dots");
@@ -516,7 +811,7 @@
       maskClipped.style.display = active ? "" : "none";
     }
 
-    if (!active) {
+    if (!active || !showHope) {
       if (dotsClipped) dotsClipped.style.display = "none";
       if (dotsLayer) dotsLayer.removeAttribute("clip-path");
       return;
@@ -547,11 +842,183 @@
   /**
    * @param {string[]} lines
    */
+  function getAutoMergeOutlineColor() {
+    return typeof AUTO_MERGE_OUTLINE_COLOR !== "undefined"
+      ? AUTO_MERGE_OUTLINE_COLOR
+      : "#B2FF00";
+  }
+
+  function getAutoMergeOutlineWidth() {
+    var mult =
+      typeof AUTO_MERGE_OUTLINE_WIDTH_GRID_MULTIPLIER !== "undefined"
+        ? AUTO_MERGE_OUTLINE_WIDTH_GRID_MULTIPLIER
+        : 3;
+    return getGridStrokeWidth() * mult;
+  }
+
+  function getAutoMergeShadowFilterParams() {
+    return {
+      shadowColor:
+        typeof AUTO_MERGE_SHADOW_COLOR !== "undefined"
+          ? AUTO_MERGE_SHADOW_COLOR
+          : "#685450",
+      blur:
+        typeof AUTO_MERGE_SHADOW_BLUR_PX !== "undefined"
+          ? AUTO_MERGE_SHADOW_BLUR_PX
+          : 4,
+      offsetX:
+        typeof AUTO_MERGE_SHADOW_OFFSET_X_PX !== "undefined"
+          ? AUTO_MERGE_SHADOW_OFFSET_X_PX
+          : -5,
+      offsetY:
+        typeof AUTO_MERGE_SHADOW_OFFSET_Y_PX !== "undefined"
+          ? AUTO_MERGE_SHADOW_OFFSET_Y_PX
+          : 5,
+      opacity:
+        typeof AUTO_MERGE_SHADOW_OPACITY !== "undefined"
+          ? AUTO_MERGE_SHADOW_OPACITY
+          : 0.9,
+    };
+  }
+
+  function getAutoMergeShadowFilterId() {
+    return typeof AUTO_MERGE_SHADOW_FILTER_ID !== "undefined"
+      ? AUTO_MERGE_SHADOW_FILTER_ID
+      : "auto-merge-region-shadow";
+  }
+
+  function getAutoMergeShadowFilterUrl() {
+    return "url(#" + getAutoMergeShadowFilterId() + ")";
+  }
+
+  /**
+   * @param {SVGElement} defs
+   */
+  function ensureAutoMergeShadowFilter(defs) {
+    var filterId = getAutoMergeShadowFilterId();
+    var existing = defs.querySelector("#" + filterId);
+    if (existing) defs.removeChild(existing);
+
+    var shadow = getAutoMergeShadowFilterParams();
+
+    var filter = elSvg("filter");
+    filter.setAttribute("id", filterId);
+    filter.setAttribute("x", "-50%");
+    filter.setAttribute("y", "-50%");
+    filter.setAttribute("width", "200%");
+    filter.setAttribute("height", "200%");
+
+    var drop = elSvg("feDropShadow");
+    drop.setAttribute("dx", String(shadow.offsetX));
+    drop.setAttribute("dy", String(shadow.offsetY));
+    drop.setAttribute("stdDeviation", String(shadow.blur));
+    drop.setAttribute("flood-color", shadow.shadowColor);
+    drop.setAttribute("flood-opacity", String(shadow.opacity));
+    filter.appendChild(drop);
+    defs.appendChild(filter);
+  }
+
+  /**
+   * @param {string[]} lines
+   */
+  function pushAutoMergeShadowFilterDefLines(lines) {
+    var filterId = getAutoMergeShadowFilterId();
+    var shadow = getAutoMergeShadowFilterParams();
+
+    lines.push(
+      '<filter id="' +
+        filterId +
+        '" x="-50%" y="-50%" width="200%" height="200%">' +
+        '<feDropShadow dx="' +
+        shadow.offsetX +
+        '" dy="' +
+        shadow.offsetY +
+        '" stdDeviation="' +
+        shadow.blur +
+        '" flood-color="' +
+        shadow.shadowColor +
+        '" flood-opacity="' +
+        shadow.opacity +
+        '"/>' +
+        "</filter>"
+    );
+  }
+
+  /**
+   * @param {string} pointsAttr
+   * @param {string} fillColor
+   * @returns {string}
+   */
+  function getAutoMergeRegionExportMarkup(pointsAttr, fillColor) {
+    var outline = getAutoMergeOutlineColor();
+    var strokeWidth = getAutoMergeOutlineWidth();
+    var filterUrl = getAutoMergeShadowFilterUrl();
+    return (
+      "<g>" +
+      '<g filter="' +
+      filterUrl +
+      '">' +
+      '<polygon points="' +
+      pointsAttr +
+      '" fill="' +
+      fillColor +
+      '" stroke="none"/>' +
+      "</g>" +
+      '<polygon points="' +
+      pointsAttr +
+      '" fill="' +
+      fillColor +
+      '" stroke="' +
+      outline +
+      '" stroke-width="' +
+      strokeWidth +
+      '" stroke-linejoin="round"/>' +
+      "</g>"
+    );
+  }
+
+  /**
+   * @param {{ x: number, y: number }[]} pts
+   * @param {string} fillColor
+   * @returns {SVGElement}
+   */
+  function createAutoMergeRegionGroup(pts, fillColor) {
+    var pointsAttr = "";
+    var p;
+    for (p = 0; p < pts.length; p++) {
+      if (p) pointsAttr += " ";
+      pointsAttr += pts[p].x + "," + pts[p].y;
+    }
+
+    var g = elSvg("g");
+    var shadowPoly = elSvg("polygon");
+    shadowPoly.setAttribute("points", pointsAttr);
+    shadowPoly.setAttribute("fill", fillColor);
+    shadowPoly.setAttribute("stroke", "none");
+    shadowPoly.setAttribute("filter", getAutoMergeShadowFilterUrl());
+    g.appendChild(shadowPoly);
+
+    var poly = elSvg("polygon");
+    poly.setAttribute("points", pointsAttr);
+    poly.setAttribute("fill", fillColor);
+    poly.setAttribute("stroke", getAutoMergeOutlineColor());
+    poly.setAttribute("stroke-width", String(getAutoMergeOutlineWidth()));
+    poly.setAttribute("stroke-linejoin", "round");
+    g.appendChild(poly);
+    return g;
+  }
+
   /**
    * @param {string[]} lines
    */
   function pushAutoMergeFillExportLines(lines) {
-    if (!autoMergeFillRegions || !autoMergeFillRegions.length) return;
+    if (
+      !isEmotionCanvasVisible("pride") ||
+      !autoMergeFillRegions ||
+      !autoMergeFillRegions.length
+    ) {
+      return;
+    }
 
     var fillColor = getPatternStrokeColor();
     lines.push('<g clip-path="url(#inner-content-clip)">');
@@ -568,13 +1035,7 @@
         if (p) pointsAttr += " ";
         pointsAttr += pts[p].x + "," + pts[p].y;
       }
-      lines.push(
-        '<polygon points="' +
-          pointsAttr +
-          '" fill="' +
-          fillColor +
-          '" stroke="none"/>'
-      );
+      lines.push(getAutoMergeRegionExportMarkup(pointsAttr, fillColor));
     }
     lines.push("</g>");
     lines.push("</g>");
@@ -660,7 +1121,12 @@
 
     while (layer.firstChild) layer.removeChild(layer.firstChild);
 
-    if (!hasActiveMergeCutouts() || !stippleDotsCache || !stippleDotsCache.dots.length) {
+    if (
+      !isEmotionCanvasVisible("hope") ||
+      !hasActiveMergeCutouts() ||
+      !stippleDotsCache ||
+      !stippleDotsCache.dots.length
+    ) {
       applyMergeReveal();
       return;
     }
@@ -694,7 +1160,12 @@
    * @param {string[]} lines
    */
   function pushStippleDotsExportLines(lines) {
-    if (!hasActiveMergeCutouts() || !stippleDotsCache || !stippleDotsCache.dots.length) {
+    if (
+      !isEmotionCanvasVisible("hope") ||
+      !hasActiveMergeCutouts() ||
+      !stippleDotsCache ||
+      !stippleDotsCache.dots.length
+    ) {
       return;
     }
 
@@ -765,6 +1236,19 @@
   }
 
   function getDiamondCatalog() {
+    if (isStarGrid()) {
+      if (
+        typeof NestedStarOctagonsGeometry === "undefined" ||
+        !NestedStarOctagonsGeometry.buildJunctionDiamondCatalog
+      ) {
+        return [];
+      }
+      return NestedStarOctagonsGeometry.buildJunctionDiamondCatalog(
+        getStarLayout(),
+        CANVAS_W,
+        CANVAS_H
+      );
+    }
     return TopkapiGeometry.buildDiamondCatalog(
       lastOctagonsN,
       CANVAS_W,
@@ -774,6 +1258,23 @@
   }
 
   function buildDiamondLayoutSignature() {
+    if (isStarGrid()) {
+      var layout = getStarLayout();
+      return (
+        "star|" +
+        layout.n +
+        "|" +
+        layout.rows +
+        "|" +
+        layout.cols +
+        "|" +
+        layout.offsetY +
+        "|" +
+        CANVAS_W +
+        "|" +
+        CANVAS_H
+      );
+    }
     return lastOctagonsN + "|" + CANVAS_W + "|" + CANVAS_H;
   }
 
@@ -862,6 +1363,7 @@
    * @returns {{ id: string, points: { x: number, y: number }[] }[]}
    */
   function getFilledDiamonds() {
+    if (!isEmotionCanvasVisible("pain")) return [];
     var catalog = getDiamondCatalog();
     var filled = [];
     for (var i = 0; i < catalog.length; i++) {
@@ -904,23 +1406,11 @@
     var fillColor = getPatternStrokeColor();
     var i;
     var pts;
-    var p;
-    var pointsAttr;
-    var poly;
 
     for (i = 0; i < regions.length; i++) {
       pts = regions[i].points;
       if (!pts.length) continue;
-      pointsAttr = "";
-      for (p = 0; p < pts.length; p++) {
-        if (p) pointsAttr += " ";
-        pointsAttr += pts[p].x + "," + pts[p].y;
-      }
-      poly = elSvg("polygon");
-      poly.setAttribute("points", pointsAttr);
-      poly.setAttribute("fill", fillColor);
-      poly.setAttribute("stroke", "none");
-      g.appendChild(poly);
+      g.appendChild(createAutoMergeRegionGroup(pts, fillColor));
     }
     return g;
   }
@@ -932,7 +1422,13 @@
 
     while (layer.firstChild) layer.removeChild(layer.firstChild);
 
-    if (autoMergeFillRegions && autoMergeFillRegions.length) {
+    if (
+      isEmotionCanvasVisible("pride") &&
+      autoMergeFillRegions &&
+      autoMergeFillRegions.length
+    ) {
+      var defs = designSvg.querySelector("defs");
+      if (defs) ensureAutoMergeShadowFilter(defs);
       layer.appendChild(autoMergeFillsToGroup(autoMergeFillRegions));
     }
   }
@@ -941,6 +1437,7 @@
    * @returns {{ cx: number, cy: number, r: number }[]}
    */
   function getActiveCircles() {
+    if (!isEmotionCanvasVisible("sadness")) return [];
     var catalog = getUprightSquareCatalog();
     var circles = [];
     for (var i = 0; i < catalog.length; i++) {
@@ -978,10 +1475,30 @@
 
   function updateLayoutState() {
     lastOctagonsN = getOctagonsN();
-    lastTileSize = TopkapiGeometry.tileSizeFromN(lastOctagonsN, CANVAS_W);
+    if (isStarGrid()) {
+      var starLayout = getStarLayout();
+      lastOctagonsN = starLayout.n;
+      lastTileSize = starLayout.tileSize;
+    } else {
+      lastTileSize = TopkapiGeometry.tileSizeFromN(lastOctagonsN, CANVAS_W);
+    }
   }
 
   function buildAllSegments() {
+    if (isStarGrid()) {
+      var layout = getStarLayout();
+      if (
+        typeof NestedStarOctagonsGeometry === "undefined" ||
+        !NestedStarOctagonsGeometry.buildPattern
+      ) {
+        cachedStarFills = [];
+        return [];
+      }
+      var pattern = NestedStarOctagonsGeometry.buildPattern(layout);
+      cachedStarFills = pattern.starFills || [];
+      return pattern.segments;
+    }
+    cachedStarFills = [];
     return TopkapiGeometry.buildPatternSegments(
       lastTileSize,
       CANVAS_W,
@@ -992,7 +1509,11 @@
   }
 
   function isSegmentRemoved(key) {
-    return removedEdges.has(key) || autoMergeEdgeKeys.has(key);
+    if (removedEdges.has(key)) return true;
+    if (isEmotionCanvasVisible("pride") && autoMergeEdgeKeys.has(key)) {
+      return true;
+    }
+    return false;
   }
 
   function getVisibleSegments(segments) {
@@ -1097,7 +1618,6 @@
       /* prune waves until stable */
     }
 
-    var baselineForFill = TopkapiGeometry.traceFaces(cachedAllSegments);
     var fillRegions = [];
     var clusters = plan.clusters || [];
     var ci;
@@ -1106,16 +1626,24 @@
     for (ci = 0; ci < clusters.length; ci++) {
       fillRegion = TopkapiGeometry.getClusterFillRegion(
         cachedAllSegments,
-        baselineForFill,
+        baselineFaces,
         clusters[ci].faceIndices,
-        clusters[ci].edgeKeys
+        clusters[ci].edgeKeys,
+        autoMergeEdgeKeys
       );
       if (fillRegion) fillRegions.push(fillRegion);
     }
 
+    fillRegions = TopkapiGeometry.appendOrphanAutoMergeFillRegions(
+      fillRegions,
+      cachedAllSegments,
+      baselineFaces,
+      autoMergeEdgeKeys
+    );
+
     autoMergeFillRegions = TopkapiGeometry.filterAutoMergeFillRegions(
       fillRegions,
-      baselineForFill
+      baselineFaces
     );
 
     renderPatternAndVerticalLayers();
@@ -1149,7 +1677,49 @@
     return g;
   }
 
+  /**
+   * Inner nested stars (geometry stores these as filled outlines, not line segments).
+   * @param {{ outline: {x:number,y:number}[] }[]} starFills
+   * @returns {SVGElement}
+   */
+  function starFillsToGroup(starFills) {
+    var g = elSvg("g");
+    g.setAttribute("id", "layer-star-fills");
+    var i;
+    var p;
+    var d;
+    for (i = 0; i < starFills.length; i++) {
+      d =
+        typeof NestedStarOctagonsGeometry !== "undefined" &&
+        NestedStarOctagonsGeometry.closedPolygonPathD
+          ? NestedStarOctagonsGeometry.closedPolygonPathD(starFills[i].outline)
+          : "";
+      if (!d) continue;
+      p = elSvg("path");
+      p.setAttribute("d", d);
+      p.setAttribute("fill", BG_COLOR);
+      p.setAttribute("fill-rule", "nonzero");
+      p.setAttribute("stroke", getPatternStrokeColor());
+      p.setAttribute("stroke-width", String(getGridStrokeWidth()));
+      p.setAttribute("stroke-linejoin", "miter");
+      g.appendChild(p);
+    }
+    return g;
+  }
+
   function getGridContentBounds() {
+    if (isStarGrid()) {
+      var starLayout = getStarLayout();
+      var gridH = starLayout.rows * starLayout.tileSize;
+      var y0 = Math.max(0, starLayout.offsetY);
+      var y1 = Math.min(CANVAS_H, starLayout.offsetY + gridH);
+      return {
+        x: 0,
+        y: y0,
+        width: CANVAS_W,
+        height: y1 - y0,
+      };
+    }
     return TopkapiGeometry.getGridContentBounds(
       lastOctagonsN,
       CANVAS_W,
@@ -1163,6 +1733,11 @@
 
   /** Geometry only — merge/erase state must not invalidate vertical lines. */
   function buildVerticalGridLayoutSignature() {
+    if (isStarGrid()) {
+      return (
+        "star|" + lastOctagonsN + "|" + CANVAS_W + "|" + CANVAS_H + "|" + gridType
+      );
+    }
     return (
       lastOctagonsN +
       "|" +
@@ -1171,6 +1746,21 @@
       CANVAS_W +
       "|" +
       CANVAS_H
+    );
+  }
+
+  /**
+   * @returns {number[]}
+   */
+  function collectStarGridVerticalAnchorXCoords() {
+    if (
+      typeof NestedStarOctagonsGeometry === "undefined" ||
+      !NestedStarOctagonsGeometry.collectStarGridVerticalAnchorXCoords
+    ) {
+      return [];
+    }
+    return NestedStarOctagonsGeometry.collectStarGridVerticalAnchorXCoords(
+      getStarLayout()
     );
   }
 
@@ -1252,14 +1842,14 @@
   }
 
   /**
-   * Left third of the grid content area (inner frame), inclusive.
+   * Full width of the grid content area (inner frame), inclusive.
    * @param {number} x
    * @param {{ x: number, width: number }} bounds
    * @returns {boolean}
    */
-  function isVerticalLineXInLeftThird(x, bounds) {
+  function isVerticalLineXInGridBounds(x, bounds) {
     var left = bounds.x;
-    var right = bounds.x + bounds.width / 3;
+    var right = bounds.x + bounds.width;
     return x >= left && x <= right;
   }
 
@@ -1286,7 +1876,9 @@
     if (!force && sig === lastVerticalGridLayoutSignature) return;
     lastVerticalGridLayoutSignature = sig;
 
-    var xs = TopkapiGeometry.collectUniqueGridXCoords(cachedAllSegments);
+    var xs = isStarGrid()
+      ? collectStarGridVerticalAnchorXCoords()
+      : TopkapiGeometry.collectUniqueGridXCoords(cachedAllSegments);
     var bounds = getGridContentBounds();
     var yTop = bounds.y;
     var yBottom = bounds.y + bounds.height;
@@ -1297,7 +1889,7 @@
     var line;
 
     for (i = 0; i < xs.length; i++) {
-      if (!isVerticalLineXInLeftThird(xs[i], bounds)) continue;
+      if (!isVerticalLineXInGridBounds(xs[i], bounds)) continue;
       if (
         lastPlacedX !== null &&
         isVerticalLineTooClose(xs[i], lastPlacedX, minDist)
@@ -1314,11 +1906,28 @@
     cachedVerticalGridLines = lines;
   }
 
-  function renderVerticalGridLayer() {
+  function getActiveVerticalGridLayer() {
+    if (!designSvg) return null;
+    var layerId = isStarGrid()
+      ? "layer-vertical-grid-overlay"
+      : "layer-vertical-grid";
+    return designSvg.querySelector("#" + layerId);
+  }
+
+  function clearInactiveVerticalGridLayer() {
     if (!designSvg) return;
-    var layer = designSvg.querySelector("#layer-vertical-grid");
-    if (!layer) return;
-    while (layer.firstChild) layer.removeChild(layer.firstChild);
+    var inactiveId = isStarGrid()
+      ? "layer-vertical-grid"
+      : "layer-vertical-grid-overlay";
+    var inactive = designSvg.querySelector("#" + inactiveId);
+    if (!inactive) return;
+    while (inactive.firstChild) inactive.removeChild(inactive.firstChild);
+  }
+
+  /**
+   * @param {SVGElement} layer
+   */
+  function appendVerticalGridLinesToLayer(layer) {
     layer.setAttribute("fill", "none");
     layer.setAttribute("stroke", getPatternStrokeColor());
     layer.setAttribute("stroke-width", String(getVerticalGridStrokeWidth()));
@@ -1334,14 +1943,28 @@
     }
   }
 
+  function renderVerticalGridLayer() {
+    if (!designSvg) return;
+    clearInactiveVerticalGridLayer();
+    var layer = getActiveVerticalGridLayer();
+    if (!layer) return;
+    while (layer.firstChild) layer.removeChild(layer.firstChild);
+    if (!isEmotionCanvasVisible("anger")) return;
+    appendVerticalGridLinesToLayer(layer);
+  }
+
   /**
    * @param {string[]} lines
    */
   function pushVerticalGridExportLines(lines) {
-    if (!cachedVerticalGridLines.length) return;
+    if (!isEmotionCanvasVisible("anger") || !cachedVerticalGridLines.length) {
+      return;
+    }
     lines.push('<g clip-path="url(#inner-content-clip)">');
     lines.push(
-      '<g id="layer-vertical-grid" fill="none" stroke="' +
+      '<g id="' +
+        (isStarGrid() ? "layer-vertical-grid-overlay" : "layer-vertical-grid") +
+        '" fill="none" stroke="' +
         getPatternStrokeColor() +
         '" stroke-width="' +
         getVerticalGridStrokeWidth() +
@@ -5607,6 +6230,7 @@
     clip.appendChild(clipRect);
     defs.appendChild(clip);
     appendInnerContentClipPath(defs);
+    ensureAutoMergeShadowFilter(defs);
     svg.appendChild(defs);
 
     var borderFill = elSvg("rect");
@@ -5658,15 +6282,6 @@
     clippedDiamonds.appendChild(diamondLayer);
     innerContent.appendChild(clippedDiamonds);
 
-    var clippedAutoMerge = createInnerContentClipGroup(
-      "inner-clipped-auto-merge-fills"
-    );
-    var autoMergeLayer = elSvg("g");
-    autoMergeLayer.setAttribute("id", "layer-auto-merge-fills");
-    autoMergeLayer.setAttribute("clip-path", "url(#canvas-clip)");
-    clippedAutoMerge.appendChild(autoMergeLayer);
-    innerContent.appendChild(clippedAutoMerge);
-
     innerContent.appendChild(createGridBoundaryRect());
 
     var clippedPattern = createInnerContentClipGroup("inner-clipped-pattern");
@@ -5675,6 +6290,24 @@
     pattern.setAttribute("clip-path", "url(#canvas-clip)");
     clippedPattern.appendChild(pattern);
     innerContent.appendChild(clippedPattern);
+
+    var clippedVerticalOverlay = createInnerContentClipGroup(
+      "inner-clipped-vertical-grid-overlay"
+    );
+    var verticalOverlayLayer = elSvg("g");
+    verticalOverlayLayer.setAttribute("id", "layer-vertical-grid-overlay");
+    verticalOverlayLayer.setAttribute("clip-path", "url(#canvas-clip)");
+    clippedVerticalOverlay.appendChild(verticalOverlayLayer);
+    innerContent.appendChild(clippedVerticalOverlay);
+
+    var clippedAutoMerge = createInnerContentClipGroup(
+      "inner-clipped-auto-merge-fills"
+    );
+    var autoMergeLayer = elSvg("g");
+    autoMergeLayer.setAttribute("id", "layer-auto-merge-fills");
+    autoMergeLayer.setAttribute("clip-path", "url(#canvas-clip)");
+    clippedAutoMerge.appendChild(autoMergeLayer);
+    innerContent.appendChild(clippedAutoMerge);
 
     svg.appendChild(innerContent);
 
@@ -5708,10 +6341,94 @@
     var patternLayer = designSvg.querySelector("#layer-pattern");
     if (!patternLayer) return;
 
+    if (isStarGrid()) {
+      renderDiamondFillsLayer();
+      while (patternLayer.firstChild) {
+        patternLayer.removeChild(patternLayer.firstChild);
+      }
+      if (cachedStarFills.length) {
+        patternLayer.appendChild(starFillsToGroup(cachedStarFills));
+      }
+      patternLayer.appendChild(segmentsToGroup(cachedAllSegments));
+      return;
+    }
+
     renderDiamondFillsLayer();
     while (patternLayer.firstChild) patternLayer.removeChild(patternLayer.firstChild);
-    patternLayer.appendChild(segmentsToGroup(getVisibleSegments(cachedAllSegments)));
-    patternLayer.appendChild(circlesToGroup(getActiveCircles()));
+    patternLayer.appendChild(
+      segmentsToGroup(getVisibleSegments(cachedAllSegments))
+    );
+    var circles = getActiveCircles();
+    if (circles.length) {
+      patternLayer.appendChild(circlesToGroup(circles));
+    }
+  }
+
+  /**
+   * Star grid: pattern, border frame, label bars, Anger vertical lines.
+   * (Other emotion layers remain deferred until later steps.)
+   */
+  function renderStarGrid() {
+    applyStarGridLayerVisibility();
+    updateInnerContentTransformForGridType();
+
+    var starLayout = getStarLayout();
+    var slider = document.getElementById("octagons-n");
+    if (slider) slider.value = String(starLayout.n);
+
+    var outN = document.getElementById("octagons-n-out");
+    if (outN) outN.textContent = String(starLayout.n);
+
+    var actualT =
+      typeof NestedStarOctagonsGeometry !== "undefined" &&
+      NestedStarOctagonsGeometry.roundCoord
+        ? NestedStarOctagonsGeometry.roundCoord(starLayout.tileSize)
+        : Math.round(starLayout.tileSize * 100) / 100;
+
+    var info = document.getElementById("tile-info");
+    if (info) {
+      info.textContent =
+        starLayout.n +
+        " complete/row · " +
+        starLayout.m +
+        " complete/col · " +
+        actualT +
+        " px tile";
+    }
+
+    var strokeOut = document.getElementById("grid-stroke-width-out");
+    if (strokeOut) strokeOut.textContent = String(getGridStrokeWidth()) + " px";
+
+    var borderSideOut = document.getElementById("border-side-segments-out");
+    if (borderSideOut) {
+      borderSideOut.textContent = String(getBorderLeftRightSegments());
+    }
+
+    var angerLengthOut = document.getElementById("anger-vertical-length-out");
+    if (angerLengthOut) {
+      angerLengthOut.textContent = String(getAngerVerticalLengthPercent()) + "%";
+    }
+
+    var diamondSig = buildDiamondLayoutSignature();
+    if (diamondSig !== lastDiamondLayoutSignature) {
+      lastDiamondLayoutSignature = diamondSig;
+      syncDiamondFill(false);
+    }
+
+    var prideFillOut = document.getElementById("pride-fill-percent-out");
+    if (prideFillOut) {
+      prideFillOut.textContent = String(getPrideFillPercent()) + "%";
+    }
+
+    var fill = designSvg.querySelector("#canvas-background-fill");
+    if (fill) fill.setAttribute("fill", getCanvasBackgroundColor());
+
+    refreshBorderFrameAndLabelBars();
+    syncVerticalGridLines(false);
+    renderVerticalGridLayer();
+    renderPatternLayer();
+    layoutStage();
+    updateResetButton();
   }
 
   function render() {
@@ -5719,6 +6436,23 @@
 
     var outN = document.getElementById("octagons-n-out");
     if (outN) outN.textContent = String(lastOctagonsN);
+
+    if (!designSvg) {
+      designSvg = createDesignSvg();
+      var wrap = document.getElementById("stage-wrap");
+      if (wrap) wrap.appendChild(designSvg);
+      refreshBrownBarBannerAfterMount();
+    }
+
+    cachedAllSegments = buildAllSegments();
+
+    if (isStarGrid()) {
+      renderStarGrid();
+      return;
+    }
+
+    applyOctagonGridLayerVisibility();
+    updateInnerContentTransformForGridType();
 
     var innerScale = getInnerScale();
     var outInner = document.getElementById("inner-scale-out");
@@ -5740,15 +6474,6 @@
         (layout.m + 1) +
         " down (symmetric clip)";
     }
-
-    if (!designSvg) {
-      designSvg = createDesignSvg();
-      var wrap = document.getElementById("stage-wrap");
-      if (wrap) wrap.appendChild(designSvg);
-      refreshBrownBarBannerAfterMount();
-    }
-
-    cachedAllSegments = buildAllSegments();
 
     var layoutSig = buildLayoutSignature();
     if (layoutSig !== lastCircleLayoutSignature) {
@@ -5806,7 +6531,7 @@
     clearMergeState();
     clearAutoMergeState();
     render();
-    if (hadAutoMerge) {
+    if (hadAutoMerge && isOctagonGrid()) {
       runAutoMerge();
     }
   }
@@ -6034,6 +6759,9 @@
         getExportFontFaceCss(fontDataUri) +
         "]]></style>"
     );
+    if (autoMergeFillRegions && autoMergeFillRegions.length) {
+      pushAutoMergeShadowFilterDefLines(lines);
+    }
     lines.push("</defs>");
     lines.push(
       '<rect x="0" y="0" width="' +
@@ -6052,7 +6780,6 @@
 
     pushGridMaskExportLines(lines);
     pushStippleDotsExportLines(lines);
-    pushAutoMergeFillExportLines(lines);
 
     pushVerticalGridExportLines(lines);
 
@@ -6137,6 +6864,8 @@
       lines.push("</g>");
     }
 
+    pushAutoMergeFillExportLines(lines);
+
     lines.push("</g>");
     lines.push("</g>");
     lines.push('<g id="layer-edge-brown-bars">');
@@ -6172,9 +6901,8 @@
         var fontDataUri = results[1];
         try {
           syncVerticalGridLines(false);
-          var segments = getVisibleSegments(cachedAllSegments);
           var markup = buildExportSvgString(
-            segments,
+            getVisibleSegments(cachedAllSegments),
             getActiveCircles(),
             getFilledDiamonds(),
             fontDataUri
@@ -6194,9 +6922,8 @@
         console.error(err);
         try {
           syncVerticalGridLines(false);
-          var segments = getVisibleSegments(cachedAllSegments);
           var markup = buildExportSvgString(
-            segments,
+            getVisibleSegments(cachedAllSegments),
             getActiveCircles(),
             getFilledDiamonds(),
             null
@@ -6442,6 +7169,7 @@
 
   function setMode(mode) {
     if (mode !== "view" && mode !== "merge" && mode !== "restore") return;
+    if (isStarGrid() && mode !== "view") return;
     interactionMode = mode;
     updateModeUi();
     if (isDragInteractionMode()) {
@@ -6458,6 +7186,8 @@
   }
 
   function init() {
+    initGridTypeButtons();
+
     var slider = document.getElementById("octagons-n");
     if (slider) {
       slider.min = String(OCTAGONS_N_MIN);
@@ -6492,14 +7222,12 @@
       patternColorInput.value = PATTERN_STROKE_COLOR_DEFAULT;
       patternColorInput.addEventListener("input", function () {
         updateGridBoundaryRect();
-        renderVerticalGridLayer();
+        updateBorderDivisionLines();
         renderPatternLayer();
-        renderAutoMergeFillsLayer();
-        updateFrameInsetOverlayLayer();
-        var borderDivisions =
-          designSvg && designSvg.querySelector("#layer-border-divisions");
-        if (borderDivisions) {
-          borderDivisions.setAttribute("stroke", getPatternStrokeColor());
+        renderVerticalGridLayer();
+        if (!isStarGrid()) {
+          renderAutoMergeFillsLayer();
+          updateFrameInsetOverlayLayer();
         }
         syncMagnifierBorderColor();
       });
@@ -6525,7 +7253,8 @@
     }
 
     function onLabelBarColorChange() {
-      updateCanvasEdgeBrownBars();
+      if (isStarGrid()) render();
+      else updateCanvasEdgeBrownBars();
     }
 
     var labelBarBackgroundColorInput = document.getElementById(
@@ -6559,13 +7288,22 @@
         if (borderSideOut) {
           borderSideOut.textContent = String(getBorderLeftRightSegments());
         }
-        updateBorderDivisionLines();
+        if (isStarGrid()) {
+          render();
+        } else {
+          updateBorderDivisionLines();
+        }
       });
     }
 
     ["body-autonomy-home", "body-autonomy-outside"].forEach(function (id) {
       var cb = document.getElementById(id);
-      if (cb) cb.addEventListener("change", updateBorderDivisionLines);
+      if (cb) {
+        cb.addEventListener("change", function () {
+          if (isStarGrid()) render();
+          else updateBorderDivisionLines();
+        });
+      }
     });
 
     var gridStrokeSlider = document.getElementById("grid-stroke-width");
@@ -6576,8 +7314,12 @@
       gridStrokeSlider.addEventListener("input", function () {
         var strokeOut = document.getElementById("grid-stroke-width-out");
         if (strokeOut) strokeOut.textContent = String(getGridStrokeWidth()) + " px";
-        renderVerticalGridLayer();
+        updateGridBoundaryRect();
         renderPatternLayer();
+        renderVerticalGridLayer();
+        if (!isStarGrid()) {
+          renderAutoMergeFillsLayer();
+        }
       });
     }
 
@@ -6691,19 +7433,14 @@
           ? AUTO_MERGE_INTENSITY_DEFAULT
           : 50
       );
-      autoMergeIntensitySlider.addEventListener("input", function () {
+      function onAutoMergeIntensityInteract() {
         updateAutoMergeIntensityOutput();
-        if (autoMergeEdgeKeys.size > 0) {
-          runAutoMerge();
-        }
-      });
+        runAutoMerge();
+      }
+      autoMergeIntensitySlider.addEventListener("pointerdown", onAutoMergeIntensityInteract);
+      autoMergeIntensitySlider.addEventListener("input", onAutoMergeIntensityInteract);
     }
     updateAutoMergeIntensityOutput();
-
-    var autoMergeBtn = document.getElementById("auto-merge-btn");
-    if (autoMergeBtn) {
-      autoMergeBtn.addEventListener("click", runAutoMerge);
-    }
 
     var dotsFileInput = document.getElementById("bg-dots-file-input");
     var dotsFileMeta = document.getElementById("bg-dots-file-meta");
@@ -6909,6 +7646,7 @@
     }
 
     window.addEventListener("resize", layoutStage);
+    initFeelingsCanvasToggles();
     lastCircleLayoutSignature = "";
     lastDiamondLayoutSignature = "";
     render();

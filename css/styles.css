@@ -496,10 +496,26 @@ body {
   gap: 0.35rem;
 }
 
+.sidebar__feelings-emotion-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
 .sidebar__feelings-heading {
   font-size: 0.875rem;
   font-weight: 500;
   color: #222;
+}
+
+.sidebar__feelings-canvas-toggle {
+  flex-shrink: 0;
+}
+
+.sidebar__feelings-canvas-toggle .sidebar__toggle-btn {
+  min-width: 2.25rem;
+  padding: 0.25rem 0.4rem;
 }
 
 .sidebar__feelings-slot {
@@ -534,6 +550,12 @@ body {
   text-decoration: none;
   text-align: center;
   cursor: pointer;
+}
+
+button.sidebar__grid-btn {
+  font: inherit;
+  appearance: none;
+  -webkit-appearance: none;
 }
 
 .sidebar__grid-btn:hover {
