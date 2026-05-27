@@ -940,6 +940,66 @@
   }
 
   /**
+   * Four corner triangles per junction (inside upright square, outside diamond).
+   * @param {number} octagonsN
+   * @param {number} canvasW
+   * @param {number} canvasH
+   * @param {number} innerScale shrinks with diamond (matches buildDiamondCatalog)
+   * @returns {{ id: string, points: { x: number, y: number }[] }[]}
+   */
+  function buildCornerTriangleCatalog(octagonsN, canvasW, canvasH, innerScale) {
+    if (typeof innerScale !== "number") {
+      innerScale = 1;
+    }
+    var layout = computeLayout(octagonsN, canvasW, canvasH);
+    var T = layout.tileSize;
+    var cut = T * CUT;
+    var h = cut * innerScale;
+    var catalog = [];
+
+    for (var row = 0; row <= layout.rows; row++) {
+      for (var col = 0; col <= layout.cols; col++) {
+        var cx = col * T;
+        var cy = layout.offsetY + row * T;
+        catalog.push({
+          id: "pt-tl-" + col + "-" + row,
+          points: [
+            { x: roundCoord(cx - h), y: roundCoord(cy - h) },
+            { x: roundCoord(cx), y: roundCoord(cy - h) },
+            { x: roundCoord(cx - h), y: roundCoord(cy) },
+          ],
+        });
+        catalog.push({
+          id: "pt-tr-" + col + "-" + row,
+          points: [
+            { x: roundCoord(cx + h), y: roundCoord(cy - h) },
+            { x: roundCoord(cx + h), y: roundCoord(cy) },
+            { x: roundCoord(cx), y: roundCoord(cy - h) },
+          ],
+        });
+        catalog.push({
+          id: "pt-br-" + col + "-" + row,
+          points: [
+            { x: roundCoord(cx + h), y: roundCoord(cy + h) },
+            { x: roundCoord(cx), y: roundCoord(cy + h) },
+            { x: roundCoord(cx + h), y: roundCoord(cy) },
+          ],
+        });
+        catalog.push({
+          id: "pt-bl-" + col + "-" + row,
+          points: [
+            { x: roundCoord(cx - h), y: roundCoord(cy + h) },
+            { x: roundCoord(cx - h), y: roundCoord(cy) },
+            { x: roundCoord(cx), y: roundCoord(cy + h) },
+          ],
+        });
+      }
+    }
+
+    return catalog;
+  }
+
+  /**
    * Inner diamonds at cell junctions (upright square midpoints between octagons).
    * @param {number} octagonsN
    * @param {number} canvasW
@@ -1372,6 +1432,97 @@
   }
 
   /**
+   * Square between octagons (4 vertices in traced faces at default inner scale).
+   * @param {{ points: { x: number, y: number }[] }} face
+   * @returns {boolean}
+   */
+  function isSquareUnitFace(face) {
+    return !!(face.points && face.points.length === 4);
+  }
+
+  /**
+   * Octagon unit cell (8+ vertices; full grid uses 16, smaller inner scale uses 8 or 12).
+   * @param {{ points: { x: number, y: number }[] }} face
+   * @returns {boolean}
+   */
+  function isOctagonUnitFace(face) {
+    var n = face.points ? face.points.length : 0;
+    return n >= 8;
+  }
+
+  /** @deprecated alias */
+  function isOctagonFace(face) {
+    return isOctagonUnitFace(face);
+  }
+
+  /**
+   * True if merged region encloses at least one square/kite cell (not octagon-only).
+   * @param {{ points: { x: number, y: number }[] }} face
+   * @param {{ points: { x: number, y: number }[] }[]} baselineFaces
+   * @returns {boolean}
+   */
+  function mergedRegionIncludesSquareCell(face, baselineFaces) {
+    var i;
+    for (i = 0; i < baselineFaces.length; i++) {
+      if (!isSquareUnitFace(baselineFaces[i])) continue;
+      var c = polygonCentroid(baselineFaces[i].points);
+      if (pointInPolygon(c.x, c.y, face.points)) return true;
+    }
+    return false;
+  }
+
+  /**
+   * @param {{ points: { x: number, y: number }[] }} face
+   * @param {{ points: { x: number, y: number }[] }[]} baselineFaces
+   * @returns {boolean}
+   */
+  function isOctagonOnlyMergedRegion(face, baselineFaces) {
+    var hasOctagon = false;
+    var hasSquare = false;
+    var i;
+    for (i = 0; i < baselineFaces.length; i++) {
+      var c = polygonCentroid(baselineFaces[i].points);
+      if (!pointInPolygon(c.x, c.y, face.points)) continue;
+      if (isSquareUnitFace(baselineFaces[i])) hasSquare = true;
+      else if (isOctagonUnitFace(baselineFaces[i])) hasOctagon = true;
+    }
+    return hasOctagon && !hasSquare;
+  }
+
+  /**
+   * Auto-merge cluster must include at least one square merged with octagon(s).
+   * @param {{ points: { x: number, y: number }[] }[]} faces
+   * @param {number[]} clusterIndices
+   * @returns {boolean}
+   */
+  function isValidAutoMergeCluster(faces, clusterIndices) {
+    if (clusterIndices.length < 2) return false;
+    var i;
+    for (i = 0; i < clusterIndices.length; i++) {
+      if (isSquareUnitFace(faces[clusterIndices[i]])) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Drop fill regions that cover only octagon cell(s) with no square inside.
+   * @param {{ points: { x: number, y: number }[] }[]} regions
+   * @param {{ points: { x: number, y: number }[] }[]} baselineFaces
+   * @returns {{ points: { x: number, y: number }[] }[]}
+   */
+  function filterAutoMergeFillRegions(regions, baselineFaces) {
+    var out = [];
+    var i;
+    for (i = 0; i < regions.length; i++) {
+      var region = regions[i];
+      if (isOctagonOnlyMergedRegion(region, baselineFaces)) continue;
+      if (!mergedRegionIncludesSquareCell(region, baselineFaces)) continue;
+      out.push(region);
+    }
+    return out;
+  }
+
+  /**
    * Merged polygon regions (holes in the white mask) from removed edges.
    * @param {{x1:number,y1:number,x2:number,y2:number}[]} allSegments
    * @param {Set<string>} removedSet
@@ -1400,6 +1551,415 @@
    * @param {{x1:number,y1:number,x2:number,y2:number}[]} segments
    * @returns {number[]}
    */
+  function shuffleArray(arr) {
+    for (var i = arr.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var tmp = arr[i];
+      arr[i] = arr[j];
+      arr[j] = tmp;
+    }
+    return arr;
+  }
+
+  function randomIntInRange(min, max) {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+  }
+
+  /**
+   * @param {{ points: { x: number, y: number }[] }[]} faces
+   * @returns {{ adjacency: number[][], edgeToFaces: Object<string, number[]> }}
+   */
+  function buildFaceAdjacency(faces) {
+    var edgeToFaces = {};
+    var adjacency = [];
+    var fi;
+    var pts;
+    var e;
+    var p0;
+    var p1;
+    var key;
+    var k;
+
+    for (fi = 0; fi < faces.length; fi++) {
+      adjacency.push([]);
+    }
+
+    function addAdj(a, b) {
+      if (adjacency[a].indexOf(b) < 0) adjacency[a].push(b);
+      if (adjacency[b].indexOf(a) < 0) adjacency[b].push(a);
+    }
+
+    for (fi = 0; fi < faces.length; fi++) {
+      pts = faces[fi].points;
+      for (e = 0; e < pts.length; e++) {
+        p0 = pts[e];
+        p1 = pts[(e + 1) % pts.length];
+        key = segmentKey(p0.x, p0.y, p1.x, p1.y);
+        if (!edgeToFaces[key]) edgeToFaces[key] = [];
+        if (edgeToFaces[key].indexOf(fi) < 0) edgeToFaces[key].push(fi);
+      }
+    }
+
+    for (k in edgeToFaces) {
+      if (!Object.prototype.hasOwnProperty.call(edgeToFaces, k)) continue;
+      var pair = edgeToFaces[k];
+      if (pair.length === 2) addAdj(pair[0], pair[1]);
+    }
+
+    return { adjacency: adjacency, edgeToFaces: edgeToFaces };
+  }
+
+  /**
+   * @param {{ points: { x: number, y: number }[] }[]} faces
+   * @param {number} x
+   * @param {number} y
+   * @param {function(number): boolean} [isCandidate]
+   * @returns {number}
+   */
+  function findNearestFaceIndex(faces, x, y, isCandidate) {
+    var best = -1;
+    var bestDist = Infinity;
+    var i;
+    var c;
+    var dx;
+    var dy;
+    var d;
+
+    for (i = 0; i < faces.length; i++) {
+      if (isCandidate && !isCandidate(i)) continue;
+      c = polygonCentroid(faces[i].points);
+      dx = c.x - x;
+      dy = c.y - y;
+      d = dx * dx + dy * dy;
+      if (d < bestDist) {
+        bestDist = d;
+        best = i;
+      }
+    }
+
+    return best;
+  }
+
+  /**
+   * @param {number} faceIdx
+   * @param {Object<number, boolean>} clusterSet
+   * @param {Object<number, boolean>} claimedGlobal
+   * @param {number[][]} adjacency
+   * @returns {boolean}
+   */
+  function canAddFaceToCluster(faceIdx, clusterSet, claimedGlobal, adjacency) {
+    if (claimedGlobal[faceIdx]) return false;
+    if (clusterSet[faceIdx]) return false;
+    var neighbors = adjacency[faceIdx];
+    var n;
+    for (n = 0; n < neighbors.length; n++) {
+      var nb = neighbors[n];
+      if (claimedGlobal[nb] && !clusterSet[nb]) return false;
+    }
+    return true;
+  }
+
+  /**
+   * Grow a cluster until internal edge count hits a random target (organic face-by-face).
+   * @param {number} seedIndex
+   * @param {number[][]} adjacency
+   * @param {Object<number, boolean>} claimedGlobal
+   * @param {Object<string, number[]>} edgeToFaces
+   * @param {{ points: { x: number, y: number }[] }[]} faces
+   * @param {{ edgesMin: number, edgesMax: number, targetEdges: number }} options
+   * @returns {number[]}
+   */
+  function growClusterByEdges(
+    seedIndex,
+    faces,
+    adjacency,
+    claimedGlobal,
+    edgeToFaces,
+    options
+  ) {
+    var edgesMin = options.edgesMin;
+    var edgesMax = options.edgesMax;
+    var targetEdges = options.targetEdges;
+    var cluster = [seedIndex];
+    var clusterSet = {};
+    clusterSet[seedIndex] = true;
+    var guard = 0;
+    var maxGuard = adjacency.length * 4;
+
+    while (guard < maxGuard) {
+      guard++;
+      var currentKeys = collectInternalEdgeKeys(cluster, edgeToFaces);
+      var currentCount = currentKeys.length;
+
+      if (currentCount >= targetEdges) break;
+      if (currentCount >= edgesMax) break;
+
+      var candidates = [];
+      var fi;
+      var neighbors;
+      var n;
+      var nb;
+      var trial;
+      var trialKeys;
+      var trialCount;
+      var ci;
+
+      for (fi = 0; fi < cluster.length; fi++) {
+        neighbors = adjacency[cluster[fi]].slice();
+        shuffleArray(neighbors);
+        for (n = 0; n < neighbors.length; n++) {
+          nb = neighbors[n];
+          if (!canAddFaceToCluster(nb, clusterSet, claimedGlobal, adjacency)) {
+            continue;
+          }
+          trial = cluster.concat([nb]);
+          trialKeys = collectInternalEdgeKeys(trial, edgeToFaces);
+          trialCount = trialKeys.length;
+          if (trialCount > edgesMax) continue;
+          candidates.push({
+            face: nb,
+            edgeCount: trialCount,
+          });
+        }
+      }
+
+      if (!candidates.length) break;
+
+      var clusterNeedsSquare = true;
+      var cfi;
+      for (cfi = 0; cfi < cluster.length; cfi++) {
+        if (isSquareUnitFace(faces[cluster[cfi]])) {
+          clusterNeedsSquare = false;
+          break;
+        }
+      }
+
+      if (clusterNeedsSquare) {
+        candidates.sort(function (a, b) {
+          var aSq = isSquareUnitFace(faces[a.face]) ? 0 : 1;
+          var bSq = isSquareUnitFace(faces[b.face]) ? 0 : 1;
+          if (aSq !== bSq) return aSq - bSq;
+          return (
+            Math.abs(a.edgeCount - targetEdges) -
+            Math.abs(b.edgeCount - targetEdges)
+          );
+        });
+      } else {
+        shuffleArray(candidates);
+      }
+
+      var best = candidates[0];
+      var bestScore = Math.abs(best.edgeCount - targetEdges);
+      for (ci = 1; ci < candidates.length; ci++) {
+        var score = Math.abs(candidates[ci].edgeCount - targetEdges);
+        if (
+          score < bestScore ||
+          (score === bestScore && candidates[ci].edgeCount > best.edgeCount)
+        ) {
+          best = candidates[ci];
+          bestScore = score;
+        }
+      }
+
+      if (clusterSet[best.face]) break;
+      clusterSet[best.face] = true;
+      cluster.push(best.face);
+    }
+
+    var finalCount = collectInternalEdgeKeys(cluster, edgeToFaces).length;
+    if (finalCount < edgesMin || finalCount > edgesMax) return [];
+    if (!isValidAutoMergeCluster(faces, cluster)) return [];
+
+    return cluster;
+  }
+
+  /**
+   * @param {number[]} faceIndices
+   * @param {Object<string, number[]>} edgeToFaces
+   * @returns {string[]}
+   */
+  function collectInternalEdgeKeys(faceIndices, edgeToFaces) {
+    var clusterSet = {};
+    var keys = {};
+    var i;
+    var k;
+    var facesOnEdge;
+
+    for (i = 0; i < faceIndices.length; i++) {
+      clusterSet[faceIndices[i]] = true;
+    }
+
+    for (k in edgeToFaces) {
+      if (!Object.prototype.hasOwnProperty.call(edgeToFaces, k)) continue;
+      facesOnEdge = edgeToFaces[k];
+      if (facesOnEdge.length !== 2) continue;
+      if (clusterSet[facesOnEdge[0]] && clusterSet[facesOnEdge[1]]) {
+        keys[k] = true;
+      }
+    }
+
+    return Object.keys(keys);
+  }
+
+  /**
+   * @param {{ points: { x: number, y: number }[] }[]} faces
+   * @param {{ x: number, y: number, width: number, height: number }} bounds
+   * @param {{ areaCountMin?: number, areaCountMax?: number, edgesPerAreaMin?: number, edgesPerAreaMax?: number, boundsInset?: number }} [options]
+   * @returns {{ edgeKeys: string[] }}
+   */
+  function computeAutoMergePlan(faces, bounds, options) {
+    options = options || {};
+    var areaCountMin =
+      typeof options.areaCountMin === "number" ? options.areaCountMin : 3;
+    var areaCountMax =
+      typeof options.areaCountMax === "number" ? options.areaCountMax : 3;
+    var edgesPerAreaMin =
+      typeof options.edgesPerAreaMin === "number" ? options.edgesPerAreaMin : 2;
+    var edgesPerAreaMax =
+      typeof options.edgesPerAreaMax === "number" ? options.edgesPerAreaMax : 4;
+    var boundsInset =
+      typeof options.boundsInset === "number" ? options.boundsInset : 40;
+
+    if (!faces.length) return { edgeKeys: [], clusters: [] };
+    var clusters = [];
+    if (areaCountMax < areaCountMin) areaCountMax = areaCountMin;
+    if (edgesPerAreaMax < edgesPerAreaMin) edgesPerAreaMax = edgesPerAreaMin;
+
+    var graph = buildFaceAdjacency(faces);
+    var adjacency = graph.adjacency;
+    var edgeToFaces = graph.edgeToFaces;
+    var claimedGlobal = {};
+    var allKeys = {};
+    var areaCount = randomIntInRange(areaCountMin, areaCountMax);
+    var inset = boundsInset;
+    var minX = bounds.x + inset;
+    var maxX = bounds.x + bounds.width - inset;
+    var minY = bounds.y + inset;
+    var maxY = bounds.y + bounds.height - inset;
+    var s;
+    var sx;
+    var sy;
+    var seedIdx;
+    var cluster;
+    var ci;
+    var internalKeys;
+    var ki;
+    var targetEdges;
+    var attempt;
+    var maxAttempts = 8;
+
+    function isSeedCandidate(faceIdx) {
+      if (claimedGlobal[faceIdx]) return false;
+      var neighbors = adjacency[faceIdx];
+      var n;
+      for (n = 0; n < neighbors.length; n++) {
+        if (claimedGlobal[neighbors[n]]) return false;
+      }
+      return true;
+    }
+
+    for (s = 0; s < areaCount; s++) {
+      if (maxX <= minX || maxY <= minY) break;
+      sx = minX + Math.random() * (maxX - minX);
+      sy = minY + Math.random() * (maxY - minY);
+      seedIdx = findNearestFaceIndex(faces, sx, sy, isSeedCandidate);
+      if (seedIdx < 0) continue;
+
+      targetEdges = randomIntInRange(edgesPerAreaMin, edgesPerAreaMax);
+      cluster = [];
+
+      for (attempt = 0; attempt < maxAttempts; attempt++) {
+        cluster = growClusterByEdges(
+          seedIdx,
+          faces,
+          adjacency,
+          claimedGlobal,
+          edgeToFaces,
+          {
+            edgesMin: edgesPerAreaMin,
+            edgesMax: edgesPerAreaMax,
+            targetEdges: targetEdges,
+          }
+        );
+        if (cluster.length) break;
+        targetEdges = randomIntInRange(edgesPerAreaMin, edgesPerAreaMax);
+      }
+
+      if (!cluster.length) continue;
+
+      for (ci = 0; ci < cluster.length; ci++) {
+        claimedGlobal[cluster[ci]] = true;
+      }
+
+      internalKeys = collectInternalEdgeKeys(cluster, edgeToFaces);
+      clusters.push({
+        faceIndices: cluster.slice(),
+        edgeKeys: internalKeys,
+      });
+      for (ki = 0; ki < internalKeys.length; ki++) {
+        allKeys[internalKeys[ki]] = true;
+      }
+    }
+
+    return { edgeKeys: Object.keys(allKeys), clusters: clusters };
+  }
+
+  /**
+   * Brown fill polygon for one auto-merge cluster (works at any inner scale).
+   * @param {{x1:number,y1:number,x2:number,y2:number}[]} allSegments
+   * @param {{ points: { x: number, y: number }[] }[]} baselineFaces
+   * @param {number[]} clusterFaceIndices
+   * @param {string[]} clusterEdgeKeys
+   * @returns {{ points: { x: number, y: number }[] } | null}
+   */
+  function getClusterFillRegion(
+    allSegments,
+    baselineFaces,
+    clusterFaceIndices,
+    clusterEdgeKeys
+  ) {
+    if (!clusterFaceIndices.length || !clusterEdgeKeys.length) return null;
+
+    var removed = new Set(clusterEdgeKeys);
+    var visible = getVisibleSegmentsFromRemoved(allSegments, removed);
+    var currentFaces = traceFaces(visible);
+    var centroids = [];
+    var i;
+    var c;
+    var face;
+
+    for (i = 0; i < clusterFaceIndices.length; i++) {
+      centroids.push(
+        polygonCentroid(baselineFaces[clusterFaceIndices[i]].points)
+      );
+    }
+
+    for (i = 0; i < currentFaces.length; i++) {
+      face = currentFaces[i];
+      var allInside = true;
+      for (c = 0; c < centroids.length; c++) {
+        if (
+          !pointInPolygon(centroids[c].x, centroids[c].y, face.points)
+        ) {
+          allInside = false;
+          break;
+        }
+      }
+      if (!allInside) continue;
+      if (isOctagonOnlyMergedRegion(face, baselineFaces)) continue;
+      if (!mergedRegionIncludesSquareCell(face, baselineFaces)) continue;
+      if (
+        countBaselineFacesInsideCurrentFace(face, baselineFaces) <
+        clusterFaceIndices.length
+      ) {
+        continue;
+      }
+      return face;
+    }
+
+    return null;
+  }
+
   function collectUniqueGridXCoords(segments) {
     var xs = {};
     for (var i = 0; i < segments.length; i++) {
@@ -1434,6 +1994,7 @@
     filterValidRestoreKeys: filterValidRestoreKeys,
     buildVertexIncidence: buildVertexIncidence,
     buildDiamondCatalog: buildDiamondCatalog,
+    buildCornerTriangleCatalog: buildCornerTriangleCatalog,
     buildUprightSquareCatalog: buildUprightSquareCatalog,
     octagonInscribedRadius: octagonInscribedRadius,
     letterMarkerWordLengths: letterMarkerWordLengths,
@@ -1445,5 +2006,14 @@
     collectUniqueGridXCoords: collectUniqueGridXCoords,
     traceFaces: traceFaces,
     getMergedPolygonRegions: getMergedPolygonRegions,
+    filterAutoMergeFillRegions: filterAutoMergeFillRegions,
+    getClusterFillRegion: getClusterFillRegion,
+    isOctagonFace: isOctagonFace,
+    isValidAutoMergeCluster: isValidAutoMergeCluster,
+    buildFaceAdjacency: buildFaceAdjacency,
+    findNearestFaceIndex: findNearestFaceIndex,
+    growClusterByEdges: growClusterByEdges,
+    collectInternalEdgeKeys: collectInternalEdgeKeys,
+    computeAutoMergePlan: computeAutoMergePlan,
   };
 })(typeof window !== "undefined" ? window : this);

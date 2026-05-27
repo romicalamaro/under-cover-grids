@@ -11,15 +11,15 @@
       <aside class="sidebar" aria-label="Design controls">
         <div class="sidebar__scroll">
           <section class="sidebar__section sidebar__section--identity">
-            <h2 class="sidebar__title">Identity</h2>
+            <h2 class="sidebar__title">Profile</h2>
             <div class="sidebar__identity-fields">
               <div class="sidebar__identity-field">
-                <span class="sidebar__identity-heading">Living</span>
+                <span class="sidebar__identity-heading">Have I lived in Iran?</span>
                 <div class="sidebar__identity-slot" id="identity-living-slot">
                   <div
                     class="sidebar__toggle sidebar__identity-living-toggle"
                     role="group"
-                    aria-label="In or outside Iran"
+                    aria-label="Have I lived in Iran? Yes or no"
                   >
                     <button
                       type="button"
@@ -27,7 +27,7 @@
                       class="sidebar__toggle-btn is-active"
                       aria-pressed="true"
                     >
-                      In
+                      Yes
                     </button>
                     <button
                       type="button"
@@ -35,17 +35,62 @@
                       class="sidebar__toggle-btn"
                       aria-pressed="false"
                     >
-                      Outside Iran
+                      No
                     </button>
                   </div>
-                  <button
-                    type="button"
-                    id="living-family-btn"
-                    class="sidebar__btn sidebar__identity-family-btn"
-                    hidden
-                  >
-                    Family
-                  </button>
+                </div>
+              </div>
+              <div
+                class="sidebar__identity-field"
+                id="identity-leaving-year-field"
+              >
+                <span class="sidebar__identity-heading">Year of leaving</span>
+                <div class="sidebar__identity-slot" id="identity-leaving-year-slot">
+                  <input
+                    id="identity-leaving-year-input"
+                    class="sidebar__identity-input"
+                    type="text"
+                    value="2021"
+                    inputmode="numeric"
+                    pattern="[0-9]*"
+                    maxlength="4"
+                    autocomplete="off"
+                    spellcheck="false"
+                    aria-label="Year of leaving"
+                    placeholder="Year you left Iran"
+                  />
+                </div>
+              </div>
+              <div class="sidebar__identity-field">
+                <span class="sidebar__identity-heading">From</span>
+                <div class="sidebar__identity-slot" id="identity-from-slot">
+                  <input
+                    id="identity-from-input"
+                    class="sidebar__identity-input sidebar__identity-input--english"
+                    type="text"
+                    lang="en"
+                    value="TEHERAN"
+                    autocomplete="off"
+                    spellcheck="false"
+                    aria-label="From"
+                    placeholder="Where you are originally from"
+                  />
+                </div>
+              </div>
+              <div class="sidebar__identity-field">
+                <span class="sidebar__identity-heading">Now in</span>
+                <div class="sidebar__identity-slot" id="identity-now-in-slot">
+                  <input
+                    id="identity-now-in-input"
+                    class="sidebar__identity-input sidebar__identity-input--english"
+                    type="text"
+                    lang="en"
+                    value="MAINZ"
+                    autocomplete="off"
+                    spellcheck="false"
+                    aria-label="Now in"
+                    placeholder="Where you live now"
+                  />
                 </div>
               </div>
               <div class="sidebar__identity-field">
@@ -53,12 +98,44 @@
                 <div class="sidebar__identity-slot" id="identity-name-slot">
                   <input
                     id="identity-name-input"
-                    class="sidebar__identity-input"
+                    class="sidebar__identity-input sidebar__identity-input--english"
                     type="text"
+                    lang="en"
                     autocomplete="off"
                     spellcheck="false"
                     aria-label="Name"
+                    placeholder="Full name"
                   />
+                  <div
+                    class="sidebar__toggle sidebar__identity-name-mode-toggle"
+                    role="group"
+                    aria-label="How name appears on the label"
+                  >
+                    <button
+                      type="button"
+                      id="identity-name-anonymous-btn"
+                      class="sidebar__toggle-btn is-active"
+                      aria-pressed="true"
+                    >
+                      Anonymous
+                    </button>
+                    <button
+                      type="button"
+                      id="identity-name-initials-btn"
+                      class="sidebar__toggle-btn"
+                      aria-pressed="false"
+                    >
+                      Initials
+                    </button>
+                    <button
+                      type="button"
+                      id="identity-name-none-btn"
+                      class="sidebar__toggle-btn"
+                      aria-pressed="false"
+                    >
+                      No name
+                    </button>
+                  </div>
                 </div>
               </div>
               <div class="sidebar__identity-field">
@@ -70,9 +147,37 @@
                     type="text"
                     inputmode="numeric"
                     pattern="[0-9]*"
+                    maxlength="2"
                     autocomplete="off"
                     aria-label="Age"
                   />
+                </div>
+              </div>
+              <div class="sidebar__identity-field">
+                <span class="sidebar__identity-heading">Family or friends in Iran</span>
+                <div class="sidebar__identity-slot" id="family-friends-iran-slot">
+                  <div
+                    class="sidebar__toggle sidebar__identity-living-toggle"
+                    role="group"
+                    aria-label="Family or friends in Iran? Yes or no"
+                  >
+                    <button
+                      type="button"
+                      id="family-friends-iran-yes-btn"
+                      class="sidebar__toggle-btn is-active"
+                      aria-pressed="true"
+                    >
+                      Yes
+                    </button>
+                    <button
+                      type="button"
+                      id="family-friends-iran-no-btn"
+                      class="sidebar__toggle-btn"
+                      aria-pressed="false"
+                    >
+                      No
+                    </button>
+                  </div>
                 </div>
               </div>
               <div class="sidebar__identity-field">
@@ -216,11 +321,11 @@
           </section>
 
           <section class="sidebar__section sidebar__section--grid-choose">
-            <h2 class="sidebar__title">Choose grid</h2>
+            <h2 class="sidebar__title">Identity</h2>
             <div
               class="sidebar__grid-choose-btns"
               role="group"
-              aria-label="Choose grid"
+              aria-label="Identity grid type"
             >
               <a
                 href="index.html"
@@ -237,23 +342,40 @@
               >
             </div>
             <div class="sidebar__grid-choose-sliders">
-              <div class="sidebar__grid-density">
-                <span class="sidebar__grid-density-label">Density</span>
-                <div class="sidebar__grid-density-control sidebar__item-control">
-                  <input
-                    id="octagons-n"
-                    type="range"
-                    min="3"
-                    max="15"
-                    value="7"
-                    step="1"
-                    aria-label="Density"
-                  />
-                  <output id="octagons-n-out" for="octagons-n">7</output>
+              <div class="sidebar__grid-density sidebar__grid-density--long-label">
+                <span class="sidebar__grid-density-label"
+                  >How much do I feel part of the Iranian community?</span
+                >
+                <div class="sidebar__grid-density-slider-wrap">
+                  <div
+                    class="sidebar__grid-density-range-labels"
+                    aria-hidden="true"
+                  >
+                    <span class="sidebar__grid-density-range-label"
+                      >Not part at all</span
+                    >
+                    <span class="sidebar__grid-density-range-label"
+                      >Very much part</span
+                    >
+                  </div>
+                  <div class="sidebar__grid-density-control sidebar__item-control">
+                    <input
+                      id="octagons-n"
+                      type="range"
+                      min="3"
+                      max="15"
+                      value="7"
+                      step="1"
+                      aria-label="How much do I feel part of the Iranian community? Not part at all to very much part."
+                    />
+                    <output id="octagons-n-out" for="octagons-n">7</output>
+                  </div>
                 </div>
               </div>
-              <div class="sidebar__grid-density">
-                <span class="sidebar__grid-density-label">Inner scale</span>
+              <div class="sidebar__grid-density sidebar__grid-density--long-label">
+                <span class="sidebar__grid-density-label"
+                  >How much is my Iranian identity at the center of my life?</span
+                >
                 <div class="sidebar__grid-density-control sidebar__item-control">
                   <input
                     id="inner-scale"
@@ -262,7 +384,7 @@
                     max="1"
                     value="1"
                     step="0.01"
-                    aria-label="Inner scale"
+                    aria-label="How much is my Iranian identity at the center of my life?"
                   />
                   <output id="inner-scale-out" for="inner-scale">1</output>
                 </div>
@@ -284,138 +406,114 @@
                   >
                 </div>
               </div>
+              <button
+                type="button"
+                id="randomize-all-controls-btn"
+                class="sidebar__btn sidebar__grid-randomize-all-btn"
+              >
+                Randomize all
+              </button>
             </div>
           </section>
 
           <section class="sidebar__section sidebar__section--body-autonomy">
-            <h2 class="sidebar__title">BODY AUTONOMY</h2>
-            <div class="sidebar__body-autonomy-control sidebar__item-control">
-              <input
-                id="border-side-segments"
-                type="range"
-                min="12"
-                max="24"
-                value="12"
-                step="1"
-                aria-label="Side border divisions"
-              />
-              <output id="border-side-segments-out" for="border-side-segments"
-                >12</output
+            <h2 class="sidebar__title">Family and friends in Iran</h2>
+            <div class="sidebar__grid-density-slider-wrap">
+              <div
+                class="sidebar__grid-density-range-labels"
+                aria-hidden="true"
               >
+                <span class="sidebar__grid-density-range-label">None</span>
+                <span class="sidebar__grid-density-range-label">A lot</span>
+              </div>
+              <div class="sidebar__body-autonomy-control sidebar__item-control">
+                <input
+                  id="border-side-segments"
+                  type="range"
+                  min="12"
+                  max="24"
+                  value="12"
+                  step="1"
+                  aria-label="Family and friends in Iran. None to a lot."
+                />
+                <output id="border-side-segments-out" for="border-side-segments"
+                  >12</output
+                >
+              </div>
             </div>
             <div
               class="sidebar__body-autonomy-checkboxes"
               role="group"
-              aria-label="Body autonomy location"
+              aria-label="Family and friends in Iran"
             >
               <label class="sidebar__body-autonomy-check">
                 <input
                   id="body-autonomy-home"
                   type="checkbox"
                 />
-                <span>Home</span>
+                <span>Family</span>
               </label>
               <label class="sidebar__body-autonomy-check">
                 <input
                   id="body-autonomy-outside"
                   type="checkbox"
                 />
-                <span>Outside</span>
+                <span>Friends</span>
               </label>
             </div>
           </section>
 
-          <section class="sidebar__section sidebar__section--feelings">
-            <h2 class="sidebar__title">Feelings</h2>
-            <div class="sidebar__feelings-emotions">
-              <div class="sidebar__feelings-emotion">
-                <span class="sidebar__feelings-heading">Anger</span>
-                <div class="sidebar__feelings-slot" id="feelings-anger-slot"></div>
-              </div>
-              <div class="sidebar__feelings-emotion">
-                <span class="sidebar__feelings-heading">Fear</span>
-                <div class="sidebar__feelings-slot" id="feelings-fear-slot">
-                  <div class="sidebar__feelings-control sidebar__item-control">
+          <section class="sidebar__section sidebar__section--body-autonomy-wear">
+            <h2 class="sidebar__title">Body autonomy</h2>
+            <div class="sidebar__wear-autonomy">
+              <span class="sidebar__grid-density-label sidebar__wear-autonomy-question"
+                >How much were you able to control what you wear?</span
+              >
+              <div class="sidebar__wear-autonomy-sliders">
+                <div class="sidebar__grid-density">
+                  <span class="sidebar__grid-density-label">Home</span>
+                  <div class="sidebar__grid-density-control sidebar__item-control">
                     <input
-                      id="diamond-fill-percent"
+                      id="wear-control-home"
                       type="range"
-                      min="10"
-                      max="40"
-                      value="25"
+                      min="0"
+                      max="100"
+                      value="50"
                       step="1"
-                      aria-label="Diamond fill amount"
+                      aria-label="How much were you able to control what you wear at home?"
                     />
-                    <output id="diamond-fill-percent-out" for="diamond-fill-percent"
-                      >25%</output
+                    <output id="wear-control-home-out" for="wear-control-home"
+                      >50</output
                     >
                   </div>
                 </div>
-              </div>
-              <div class="sidebar__feelings-emotion">
-                <span class="sidebar__feelings-heading">Hope</span>
-                <div class="sidebar__feelings-slot" id="feelings-hope-slot"></div>
-              </div>
-              <div class="sidebar__feelings-emotion">
-                <span class="sidebar__feelings-heading">Sadness</span>
-                <div class="sidebar__feelings-slot" id="feelings-sadness-slot">
-                  <div class="sidebar__feelings-control sidebar__item-control">
+                <div class="sidebar__grid-density">
+                  <span class="sidebar__grid-density-label">Outside</span>
+                  <div class="sidebar__grid-density-control sidebar__item-control">
                     <input
-                      id="circle-density"
+                      id="wear-control-outside"
                       type="range"
-                      min="10"
-                      max="40"
-                      value="25"
+                      min="0"
+                      max="100"
+                      value="50"
                       step="1"
-                      aria-label="Circle density"
+                      aria-label="How much were you able to control what you wear outside?"
                     />
-                    <output id="circle-density-out" for="circle-density"
-                      >25%</output
+                    <output id="wear-control-outside-out" for="wear-control-outside"
+                      >50</output
                     >
                   </div>
                 </div>
-              </div>
-              <div class="sidebar__feelings-emotion">
-                <span class="sidebar__feelings-heading">Pain</span>
-                <div class="sidebar__feelings-slot" id="feelings-pain-slot"></div>
-              </div>
-              <div class="sidebar__feelings-emotion">
-                <span class="sidebar__feelings-heading">Happiness</span>
-                <div class="sidebar__feelings-slot" id="feelings-happiness-slot"></div>
               </div>
             </div>
-            <button
-              type="button"
-              id="randomize-circles-btn"
-              class="sidebar__btn sidebar__feelings-randomize-btn"
-            >
-              Randomize
-            </button>
-          </section>
-
-          <section class="sidebar__section sidebar__section--greetings">
-            <h2 class="sidebar__title">Greetings</h2>
-            <label class="sidebar__greetings-field">
-              <span class="sidebar__label">Words in circles</span>
-              <input
-                id="letter-marker-word"
-                class="sidebar__identity-input"
-                type="text"
-                dir="rtl"
-                lang="ar"
-                placeholder="Spaces separate columns"
-                title="Each word = one column (right to left). Next word starts at previous word's last circle."
-                autocomplete="off"
-                spellcheck="false"
-              />
-            </label>
           </section>
 
           <section class="sidebar__section sidebar__section--broken-system">
-            <h2 class="sidebar__title">BROKEN SYSTEM</h2>
+            <h2 class="sidebar__title">State Violence</h2>
             <div
               class="sidebar__broken-system-toggle sidebar__toggle"
               role="group"
-              aria-label="Interaction mode"
+              aria-label="State violence interaction mode"
             >
               <button
                 type="button"
@@ -445,59 +543,30 @@
             <button type="button" id="reset-grid-btn" class="sidebar__btn" disabled>
               Reset grid
             </button>
-          </section>
-
-          <section class="sidebar__section sidebar__section--no-name">
-            <h2 class="sidebar__title">NO NAME</h2>
-            <button
-              type="button"
-              id="frame-overlay-toggle-btn"
-              class="sidebar__btn"
-              aria-pressed="false"
-            >
-              Show frame overlay
+            <label class="sidebar__field">
+              <span class="sidebar__label">Merged area</span>
+              <div class="sidebar__item-control">
+                <input
+                  id="auto-merge-intensity"
+                  type="range"
+                  min="0"
+                  max="100"
+                  value="50"
+                  step="1"
+                  aria-label="Auto merge area amount and size"
+                />
+                <output id="auto-merge-intensity-out" for="auto-merge-intensity"
+                  >50%</output
+                >
+              </div>
+            </label>
+            <button type="button" id="auto-merge-btn" class="sidebar__btn">
+              Auto Merge
             </button>
           </section>
 
-          <ol
-            class="sidebar__numbered sidebar__controls--octagon"
-            aria-label="Octagon grid controls"
-          >
-            <li class="sidebar__item">
-              <span class="sidebar__num" aria-hidden="true">1</span>
-              <span class="sidebar__item-label">Pattern color</span>
-              <div class="sidebar__item-control">
-                <input
-                  id="pattern-stroke-color"
-                  type="color"
-                  value="#685450"
-                  title="Grid and circles"
-                />
-              </div>
-            </li>
-            <li class="sidebar__item">
-              <span class="sidebar__num" aria-hidden="true">2</span>
-              <span class="sidebar__item-label">Diamond fill</span>
-              <div class="sidebar__item-control">
-                <input
-                  id="diamond-fill-color"
-                  type="color"
-                  value="#ff3c3c"
-                  title="Filled inner diamonds"
-                />
-              </div>
-            </li>
-            <li class="sidebar__item sidebar__item--action">
-              <span class="sidebar__num" aria-hidden="true">3</span>
-              <span class="sidebar__item-label">Export SVG</span>
-              <div class="sidebar__item-control">
-                <button type="button" id="export-svg-btn">Export SVG</button>
-              </div>
-            </li>
-          </ol>
-
           <section class="sidebar__section sidebar__section--bg">
-            <h2 class="sidebar__title">Background</h2>
+            <h2 class="sidebar__title">Hope</h2>
             <p class="sidebar__hint sidebar__hint--compact">
               Dots appear in merged areas after you connect cells in Merge mode.
             </p>
@@ -597,6 +666,202 @@
             </div>
           </section>
 
+          <section class="sidebar__section sidebar__section--feelings">
+            <h2 class="sidebar__title">Feelings</h2>
+            <div class="sidebar__feelings-emotions">
+              <div class="sidebar__feelings-emotion">
+                <span class="sidebar__feelings-heading">Anger</span>
+                <div class="sidebar__feelings-slot" id="feelings-anger-slot">
+                  <div class="sidebar__feelings-control sidebar__item-control">
+                    <input
+                      id="anger-vertical-length"
+                      type="range"
+                      min="0"
+                      max="100"
+                      value="100"
+                      step="1"
+                      aria-label="Left third vertical line length"
+                    />
+                    <output id="anger-vertical-length-out" for="anger-vertical-length"
+                      >100%</output
+                    >
+                  </div>
+                </div>
+              </div>
+              <div class="sidebar__feelings-emotion">
+                <span class="sidebar__feelings-heading">Fear</span>
+                <div class="sidebar__feelings-slot" id="feelings-fear-slot"></div>
+              </div>
+              <div class="sidebar__feelings-emotion">
+                <span class="sidebar__feelings-heading">Hope</span>
+                <div class="sidebar__feelings-slot" id="feelings-hope-slot"></div>
+              </div>
+              <div class="sidebar__feelings-emotion">
+                <span class="sidebar__feelings-heading">Sadness</span>
+                <div class="sidebar__feelings-slot" id="feelings-sadness-slot">
+                  <div class="sidebar__feelings-control sidebar__item-control">
+                    <input
+                      id="circle-density"
+                      type="range"
+                      min="10"
+                      max="40"
+                      value="25"
+                      step="1"
+                      aria-label="Circle density"
+                    />
+                    <output id="circle-density-out" for="circle-density"
+                      >25%</output
+                    >
+                  </div>
+                  <div class="sidebar__feelings-control sidebar__item-control">
+                    <input
+                      id="circle-fill-color"
+                      type="color"
+                      value="#ffffff"
+                      title="Sadness circles fill"
+                      aria-label="Sadness circles fill color"
+                    />
+                  </div>
+                </div>
+              </div>
+              <div class="sidebar__feelings-emotion">
+                <span class="sidebar__feelings-heading">Pain</span>
+                <div class="sidebar__feelings-slot" id="feelings-pain-slot"></div>
+              </div>
+              <div class="sidebar__feelings-emotion">
+                <span class="sidebar__feelings-heading">Happiness</span>
+                <div class="sidebar__feelings-slot" id="feelings-happiness-slot"></div>
+              </div>
+              <div class="sidebar__feelings-emotion">
+                <span class="sidebar__feelings-heading">Pride</span>
+                <div class="sidebar__feelings-slot" id="feelings-pride-slot">
+                  <div class="sidebar__feelings-control sidebar__item-control">
+                    <input
+                      id="pride-fill-percent"
+                      type="range"
+                      min="10"
+                      max="40"
+                      value="25"
+                      step="1"
+                      aria-label="Pride diamond fill amount"
+                    />
+                    <output id="pride-fill-percent-out" for="pride-fill-percent"
+                      >25%</output
+                    >
+                  </div>
+                  <button
+                    type="button"
+                    id="pride-color-shapes-btn"
+                    class="sidebar__btn"
+                  >
+                    Color shapes
+                  </button>
+                </div>
+              </div>
+            </div>
+            <button
+              type="button"
+              id="randomize-circles-btn"
+              class="sidebar__btn sidebar__feelings-randomize-btn"
+            >
+              Randomize
+            </button>
+          </section>
+
+          <section class="sidebar__section sidebar__section--label-bar">
+            <h2 class="sidebar__title">Label bar</h2>
+            <div id="label-bar-items" class="sidebar__label-bar-items"></div>
+            <button
+              type="button"
+              id="label-bar-add-item-btn"
+              class="sidebar__btn sidebar__label-bar-add-btn"
+            >
+              Add item
+            </button>
+          </section>
+
+          <section class="sidebar__section sidebar__section--no-name">
+            <h2 class="sidebar__title">NO NAME</h2>
+            <button
+              type="button"
+              id="frame-overlay-toggle-btn"
+              class="sidebar__btn"
+              aria-pressed="false"
+            >
+              Show frame overlay
+            </button>
+          </section>
+
+          <section class="sidebar__section sidebar__section--colors-export">
+            <h2 class="sidebar__title">Colors &amp; export</h2>
+            <ol
+              class="sidebar__numbered sidebar__controls--octagon"
+              aria-label="Colors and export"
+            >
+            <li class="sidebar__item">
+              <span class="sidebar__item-label">Canvas background</span>
+              <div class="sidebar__item-control">
+                <input
+                  id="canvas-background-color"
+                  type="color"
+                  value="#ffffff"
+                  title="Canvas background"
+                />
+              </div>
+            </li>
+            <li class="sidebar__item">
+              <span class="sidebar__item-label">Pattern color</span>
+              <div class="sidebar__item-control">
+                <input
+                  id="pattern-stroke-color"
+                  type="color"
+                  value="#685450"
+                  title="Grid and circles"
+                />
+              </div>
+            </li>
+            <li class="sidebar__item">
+              <span class="sidebar__item-label">Diamond fill</span>
+              <div class="sidebar__item-control">
+                <input
+                  id="diamond-fill-color"
+                  type="color"
+                  value="#ff3c3c"
+                  title="Filled inner diamonds"
+                />
+              </div>
+            </li>
+            <li class="sidebar__item">
+              <span class="sidebar__item-label">Label bar</span>
+              <div class="sidebar__item-control">
+                <input
+                  id="label-bar-background-color"
+                  type="color"
+                  value="#685450"
+                  title="Label bar background"
+                />
+              </div>
+            </li>
+            <li class="sidebar__item">
+              <span class="sidebar__item-label">Label content</span>
+              <div class="sidebar__item-control">
+                <input
+                  id="label-bar-content-color"
+                  type="color"
+                  value="#ffffff"
+                  title="Icons and text on the label bar"
+                />
+              </div>
+            </li>
+            <li class="sidebar__item sidebar__item--action">
+              <span class="sidebar__item-label">Export SVG</span>
+              <div class="sidebar__item-control">
+                <button type="button" id="export-svg-btn">Export SVG</button>
+              </div>
+            </li>
+          </ol>
+          </section>
+
           <p class="sidebar__hint" id="tile-info" aria-live="polite"></p>
           <p class="sidebar__hint sidebar__hint--mode" id="merge-hint" hidden>
             Drag across lines to merge
@@ -644,8 +909,10 @@
       </div>
     </div>
     <script defer src="js/constants.js"></script>
+    <script defer src="js/labelBarSvgAssets.js"></script>
     <script defer src="js/topkapiGeometry.js"></script>
     <script defer src="js/identityControls.js"></script>
+    <script defer src="js/labelBarControls.js"></script>
     <script defer src="js/stippleEngine.js"></script>
     <script defer src="js/app.js"></script>
   </body>

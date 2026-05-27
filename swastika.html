@@ -11,15 +11,15 @@
       <aside class="sidebar" aria-label="Design controls">
         <div class="sidebar__scroll">
           <section class="sidebar__section sidebar__section--identity">
-            <h2 class="sidebar__title">Identity</h2>
+            <h2 class="sidebar__title">Profile</h2>
             <div class="sidebar__identity-fields">
               <div class="sidebar__identity-field">
-                <span class="sidebar__identity-heading">Living</span>
+                <span class="sidebar__identity-heading">Have I lived in Iran?</span>
                 <div class="sidebar__identity-slot" id="identity-living-slot">
                   <div
                     class="sidebar__toggle sidebar__identity-living-toggle"
                     role="group"
-                    aria-label="In or outside Iran"
+                    aria-label="Have I lived in Iran? Yes or no"
                   >
                     <button
                       type="button"
@@ -27,7 +27,7 @@
                       class="sidebar__toggle-btn is-active"
                       aria-pressed="true"
                     >
-                      In
+                      Yes
                     </button>
                     <button
                       type="button"
@@ -35,17 +35,62 @@
                       class="sidebar__toggle-btn"
                       aria-pressed="false"
                     >
-                      Outside Iran
+                      No
                     </button>
                   </div>
-                  <button
-                    type="button"
-                    id="living-family-btn"
-                    class="sidebar__btn sidebar__identity-family-btn"
-                    hidden
-                  >
-                    Family
-                  </button>
+                </div>
+              </div>
+              <div
+                class="sidebar__identity-field"
+                id="identity-leaving-year-field"
+              >
+                <span class="sidebar__identity-heading">Year of leaving</span>
+                <div class="sidebar__identity-slot" id="identity-leaving-year-slot">
+                  <input
+                    id="identity-leaving-year-input"
+                    class="sidebar__identity-input"
+                    type="text"
+                    value="2021"
+                    inputmode="numeric"
+                    pattern="[0-9]*"
+                    maxlength="4"
+                    autocomplete="off"
+                    spellcheck="false"
+                    aria-label="Year of leaving"
+                    placeholder="Year you left Iran"
+                  />
+                </div>
+              </div>
+              <div class="sidebar__identity-field">
+                <span class="sidebar__identity-heading">From</span>
+                <div class="sidebar__identity-slot" id="identity-from-slot">
+                  <input
+                    id="identity-from-input"
+                    class="sidebar__identity-input sidebar__identity-input--english"
+                    type="text"
+                    lang="en"
+                    value="TEHERAN"
+                    autocomplete="off"
+                    spellcheck="false"
+                    aria-label="From"
+                    placeholder="Where you are originally from"
+                  />
+                </div>
+              </div>
+              <div class="sidebar__identity-field">
+                <span class="sidebar__identity-heading">Now in</span>
+                <div class="sidebar__identity-slot" id="identity-now-in-slot">
+                  <input
+                    id="identity-now-in-input"
+                    class="sidebar__identity-input sidebar__identity-input--english"
+                    type="text"
+                    lang="en"
+                    value="MAINZ"
+                    autocomplete="off"
+                    spellcheck="false"
+                    aria-label="Now in"
+                    placeholder="Where you live now"
+                  />
                 </div>
               </div>
               <div class="sidebar__identity-field">
@@ -53,12 +98,44 @@
                 <div class="sidebar__identity-slot" id="identity-name-slot">
                   <input
                     id="identity-name-input"
-                    class="sidebar__identity-input"
+                    class="sidebar__identity-input sidebar__identity-input--english"
                     type="text"
+                    lang="en"
                     autocomplete="off"
                     spellcheck="false"
                     aria-label="Name"
+                    placeholder="Full name"
                   />
+                  <div
+                    class="sidebar__toggle sidebar__identity-name-mode-toggle"
+                    role="group"
+                    aria-label="How name appears on the label"
+                  >
+                    <button
+                      type="button"
+                      id="identity-name-anonymous-btn"
+                      class="sidebar__toggle-btn is-active"
+                      aria-pressed="true"
+                    >
+                      Anonymous
+                    </button>
+                    <button
+                      type="button"
+                      id="identity-name-initials-btn"
+                      class="sidebar__toggle-btn"
+                      aria-pressed="false"
+                    >
+                      Initials
+                    </button>
+                    <button
+                      type="button"
+                      id="identity-name-none-btn"
+                      class="sidebar__toggle-btn"
+                      aria-pressed="false"
+                    >
+                      No name
+                    </button>
+                  </div>
                 </div>
               </div>
               <div class="sidebar__identity-field">
@@ -70,9 +147,37 @@
                     type="text"
                     inputmode="numeric"
                     pattern="[0-9]*"
+                    maxlength="2"
                     autocomplete="off"
                     aria-label="Age"
                   />
+                </div>
+              </div>
+              <div class="sidebar__identity-field">
+                <span class="sidebar__identity-heading">Family or friends in Iran</span>
+                <div class="sidebar__identity-slot" id="family-friends-iran-slot">
+                  <div
+                    class="sidebar__toggle sidebar__identity-living-toggle"
+                    role="group"
+                    aria-label="Family or friends in Iran? Yes or no"
+                  >
+                    <button
+                      type="button"
+                      id="family-friends-iran-yes-btn"
+                      class="sidebar__toggle-btn is-active"
+                      aria-pressed="true"
+                    >
+                      Yes
+                    </button>
+                    <button
+                      type="button"
+                      id="family-friends-iran-no-btn"
+                      class="sidebar__toggle-btn"
+                      aria-pressed="false"
+                    >
+                      No
+                    </button>
+                  </div>
                 </div>
               </div>
               <div class="sidebar__identity-field">
@@ -216,11 +321,11 @@
           </section>
 
           <section class="sidebar__section sidebar__section--grid-choose">
-            <h2 class="sidebar__title">Choose grid</h2>
+            <h2 class="sidebar__title">Identity</h2>
             <div
               class="sidebar__grid-choose-btns"
               role="group"
-              aria-label="Choose grid"
+              aria-label="Identity grid type"
             >
               <a href="index.html" id="grid-choose-octagon-btn" class="sidebar__grid-btn"
                 >Octagon</a
@@ -235,12 +340,13 @@
             </div>
           </section>
 
-          <ol
-            class="sidebar__numbered sidebar__controls--square"
-            aria-label="Square grid controls"
-          >
+          <section class="sidebar__section sidebar__section--colors-export">
+            <h2 class="sidebar__title">Grid &amp; export</h2>
+            <ol
+              class="sidebar__numbered sidebar__controls--square"
+              aria-label="Grid and export"
+            >
             <li class="sidebar__item">
-              <span class="sidebar__num" aria-hidden="true">1</span>
               <span class="sidebar__item-label">Unit size</span>
               <div class="sidebar__item-control">
                 <input
@@ -257,13 +363,13 @@
               </div>
             </li>
             <li class="sidebar__item sidebar__item--action">
-              <span class="sidebar__num" aria-hidden="true">2</span>
               <span class="sidebar__item-label">Export SVG</span>
               <div class="sidebar__item-control">
                 <button type="button" id="export-svg-btn">Export SVG</button>
               </div>
             </li>
           </ol>
+          </section>
 
           <p class="sidebar__hint" id="tile-info" aria-live="polite"></p>
         </div>

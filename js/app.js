@@ -12,6 +12,10 @@
 
   var interactionMode = "view";
   var removedEdges = new Set();
+  /** Edges removed by Auto Merge (separate from manual merge mask/dots). */
+  var autoMergeEdgeKeys = new Set();
+  /** @type {{ points: { x: number, y: number }[] }[] | null} */
+  var autoMergeFillRegions = null;
   var dragPath = [];
   var isDragging = false;
 
@@ -19,12 +23,6 @@
   var lastCircleLayoutSignature = "";
   var diamondFilledIds = new Set();
   var lastDiamondLayoutSignature = "";
-  var cachedLetterMarkerAnchor = null;
-  var lastLetterMarkerLayoutSignature = "";
-  var letterMarkerWord =
-    typeof LETTER_MARKER_WORD_DEFAULT !== "undefined"
-      ? LETTER_MARKER_WORD_DEFAULT
-      : "";
   /** @type {{ dots: { cx: number, cy: number, r: number, fill: string }[], outW: number, outH: number } | null} */
   var stippleDotsCache = null;
   /** @type {HTMLImageElement | null} */
@@ -41,6 +39,13 @@
   /** Random column edges for brown-bar outer-third grid (regenerated on layout change). */
   var cachedBrownBarGridXBounds = null;
   var lastBrownBarGridLayoutSignature = "";
+  /** Random height ratios for left/right margin rows (regenerated on slider input). */
+  var cachedBorderSideSegmentRatios = null;
+  /** One random 8-digit serial per page load (top + bottom white strips). */
+  var canvasEdgeSerial = null;
+  /** Cached inline SVG assets for the dynamic label bar. */
+  var labelBarSvgCache = {};
+  var labelBarSvgLoadPromises = {};
 
   var magnifierCenterX = CANVAS_W / 2;
   var magnifierCenterY = CANVAS_H / 2;
@@ -114,13 +119,97 @@
     );
   }
 
-  function getDiamondFillPercent() {
-    var slider = document.getElementById("diamond-fill-percent");
-    var v = slider ? Number(slider.value) : DIAMOND_FILL_PERCENT_DEFAULT;
+  function getAngerVerticalLengthPercent() {
+    var slider = document.getElementById("anger-vertical-length");
+    var v = slider ? Number(slider.value) : ANGER_VERTICAL_LENGTH_DEFAULT;
     return Math.min(
-      DIAMOND_FILL_PERCENT_MAX,
-      Math.max(DIAMOND_FILL_PERCENT_MIN, Math.round(v))
+      ANGER_VERTICAL_LENGTH_MAX,
+      Math.max(ANGER_VERTICAL_LENGTH_MIN, Math.round(v))
     );
+  }
+
+  function getPrideFillPercent() {
+    var slider = document.getElementById("pride-fill-percent");
+    var v = slider ? Number(slider.value) : PRIDE_FILL_PERCENT_DEFAULT;
+    return Math.min(
+      PRIDE_FILL_PERCENT_MAX,
+      Math.max(PRIDE_FILL_PERCENT_MIN, Math.round(v))
+    );
+  }
+
+  function getAutoMergeIntensity() {
+    var slider = document.getElementById("auto-merge-intensity");
+    var min =
+      typeof AUTO_MERGE_INTENSITY_MIN !== "undefined"
+        ? AUTO_MERGE_INTENSITY_MIN
+        : 0;
+    var max =
+      typeof AUTO_MERGE_INTENSITY_MAX !== "undefined"
+        ? AUTO_MERGE_INTENSITY_MAX
+        : 100;
+    var def =
+      typeof AUTO_MERGE_INTENSITY_DEFAULT !== "undefined"
+        ? AUTO_MERGE_INTENSITY_DEFAULT
+        : 50;
+    var v = slider ? Number(slider.value) : def;
+    return Math.min(max, Math.max(min, Math.round(v)));
+  }
+
+  /**
+   * Map slider 0–100 to area count and deleted-edge count per area.
+   * @returns {{ areaCountMin: number, areaCountMax: number, edgesPerAreaMin: number, edgesPerAreaMax: number, boundsInset: number }}
+   */
+  function getAutoMergePlanOptions() {
+    var pct = getAutoMergeIntensity();
+    var t = pct / 100;
+    var areasAtMin =
+      typeof AUTO_MERGE_AREA_COUNT_AT_MIN !== "undefined"
+        ? AUTO_MERGE_AREA_COUNT_AT_MIN
+        : 3;
+    var areasAtMax =
+      typeof AUTO_MERGE_AREA_COUNT_AT_MAX !== "undefined"
+        ? AUTO_MERGE_AREA_COUNT_AT_MAX
+        : 10;
+    var edgeMinAtMin =
+      typeof AUTO_MERGE_EDGES_PER_AREA_MIN_AT_MIN !== "undefined"
+        ? AUTO_MERGE_EDGES_PER_AREA_MIN_AT_MIN
+        : 2;
+    var edgeMaxAtMin =
+      typeof AUTO_MERGE_EDGES_PER_AREA_MAX_AT_MIN !== "undefined"
+        ? AUTO_MERGE_EDGES_PER_AREA_MAX_AT_MIN
+        : 4;
+    var edgeMinAtMax =
+      typeof AUTO_MERGE_EDGES_PER_AREA_MIN_AT_MAX !== "undefined"
+        ? AUTO_MERGE_EDGES_PER_AREA_MIN_AT_MAX
+        : 3;
+    var edgeMaxAtMax =
+      typeof AUTO_MERGE_EDGES_PER_AREA_MAX_AT_MAX !== "undefined"
+        ? AUTO_MERGE_EDGES_PER_AREA_MAX_AT_MAX
+        : 10;
+
+    var areaCountMin = areasAtMin;
+    var areaCountMax = Math.round(areasAtMin + t * (areasAtMax - areasAtMin));
+    if (areaCountMax < areaCountMin) areaCountMax = areaCountMin;
+
+    var edgesPerAreaMin = Math.round(edgeMinAtMin + t * (edgeMinAtMax - edgeMinAtMin));
+    var edgesPerAreaMax = Math.round(edgeMaxAtMin + t * (edgeMaxAtMax - edgeMinAtMin));
+    if (edgesPerAreaMax < edgesPerAreaMin) edgesPerAreaMax = edgesPerAreaMin;
+
+    return {
+      areaCountMin: areaCountMin,
+      areaCountMax: areaCountMax,
+      edgesPerAreaMin: edgesPerAreaMin,
+      edgesPerAreaMax: edgesPerAreaMax,
+      boundsInset:
+        typeof AUTO_MERGE_SEED_BOUNDS_INSET_PX !== "undefined"
+          ? AUTO_MERGE_SEED_BOUNDS_INSET_PX
+          : 40,
+    };
+  }
+
+  function updateAutoMergeIntensityOutput() {
+    var out = document.getElementById("auto-merge-intensity-out");
+    if (out) out.textContent = String(getAutoMergeIntensity()) + "%";
   }
 
   function getGridStrokeWidth() {
@@ -153,11 +242,51 @@
     );
   }
 
+  function getCanvasBackgroundColor() {
+    var input = document.getElementById("canvas-background-color");
+    return normalizeHexColor(
+      input ? input.value : null,
+      typeof CANVAS_BACKGROUND_COLOR_DEFAULT !== "undefined"
+        ? CANVAS_BACKGROUND_COLOR_DEFAULT
+        : BG_COLOR
+    );
+  }
+
+  function getCircleFillColor() {
+    var input = document.getElementById("circle-fill-color");
+    return normalizeHexColor(
+      input ? input.value : null,
+      typeof CIRCLE_FILL_COLOR_DEFAULT !== "undefined"
+        ? CIRCLE_FILL_COLOR_DEFAULT
+        : "#ffffff"
+    );
+  }
+
   function getDiamondFillColor() {
     var input = document.getElementById("diamond-fill-color");
     return normalizeHexColor(
       input ? input.value : null,
       DIAMOND_FILL_COLOR_DEFAULT
+    );
+  }
+
+  function getLabelBarBackgroundColor() {
+    var input = document.getElementById("label-bar-background-color");
+    return normalizeHexColor(
+      input ? input.value : null,
+      typeof LABEL_BAR_BACKGROUND_COLOR_DEFAULT !== "undefined"
+        ? LABEL_BAR_BACKGROUND_COLOR_DEFAULT
+        : CANVAS_EDGE_BROWN_BAR_COLOR
+    );
+  }
+
+  function getLabelBarContentColor() {
+    var input = document.getElementById("label-bar-content-color");
+    return normalizeHexColor(
+      input ? input.value : null,
+      typeof LABEL_BAR_CONTENT_COLOR_DEFAULT !== "undefined"
+        ? LABEL_BAR_CONTENT_COLOR_DEFAULT
+        : "#ffffff"
     );
   }
 
@@ -178,7 +307,7 @@
         '" height="' +
         CANVAS_H +
         '" fill="' +
-        BG_COLOR +
+        getCanvasBackgroundColor() +
         '"/>'
     );
   }
@@ -195,8 +324,17 @@
     whiteRect.setAttribute("y", "0");
     whiteRect.setAttribute("width", String(CANVAS_W));
     whiteRect.setAttribute("height", String(CANVAS_H));
-    whiteRect.setAttribute("fill", BG_COLOR);
+    whiteRect.setAttribute("fill", getCanvasBackgroundColor());
     layer.appendChild(whiteRect);
+  }
+
+  function updateCanvasBackgroundColor() {
+    if (!designSvg) return;
+    var fill = getCanvasBackgroundColor();
+    var borderFill = designSvg.querySelector("#canvas-background-fill");
+    if (borderFill) borderFill.setAttribute("fill", fill);
+    renderBackgroundLayer();
+    renderGridMaskLayer("canvas-background-color");
   }
 
   var GRID_WHITE_MASK_ID = "grid-white-mask";
@@ -359,7 +497,7 @@
     maskRect.setAttribute("y", String(bounds.y));
     maskRect.setAttribute("width", String(bounds.width));
     maskRect.setAttribute("height", String(bounds.height));
-    maskRect.setAttribute("fill", BG_COLOR);
+    maskRect.setAttribute("fill", getCanvasBackgroundColor());
     maskRect.setAttribute("mask", "url(#" + GRID_WHITE_MASK_ID + ")");
     layer.appendChild(maskRect);
 
@@ -409,6 +547,39 @@
   /**
    * @param {string[]} lines
    */
+  /**
+   * @param {string[]} lines
+   */
+  function pushAutoMergeFillExportLines(lines) {
+    if (!autoMergeFillRegions || !autoMergeFillRegions.length) return;
+
+    var fillColor = getPatternStrokeColor();
+    lines.push('<g clip-path="url(#inner-content-clip)">');
+    lines.push('<g id="layer-auto-merge-fills">');
+    var i;
+    var pts;
+    var p;
+    var pointsAttr;
+    for (i = 0; i < autoMergeFillRegions.length; i++) {
+      pts = autoMergeFillRegions[i].points;
+      if (!pts.length) continue;
+      pointsAttr = "";
+      for (p = 0; p < pts.length; p++) {
+        if (p) pointsAttr += " ";
+        pointsAttr += pts[p].x + "," + pts[p].y;
+      }
+      lines.push(
+        '<polygon points="' +
+          pointsAttr +
+          '" fill="' +
+          fillColor +
+          '" stroke="none"/>'
+      );
+    }
+    lines.push("</g>");
+    lines.push("</g>");
+  }
+
   function pushGridMaskExportLines(lines) {
     if (!hasActiveMergeCutouts()) return;
 
@@ -455,7 +626,7 @@
         '" height="' +
         bounds.height +
         '" fill="' +
-        BG_COLOR +
+        getCanvasBackgroundColor() +
         '" mask="url(#' +
         GRID_WHITE_MASK_ID +
         ')"/>'
@@ -598,20 +769,12 @@
       lastOctagonsN,
       CANVAS_W,
       CANVAS_H,
-      getInnerScale()
+      1
     );
   }
 
   function buildDiamondLayoutSignature() {
-    return (
-      lastOctagonsN +
-      "|" +
-      getInnerScale() +
-      "|" +
-      CANVAS_W +
-      "|" +
-      CANVAS_H
-    );
+    return lastOctagonsN + "|" + CANVAS_W + "|" + CANVAS_H;
   }
 
   /**
@@ -676,19 +839,23 @@
       diamondFilledIds.forEach(function (id) {
         if (!validIds.has(id)) diamondFilledIds.delete(id);
       });
+      return;
     }
 
-    var target = Math.round((catalog.length * getDiamondFillPercent()) / 100);
+    var target = Math.round((catalog.length * getPrideFillPercent()) / 100);
     if (target < 0) target = 0;
     if (target > catalog.length) target = catalog.length;
 
-    if (forceReshuffle || diamondFilledIds.size !== target) {
-      diamondFilledIds.clear();
-      var picked = shufflePickIds(catalog, target);
-      for (var p = 0; p < picked.length; p++) {
-        diamondFilledIds.add(picked[p]);
-      }
+    diamondFilledIds.clear();
+    var picked = shufflePickIds(catalog, target);
+    for (var p = 0; p < picked.length; p++) {
+      diamondFilledIds.add(picked[p]);
     }
+  }
+
+  /** Random-fill inner diamonds (Pride slider / button). */
+  function syncPrideShapes() {
+    syncDiamondFill(true);
   }
 
   /**
@@ -729,6 +896,48 @@
   }
 
   /**
+   * @param {{ points: { x: number, y: number }[] }[]} regions
+   * @returns {SVGElement}
+   */
+  function autoMergeFillsToGroup(regions) {
+    var g = elSvg("g");
+    var fillColor = getPatternStrokeColor();
+    var i;
+    var pts;
+    var p;
+    var pointsAttr;
+    var poly;
+
+    for (i = 0; i < regions.length; i++) {
+      pts = regions[i].points;
+      if (!pts.length) continue;
+      pointsAttr = "";
+      for (p = 0; p < pts.length; p++) {
+        if (p) pointsAttr += " ";
+        pointsAttr += pts[p].x + "," + pts[p].y;
+      }
+      poly = elSvg("polygon");
+      poly.setAttribute("points", pointsAttr);
+      poly.setAttribute("fill", fillColor);
+      poly.setAttribute("stroke", "none");
+      g.appendChild(poly);
+    }
+    return g;
+  }
+
+  function renderAutoMergeFillsLayer() {
+    if (!designSvg) return;
+    var layer = designSvg.querySelector("#layer-auto-merge-fills");
+    if (!layer) return;
+
+    while (layer.firstChild) layer.removeChild(layer.firstChild);
+
+    if (autoMergeFillRegions && autoMergeFillRegions.length) {
+      layer.appendChild(autoMergeFillsToGroup(autoMergeFillRegions));
+    }
+  }
+
+  /**
    * @returns {{ cx: number, cy: number, r: number }[]}
    */
   function getActiveCircles() {
@@ -750,7 +959,7 @@
   function circlesToGroup(circles) {
     var g = elSvg("g");
     g.setAttribute("id", "layer-circles");
-    g.setAttribute("fill", "none");
+    g.setAttribute("fill", getCircleFillColor());
     var circleStroke = getCircleStrokeWidth();
     g.setAttribute("stroke", getPatternStrokeColor());
     g.setAttribute("stroke-width", String(circleStroke));
@@ -765,172 +974,6 @@
       g.appendChild(circle);
     }
     return g;
-  }
-
-  function getLetterMarkerWord() {
-    var input = document.getElementById("letter-marker-word");
-    if (input && typeof input.value === "string") {
-      return input.value;
-    }
-    return letterMarkerWord;
-  }
-
-  /**
-   * Words split on spaces; index 0 = rightmost column.
-   * @returns {string[]}
-   */
-  function getLetterMarkerWords() {
-    var text = getLetterMarkerWord().trim();
-    if (!text) return [];
-    var parts = text.split(/\s+/);
-    var words = [];
-    for (var i = 0; i < parts.length; i++) {
-      if (parts[i].length) words.push(parts[i]);
-    }
-    var maxColumns =
-      typeof LETTER_MARKER_MAX_COLUMNS !== "undefined"
-        ? LETTER_MARKER_MAX_COLUMNS
-        : 12;
-    if (words.length > maxColumns) {
-      words = words.slice(0, maxColumns);
-    }
-    return words;
-  }
-
-  function getLetterMarkerLayout() {
-    return TopkapiGeometry.computeLayout(lastOctagonsN, CANVAS_W, CANVAS_H);
-  }
-
-  /**
-   * @param {boolean} [forceRepick]
-   */
-  function ensureLetterMarkerAnchor(forceRepick) {
-    var words = getLetterMarkerWords();
-    if (!words.length) {
-      cachedLetterMarkerAnchor = null;
-      return;
-    }
-
-    var layout = getLetterMarkerLayout();
-    var lengths = TopkapiGeometry.letterMarkerWordLengths(words);
-
-    if (
-      !forceRepick &&
-      cachedLetterMarkerAnchor &&
-      TopkapiGeometry.isLetterMarkerAnchorValid(
-        layout,
-        cachedLetterMarkerAnchor,
-        lengths
-      )
-    ) {
-      return;
-    }
-
-    cachedLetterMarkerAnchor = TopkapiGeometry.pickRandomLetterMarkerAnchor(
-      layout,
-      lengths
-    );
-  }
-
-  /** New random anchor on page refresh or octagon count change. */
-  function syncLetterOctagonMarkers() {
-    cachedLetterMarkerAnchor = null;
-    ensureLetterMarkerAnchor(true);
-  }
-
-  /**
-   * @returns {{ columns: { markers: { cx: number, cy: number, r: number, char: string }[] }[] } | null}
-   */
-  function buildLetterMarkerBundle() {
-    var words = getLetterMarkerWords();
-    if (!words.length || !cachedLetterMarkerAnchor) return null;
-
-    return TopkapiGeometry.buildLetterMarkerColumns(
-      getLetterMarkerLayout(),
-      cachedLetterMarkerAnchor,
-      words
-    );
-  }
-
-  /**
-   * @param {{ markers: { cx: number, cy: number, r: number, char: string }[] }[]} columns
-   * @param {SVGElement} g
-   * @param {string} strokeColor
-   */
-  function appendLetterMarkerColumn(g, column, strokeColor) {
-    var markers = column.markers;
-    if (!markers.length) return;
-
-    var top = markers[0];
-    var bottom = markers[markers.length - 1];
-    var connector = elSvg("line");
-    connector.setAttribute("x1", String(top.cx));
-    connector.setAttribute("y1", String(top.cy));
-    connector.setAttribute("x2", String(bottom.cx));
-    connector.setAttribute("y2", String(bottom.cy));
-    connector.setAttribute("stroke", strokeColor);
-    connector.setAttribute("stroke-width", String(getCircleStrokeWidth()));
-    connector.setAttribute("fill", "none");
-    g.appendChild(connector);
-
-    var i;
-    for (i = 0; i < markers.length; i++) {
-      var m = markers[i];
-      var circle = elSvg("circle");
-      circle.setAttribute("cx", String(m.cx));
-      circle.setAttribute("cy", String(m.cy));
-      circle.setAttribute("r", String(m.r));
-      circle.setAttribute("fill", strokeColor);
-      circle.setAttribute("stroke", "none");
-      g.appendChild(circle);
-    }
-
-    for (i = 0; i < markers.length; i++) {
-      var mk = markers[i];
-      var text = elSvg("text");
-      text.setAttribute("x", String(mk.cx));
-      text.setAttribute("y", String(mk.cy));
-      text.setAttribute("fill", "#ffffff");
-      text.setAttribute("font-weight", "bold");
-      text.setAttribute("font-family", "Helvetica, Arial, sans-serif");
-      text.setAttribute("text-anchor", "middle");
-      text.setAttribute("dominant-baseline", "central");
-      text.setAttribute(
-        "font-size",
-        String(2 * mk.r * LETTER_MARKER_FONT_SIZE_RATIO)
-      );
-      text.textContent = mk.char || "";
-      g.appendChild(text);
-    }
-  }
-
-  /**
-   * @param {{ columns: { markers: object[] }[] }} bundle
-   * @returns {SVGElement}
-   */
-  function letterMarkersToGroup(bundle) {
-    var g = elSvg("g");
-    var strokeColor = getPatternStrokeColor();
-    var columns = bundle.columns;
-    var c;
-    for (c = 0; c < columns.length; c++) {
-      appendLetterMarkerColumn(g, columns[c], strokeColor);
-    }
-    return g;
-  }
-
-  function renderLetterMarkersLayer() {
-    if (!designSvg) return;
-    var layer = designSvg.querySelector("#layer-letter-markers");
-    if (!layer) return;
-
-    while (layer.firstChild) layer.removeChild(layer.firstChild);
-
-    ensureLetterMarkerAnchor(false);
-    var bundle = buildLetterMarkerBundle();
-    if (bundle && bundle.columns.length) {
-      layer.appendChild(letterMarkersToGroup(bundle));
-    }
   }
 
   function updateLayoutState() {
@@ -948,7 +991,26 @@
     );
   }
 
+  function isSegmentRemoved(key) {
+    return removedEdges.has(key) || autoMergeEdgeKeys.has(key);
+  }
+
   function getVisibleSegments(segments) {
+    var visible = [];
+    for (var i = 0; i < segments.length; i++) {
+      var s = segments[i];
+      var key = TopkapiGeometry.segmentKey(s.x1, s.y1, s.x2, s.y2);
+      if (!isSegmentRemoved(key)) visible.push(s);
+    }
+    return visible;
+  }
+
+  /**
+   * Visible grid with manual merges only (baseline for auto-merge clustering).
+   * @param {{x1:number,y1:number,x2:number,y2:number}[]} segments
+   * @returns {{x1:number,y1:number,x2:number,y2:number}[]}
+   */
+  function getVisibleSegmentsManualOnly(segments) {
     var visible = [];
     for (var i = 0; i < segments.length; i++) {
       var s = segments[i];
@@ -956,6 +1018,14 @@
       if (!removedEdges.has(key)) visible.push(s);
     }
     return visible;
+  }
+
+  function getCombinedRemovedEdgeSet() {
+    var combined = new Set(removedEdges);
+    autoMergeEdgeKeys.forEach(function (key) {
+      combined.add(key);
+    });
+    return combined;
   }
 
   function isDragInteractionMode() {
@@ -968,9 +1038,89 @@
     updateResetButton();
   }
 
+  function clearAutoMergeState() {
+    autoMergeEdgeKeys.clear();
+    autoMergeFillRegions = null;
+    updateResetButton();
+    renderAutoMergeFillsLayer();
+  }
+
   function updateResetButton() {
     var resetBtn = document.getElementById("reset-grid-btn");
-    if (resetBtn) resetBtn.disabled = removedEdges.size === 0;
+    if (resetBtn) {
+      resetBtn.disabled =
+        removedEdges.size === 0 && autoMergeEdgeKeys.size === 0;
+    }
+  }
+
+  function applyAutoMergeDanglingPrune() {
+    var changed = false;
+    var combined = getCombinedRemovedEdgeSet();
+    var pruneKeys = TopkapiGeometry.findDanglingPruneKeys(
+      cachedAllSegments,
+      combined
+    );
+    var j;
+    var pk;
+    for (j = 0; j < pruneKeys.length; j++) {
+      pk = pruneKeys[j];
+      if (removedEdges.has(pk)) continue;
+      if (autoMergeEdgeKeys.has(pk)) continue;
+      autoMergeEdgeKeys.add(pk);
+      changed = true;
+    }
+    return changed;
+  }
+
+  function runAutoMerge() {
+    if (!cachedAllSegments.length) return;
+
+    clearAutoMergeState();
+
+    var bounds = getGridContentBounds();
+    var manualVisible = getVisibleSegmentsManualOnly(cachedAllSegments);
+    var baselineFaces = TopkapiGeometry.traceFaces(manualVisible);
+    var plan = TopkapiGeometry.computeAutoMergePlan(
+      baselineFaces,
+      bounds,
+      getAutoMergePlanOptions()
+    );
+
+    var i;
+    var key;
+    for (i = 0; i < plan.edgeKeys.length; i++) {
+      key = plan.edgeKeys[i];
+      autoMergeEdgeKeys.add(key);
+    }
+
+    while (applyAutoMergeDanglingPrune()) {
+      /* prune waves until stable */
+    }
+
+    var baselineForFill = TopkapiGeometry.traceFaces(cachedAllSegments);
+    var fillRegions = [];
+    var clusters = plan.clusters || [];
+    var ci;
+    var fillRegion;
+
+    for (ci = 0; ci < clusters.length; ci++) {
+      fillRegion = TopkapiGeometry.getClusterFillRegion(
+        cachedAllSegments,
+        baselineForFill,
+        clusters[ci].faceIndices,
+        clusters[ci].edgeKeys
+      );
+      if (fillRegion) fillRegions.push(fillRegion);
+    }
+
+    autoMergeFillRegions = TopkapiGeometry.filterAutoMergeFillRegions(
+      fillRegions,
+      baselineForFill
+    );
+
+    renderPatternAndVerticalLayers();
+    renderAutoMergeFillsLayer();
+    updateResetButton();
   }
 
   /**
@@ -1008,7 +1158,7 @@
   }
 
   function getVerticalGridStrokeWidth() {
-    return getGridStrokeWidth() * 2;
+    return getGridStrokeWidth() * 3;
   }
 
   /** Geometry only — merge/erase state must not invalidate vertical lines. */
@@ -1037,28 +1187,68 @@
   }
 
   /**
+   * Stores max random trims; Anger slider scales how much trim is applied at draw time.
    * @param {number} x
    * @param {number} yTop
    * @param {number} yBottom
-   * @returns {{ x: number, y1: number, y2: number } | null}
+   * @returns {{ x: number, yTop: number, yBottom: number, topTrim: number, bottomTrim: number } | null}
    */
   function buildRandomizedVerticalLine(x, yTop, yBottom) {
     var mode = pickVerticalShortenMode();
-    var y1 = yTop;
-    var y2 = yBottom;
+    var topTrim = 0;
+    var bottomTrim = 0;
 
     if (mode === "top" || mode === "both") {
-      y1 = yTop + randomVerticalTrimAmount();
+      topTrim = randomVerticalTrimAmount();
     }
     if (mode === "bottom" || mode === "both") {
-      y2 = yBottom - randomVerticalTrimAmount();
+      bottomTrim = randomVerticalTrimAmount();
     }
+
+    if (yBottom - yTop - topTrim - bottomTrim <= 0) return null;
+
+    return {
+      x: x,
+      yTop: yTop,
+      yBottom: yBottom,
+      topTrim: topTrim,
+      bottomTrim: bottomTrim,
+    };
+  }
+
+  /**
+   * @param {{ x: number, yTop: number, yBottom: number, topTrim: number, bottomTrim: number }} vl
+   * @returns {{ x: number, y1: number, y2: number } | null}
+   */
+  function resolveVerticalLineDrawCoords(vl) {
+    var t = getAngerVerticalLengthPercent() / 100;
+    var yTop = vl.yTop;
+    var yBottom = vl.yBottom;
+    var y1OldMin = yTop + vl.topTrim;
+    var y2OldMin = yBottom - vl.bottomTrim;
+    var oldMinSpan = y2OldMin - y1OldMin;
+    if (oldMinSpan <= 0) return null;
+
+    var fullSpan = yBottom - yTop;
+    var minRatio =
+      typeof ANGER_VERTICAL_LENGTH_MIN_SPAN_RATIO !== "undefined"
+        ? ANGER_VERTICAL_LENGTH_MIN_SPAN_RATIO
+        : 0.5;
+    var halfOld = oldMinSpan / 2;
+    var halfAtZero = halfOld * minRatio;
+    var halfFull = fullSpan / 2;
+    var halfTarget = halfAtZero + (halfFull - halfAtZero) * t;
+    var centerLow = (y1OldMin + y2OldMin) / 2;
+    var centerHigh = (yTop + yBottom) / 2;
+    var center = centerLow + (centerHigh - centerLow) * t;
+    var y1 = center - halfTarget;
+    var y2 = center + halfTarget;
 
     y1 = Math.max(yTop, Math.min(y1, yBottom));
     y2 = Math.max(yTop, Math.min(y2, yBottom));
     if (y2 <= y1) return null;
 
-    return { x: x, y1: y1, y2: y2 };
+    return { x: vl.x, y1: y1, y2: y2 };
   }
 
   /**
@@ -1133,12 +1323,13 @@
     layer.setAttribute("stroke", getPatternStrokeColor());
     layer.setAttribute("stroke-width", String(getVerticalGridStrokeWidth()));
     for (var i = 0; i < cachedVerticalGridLines.length; i++) {
-      var vl = cachedVerticalGridLines[i];
+      var draw = resolveVerticalLineDrawCoords(cachedVerticalGridLines[i]);
+      if (!draw) continue;
       var line = elSvg("line");
-      line.setAttribute("x1", String(vl.x));
-      line.setAttribute("y1", String(vl.y1));
-      line.setAttribute("x2", String(vl.x));
-      line.setAttribute("y2", String(vl.y2));
+      line.setAttribute("x1", String(draw.x));
+      line.setAttribute("y1", String(draw.y1));
+      line.setAttribute("x2", String(draw.x));
+      line.setAttribute("y2", String(draw.y2));
       layer.appendChild(line);
     }
   }
@@ -1157,16 +1348,17 @@
         '">'
     );
     for (var i = 0; i < cachedVerticalGridLines.length; i++) {
-      var vl = cachedVerticalGridLines[i];
+      var draw = resolveVerticalLineDrawCoords(cachedVerticalGridLines[i]);
+      if (!draw) continue;
       lines.push(
         '<line x1="' +
-          vl.x +
+          draw.x +
           '" y1="' +
-          vl.y1 +
+          draw.y1 +
           '" x2="' +
-          vl.x +
+          draw.x +
           '" y2="' +
-          vl.y2 +
+          draw.y2 +
           '"/>'
       );
     }
@@ -1179,6 +1371,7 @@
     renderVerticalGridLayer();
     renderPatternLayer();
     renderGridMaskLayer("renderPatternAndVerticalLayers");
+    renderAutoMergeFillsLayer();
   }
 
   function applyGridBoundaryAttrs(rect, bounds) {
@@ -1534,7 +1727,16 @@
   }
 
   var BORDER_DIVISION_STROKE_WIDTH = 1;
-  var BORDER_TOP_BOTTOM_SEGMENTS = 8;
+
+  function isBodyAutonomyHomeChecked() {
+    var el = document.getElementById("body-autonomy-home");
+    return el ? el.checked : false;
+  }
+
+  function isBodyAutonomyOutsideChecked() {
+    var el = document.getElementById("body-autonomy-outside");
+    return el ? el.checked : false;
+  }
 
   /**
    * ViewBox Y of the grid-boundary stroke (outer edge) on top and bottom.
@@ -1582,8 +1784,52 @@
     };
   }
 
+  function regenerateBorderSideSegmentRatios() {
+    var segments = getBorderLeftRightSegments();
+    var min =
+      typeof BORDER_SIDE_SEGMENT_HEIGHT_MIN_RATIO !== "undefined"
+        ? BORDER_SIDE_SEGMENT_HEIGHT_MIN_RATIO
+        : 0.05;
+    var max =
+      typeof BORDER_SIDE_SEGMENT_HEIGHT_MAX_RATIO !== "undefined"
+        ? BORDER_SIDE_SEGMENT_HEIGHT_MAX_RATIO
+        : 1.4;
+    var power =
+      typeof BORDER_SIDE_SEGMENT_HEIGHT_RANDOM_POWER !== "undefined"
+        ? BORDER_SIDE_SEGMENT_HEIGHT_RANDOM_POWER
+        : 2.2;
+    var ratios = [];
+    var i;
+    var t;
+    var w;
+    for (i = 0; i < segments; i++) {
+      if (power <= 1) {
+        ratios.push(min + Math.random() * (max - min));
+      } else {
+        t = Math.random();
+        if (Math.random() < 0.5) {
+          w = Math.pow(t, power);
+        } else {
+          w = 1 - Math.pow(1 - t, power);
+        }
+        ratios.push(min + w * (max - min));
+      }
+    }
+    cachedBorderSideSegmentRatios = ratios;
+  }
+
+  function ensureBorderSideSegmentRatios() {
+    var segments = getBorderLeftRightSegments();
+    if (
+      !cachedBorderSideSegmentRatios ||
+      cachedBorderSideSegmentRatios.length !== segments
+    ) {
+      regenerateBorderSideSegmentRatios();
+    }
+  }
+
   /**
-   * Interior horizontal divider Y in left/right strips, evenly spaced inside inset bounds.
+   * Interior horizontal divider Y in left/right strips (variable row heights).
    * @returns {number[]}
    */
   function getLeftRightBorderInteriorYPositions() {
@@ -1591,9 +1837,16 @@
     var segments = getBorderLeftRightSegments();
     var span = divY.bottom - divY.top;
     var ys = [];
+    var y;
+    var heights;
     var i;
-    for (i = 1; i < segments; i++) {
-      ys.push(divY.top + (span * i) / segments);
+
+    ensureBorderSideSegmentRatios();
+    heights = distributeLengthsByRatios(span, cachedBorderSideSegmentRatios);
+    y = divY.top;
+    for (i = 0; i < segments - 1; i++) {
+      y += heights[i];
+      ys.push(y);
     }
     return ys;
   }
@@ -1614,30 +1867,136 @@
   }
 
   /**
+   * Repeating strip cell roles (top → bottom): home, grey, outside, beige, …
    * @param {number} cellIndex 0-based row in left/right strip (0 = top)
-   * @returns {boolean}
+   * @returns {"home"|"grey"|"outside"|"beige"}
    */
-  function isBorderSideBrownCell(cellIndex) {
-    return cellIndex % 2 === 0;
+  function getBorderSideCellType(cellIndex) {
+    var phase = cellIndex % 4;
+    if (phase === 0) return "home";
+    if (phase === 1) return "grey";
+    if (phase === 2) return "outside";
+    return "beige";
   }
 
   /**
-   * 0-based index among blue-pattern rows (cellIndex must be odd).
-   * @param {number} cellIndex
-   * @returns {number}
+   * Solid fill only (no colored X triangles) — grey / beige when Family + Friends on.
+   * @param {"home"|"grey"|"outside"|"beige"} cellType
+   * @param {boolean} home
+   * @param {boolean} outside
+   * @returns {boolean}
    */
-  function getBorderSideBlueCellSequenceIndex(cellIndex) {
-    return (cellIndex - 1) / 2;
+  function isBorderSideSolidColorOnlyCell(cellType, home, outside) {
+    if (!home || !outside) return false;
+    return cellType === "grey" || cellType === "beige";
   }
 
   /**
-   * Every second blue-pattern row → solid #d9d9d9 (2nd, 4th, 6th… blue row).
-   * @param {number} cellIndex
-   * @returns {boolean}
+   * Rhombus inscribed in a margin cell: top/bottom vertices on cell edges.
+   * @param {number} cellX
+   * @param {number} cellW
+   * @param {number} yTop
+   * @param {number} yBottom
+   * @returns {number[][]}
    */
-  function isBorderSideGreySolidCell(cellIndex) {
-    if (isBorderSideBrownCell(cellIndex)) return false;
-    return getBorderSideBlueCellSequenceIndex(cellIndex) % 2 === 1;
+  function getBorderSideCellRhombusPoints(cellX, cellW, yTop, yBottom) {
+    var cx = cellX + cellW / 2;
+    var cy = (yTop + yBottom) / 2;
+    return [
+      [cx, yTop],
+      [cellX + cellW, cy],
+      [cx, yBottom],
+      [cellX, cy],
+    ];
+  }
+
+  /**
+   * Complementary rhombus fill: grey cell → yellow/beige, beige cell → grey.
+   * @param {"grey"|"beige"} cellType
+   * @returns {string}
+   */
+  function getBorderSideRhombusFillForCellType(cellType) {
+    if (cellType === "grey") {
+      return typeof BORDER_SIDE_CELL_COLOR_BEIGE !== "undefined"
+        ? BORDER_SIDE_CELL_COLOR_BEIGE
+        : BORDER_SIDE_X_FILL_RIGHT;
+    }
+    return BORDER_SIDE_CELL_COLOR_GREY;
+  }
+
+  /**
+   * @param {SVGElement} g
+   * @param {number} cellX
+   * @param {number} cellW
+   * @param {number} yTop
+   * @param {number} yBottom
+   * @param {string} fill
+   */
+  function appendBorderSideCellRhombus(g, cellX, cellW, yTop, yBottom, fill) {
+    appendSvgPolygonFill(
+      g,
+      getBorderSideCellRhombusPoints(cellX, cellW, yTop, yBottom),
+      fill
+    );
+  }
+
+  /**
+   * @param {string[]} lines
+   * @param {number} cellX
+   * @param {number} cellW
+   * @param {number} yTop
+   * @param {number} yBottom
+   * @param {string} fill
+   */
+  function pushBorderSideCellRhombusExport(
+    lines,
+    cellX,
+    cellW,
+    yTop,
+    yBottom,
+    fill
+  ) {
+    var points = getBorderSideCellRhombusPoints(cellX, cellW, yTop, yBottom);
+    var i;
+    var parts = [];
+    for (i = 0; i < points.length; i++) {
+      parts.push(String(points[i][0]) + "," + String(points[i][1]));
+    }
+    lines.push(
+      '<polygon points="' +
+        parts.join(" ") +
+        '" fill="' +
+        fill +
+        '" stroke="none"/>'
+    );
+  }
+
+  /**
+   * @param {SVGElement} g
+   */
+  function appendLeftRightBorderSolidCellRhombusesToGroup(g) {
+    var home = isBodyAutonomyHomeChecked();
+    var outside = isBodyAutonomyOutsideChecked();
+    if (!home || !outside) return;
+
+    var b = getCanvasBorderPx();
+    var yBounds = getLeftRightBorderCellYBounds();
+    var rightX = CANVAS_W - b;
+    var j;
+    var yTop;
+    var yBottom;
+    var cellType;
+    var rhombusFill;
+
+    for (j = 0; j < yBounds.length - 1; j++) {
+      cellType = getBorderSideCellType(j);
+      if (!isBorderSideSolidColorOnlyCell(cellType, home, outside)) continue;
+      yTop = yBounds[j];
+      yBottom = yBounds[j + 1];
+      rhombusFill = getBorderSideRhombusFillForCellType(cellType);
+      appendBorderSideCellRhombus(g, 0, b, yTop, yBottom, rhombusFill);
+      appendBorderSideCellRhombus(g, rightX, b, yTop, yBottom, rhombusFill);
+    }
   }
 
   /**
@@ -1887,10 +2246,14 @@
   }
 
   /**
-   * Alternating fills for left/right margin cells (brown / blue X / grey solid).
+   * Left/right margin cell fills driven by Body Autonomy checkboxes.
    * @param {SVGElement} g
    */
   function appendLeftRightBorderCellFillsToGroup(g) {
+    var home = isBodyAutonomyHomeChecked();
+    var outside = isBodyAutonomyOutsideChecked();
+    if (!home && !outside) return;
+
     var b = getCanvasBorderPx();
     var yBounds = getLeftRightBorderCellYBounds();
     var rightX = CANVAS_W - b;
@@ -1898,16 +2261,20 @@
     var yTop;
     var yBottom;
     var h;
+    var cellType;
 
     for (j = 0; j < yBounds.length - 1; j++) {
       yTop = yBounds[j];
       yBottom = yBounds[j + 1];
       h = yBottom - yTop;
+      cellType = getBorderSideCellType(j);
 
-      if (isBorderSideBrownCell(j)) {
+      if (cellType === "outside") {
+        if (!outside) continue;
         appendBorderSideBrownCellXPatternFills(g, 0, b, yTop, yBottom);
         appendBorderSideBrownCellXPatternFills(g, rightX, b, yTop, yBottom);
-      } else if (isBorderSideGreySolidCell(j)) {
+      } else if (cellType === "grey") {
+        if (!home || !outside) continue;
         appendBorderSideSolidCellRect(
           g,
           0,
@@ -1924,7 +2291,16 @@
           h,
           BORDER_SIDE_CELL_COLOR_GREY
         );
+      } else if (cellType === "beige") {
+        if (!home || !outside) continue;
+        var beigeFill =
+          typeof BORDER_SIDE_CELL_COLOR_BEIGE !== "undefined"
+            ? BORDER_SIDE_CELL_COLOR_BEIGE
+            : BORDER_SIDE_X_FILL_RIGHT;
+        appendBorderSideSolidCellRect(g, 0, yTop, b, h, beigeFill);
+        appendBorderSideSolidCellRect(g, rightX, yTop, b, h, beigeFill);
       } else {
+        if (!home) continue;
         appendBorderSideBlueCellXPatternFills(g, 0, b, yTop, yBottom);
         appendBorderSideBlueCellXPatternFills(g, rightX, b, yTop, yBottom);
       }
@@ -1932,25 +2308,46 @@
   }
 
   /**
-   * Corner-to-corner X strokes in brown left/right strip cells only.
+   * Corner-to-corner X strokes in one left/right margin cell.
+   * @param {SVGElement} g
+   * @param {number} b
+   * @param {number} rightX
+   * @param {number} yTop
+   * @param {number} yBottom
+   */
+  function appendBorderSideCellDiagonals(g, b, rightX, yTop, yBottom) {
+    appendBorderDivisionLine(g, 0, yTop, b, yBottom);
+    appendBorderDivisionLine(g, b, yTop, 0, yBottom);
+    appendBorderDivisionLine(g, rightX, yTop, CANVAS_W, yBottom);
+    appendBorderDivisionLine(g, CANVAS_W, yTop, rightX, yBottom);
+  }
+
+  /**
+   * X strokes: outline-only when no checkboxes (home + outside rows);
+   * with Outside checked, also on outside rows alongside fills.
    * @param {SVGElement} g
    */
   function appendLeftRightBorderCellDiagonalsToGroup(g) {
+    var home = isBodyAutonomyHomeChecked();
+    var outside = isBodyAutonomyOutsideChecked();
+    var outlineOnly = !home && !outside;
+    if (!outlineOnly && !outside) return;
+
     var b = getCanvasBorderPx();
     var yBounds = getLeftRightBorderCellYBounds();
     var j;
     var yTop;
     var yBottom;
+    var cellType;
     var rightX = CANVAS_W - b;
 
     for (j = 0; j < yBounds.length - 1; j++) {
-      if (!isBorderSideBrownCell(j)) continue;
+      cellType = getBorderSideCellType(j);
+      if (cellType === "grey" || cellType === "beige") continue;
+      if (!outlineOnly && cellType !== "outside") continue;
       yTop = yBounds[j];
       yBottom = yBounds[j + 1];
-      appendBorderDivisionLine(g, 0, yTop, b, yBottom);
-      appendBorderDivisionLine(g, b, yTop, 0, yBottom);
-      appendBorderDivisionLine(g, rightX, yTop, CANVAS_W, yBottom);
-      appendBorderDivisionLine(g, CANVAS_W, yTop, rightX, yBottom);
+      appendBorderSideCellDiagonals(g, b, rightX, yTop, yBottom);
     }
   }
 
@@ -1972,10 +2369,8 @@
    */
   function appendBorderDivisionLinesToGroup(g) {
     var b = getCanvasBorderPx();
-    var frameY = getBorderDivisionFrameY();
     var i;
     var y;
-    var x;
 
     appendLeftRightBorderFrameEdgeLines(g);
 
@@ -1984,13 +2379,6 @@
       y = sideInteriorY[i];
       appendBorderDivisionLine(g, 0, y, b, y);
       appendBorderDivisionLine(g, CANVAS_W - b, y, CANVAS_W, y);
-    }
-
-    for (i = 1; i < BORDER_TOP_BOTTOM_SEGMENTS; i++) {
-      x = (CANVAS_W * i) / BORDER_TOP_BOTTOM_SEGMENTS;
-      if (x <= b || x >= CANVAS_W - b) continue;
-      appendBorderDivisionLine(g, x, 0, x, frameY.top);
-      appendBorderDivisionLine(g, x, frameY.bottom, x, CANVAS_H);
     }
   }
 
@@ -2004,6 +2392,7 @@
     g.setAttribute("stroke", getPatternStrokeColor());
     g.setAttribute("stroke-width", String(BORDER_DIVISION_STROKE_WIDTH));
     appendBorderDivisionLinesToGroup(g);
+    appendLeftRightBorderSolidCellRhombusesToGroup(g);
     appendLeftRightBorderCellDiagonalsToGroup(g);
   }
 
@@ -2036,13 +2425,215 @@
     };
   }
 
+  /**
+   * White margin strip between canvas edge and the brown bar.
+   * @param {"top"|"bottom"} edge
+   * @returns {{ x: number, y: number, width: number, height: number }}
+   */
+  function getCanvasEdgeSerialStripLayout(edge) {
+    var bar = getCanvasEdgeBrownBarLayout(edge);
+    if (edge === "top") {
+      return {
+        x: 0,
+        y: 0,
+        width: CANVAS_W,
+        height: Math.max(0, bar.y),
+      };
+    }
+    return {
+      x: 0,
+      y: bar.y + bar.height,
+      width: CANVAS_W,
+      height: Math.max(0, CANVAS_H - (bar.y + bar.height)),
+    };
+  }
+
+  function getCanvasEdgeSerialEdgeInsetPx() {
+    return typeof CANVAS_EDGE_SERIAL_EDGE_INSET_PX !== "undefined"
+      ? CANVAS_EDGE_SERIAL_EDGE_INSET_PX
+      : 50;
+  }
+
+  function getCanvasEdgeSerialDigitCount() {
+    return typeof CANVAS_EDGE_SERIAL_DIGIT_COUNT !== "undefined"
+      ? CANVAS_EDGE_SERIAL_DIGIT_COUNT
+      : 8;
+  }
+
+  /**
+   * @param {number} stripWidth
+   * @returns {number[]}
+   */
+  function getCanvasEdgeSerialDigitXPositions(stripWidth) {
+    var count = getCanvasEdgeSerialDigitCount();
+    var inset = getCanvasEdgeSerialEdgeInsetPx();
+    var span = stripWidth - 2 * inset;
+    var positions = [];
+    var i;
+    if (count <= 1) {
+      positions.push(inset + span / 2);
+      return positions;
+    }
+    for (i = 0; i < count; i++) {
+      positions.push(inset + (span * i) / (count - 1));
+    }
+    return positions;
+  }
+
+  function getCanvasEdgeSerialFill() {
+    return typeof CANVAS_EDGE_SERIAL_FILL !== "undefined"
+      ? CANVAS_EDGE_SERIAL_FILL
+      : getPatternStrokeColor();
+  }
+
+  function getCanvasEdgeSerialCircleGapPx() {
+    return typeof CANVAS_EDGE_SERIAL_CIRCLE_GAP_PX !== "undefined"
+      ? CANVAS_EDGE_SERIAL_CIRCLE_GAP_PX
+      : 3;
+  }
+
+  function getCanvasEdgeSerialCircleDiameterRatio() {
+    return typeof CANVAS_EDGE_SERIAL_CIRCLE_DIAMETER_RATIO !== "undefined"
+      ? CANVAS_EDGE_SERIAL_CIRCLE_DIAMETER_RATIO
+      : 0.35;
+  }
+
+  /**
+   * @param {{ x: number, y: number, width: number, height: number }} strip
+   * @returns {{ r: number, gap: number }}
+   */
+  function getCanvasEdgeSerialCircleMetrics(strip) {
+    var gap = getCanvasEdgeSerialCircleGapPx();
+    var digitSlots = getCanvasEdgeSerialDigitCount();
+    var inset = getCanvasEdgeSerialEdgeInsetPx();
+    var span = strip.width - 2 * inset;
+    var slotPitch = digitSlots <= 1 ? span : span / (digitSlots - 1);
+    var maxCircles = 9;
+    var maxBySlot = (slotPitch * 0.88 - (maxCircles - 1) * gap) / (2 * maxCircles);
+    var maxByHeight = (strip.height * getCanvasEdgeSerialCircleDiameterRatio()) / 2;
+    var r = Math.min(maxBySlot, maxByHeight);
+    return { r: Math.max(1, r), gap: gap };
+  }
+
+  /**
+   * @param {SVGElement} container
+   * @param {number} centerX
+   * @param {number} centerY
+   * @param {number} digit 0–9
+   * @param {number} r
+   * @param {number} gap edge-to-edge spacing between circles (px)
+   */
+  function appendCanvasEdgeSerialDigitCircles(container, centerX, centerY, digit, r, gap) {
+    var count = Math.max(0, Math.min(9, Math.floor(digit)));
+    var fill = getCanvasEdgeSerialFill();
+    var step = 2 * r + gap;
+    var totalWidth = count * 2 * r + (count - 1) * gap;
+    var startX = centerX - totalWidth / 2 + r;
+    var ci;
+    var circle;
+
+    for (ci = 0; ci < count; ci++) {
+      circle = elSvg("circle");
+      circle.setAttribute("cx", String(startX + ci * step));
+      circle.setAttribute("cy", String(centerY));
+      circle.setAttribute("r", String(r));
+      circle.setAttribute("fill", fill);
+      circle.setAttribute("stroke", "none");
+      container.appendChild(circle);
+    }
+  }
+
+  function generateCanvasEdgeSerial() {
+    var count = getCanvasEdgeSerialDigitCount();
+    var digits = [];
+    var i;
+
+    if (count <= 0) return "";
+
+    if (count === 1) {
+      return String(1 + Math.floor(Math.random() * 9));
+    }
+
+    digits.push(String(1 + Math.floor(Math.random() * 9)));
+    for (i = 1; i < count - 1; i++) {
+      digits.push(String(Math.floor(Math.random() * 10)));
+    }
+    digits.push(String(1 + Math.floor(Math.random() * 9)));
+    return digits.join("");
+  }
+
+  function ensureCanvasEdgeSerial() {
+    if (canvasEdgeSerial === null) {
+      canvasEdgeSerial = generateCanvasEdgeSerial();
+    }
+    return canvasEdgeSerial;
+  }
+
+  /**
+   * @param {{ x: number, y: number, width: number, height: number }} strip
+   * @param {string} serial
+   * @returns {SVGElement}
+   */
+  function createCanvasEdgeSerialDigitCircles(strip, serial) {
+    var g = elSvg("g");
+    var xs = getCanvasEdgeSerialDigitXPositions(strip.width);
+    var metrics = getCanvasEdgeSerialCircleMetrics(strip);
+    var centerY = strip.y + strip.height / 2;
+    var i;
+    var digit;
+
+    if (!serial || strip.height <= 0 || metrics.r <= 0) return g;
+
+    for (i = 0; i < serial.length && i < xs.length; i++) {
+      digit = parseInt(serial.charAt(i), 10);
+      if (isNaN(digit)) continue;
+      appendCanvasEdgeSerialDigitCircles(
+        g,
+        strip.x + xs[i],
+        centerY,
+        digit,
+        metrics.r,
+        metrics.gap
+      );
+    }
+    return g;
+  }
+
+  function appendCanvasEdgeSerialToGroup(g) {
+    var serial = ensureCanvasEdgeSerial();
+    g.appendChild(
+      createCanvasEdgeSerialDigitCircles(getCanvasEdgeSerialStripLayout("top"), serial)
+    );
+    g.appendChild(
+      createCanvasEdgeSerialDigitCircles(
+        getCanvasEdgeSerialStripLayout("bottom"),
+        serial
+      )
+    );
+  }
+
+  function createCanvasEdgeSerialGroup() {
+    var g = elSvg("g");
+    g.setAttribute("id", "layer-edge-serial");
+    appendCanvasEdgeSerialToGroup(g);
+    return g;
+  }
+
+  function updateCanvasEdgeSerialLayer() {
+    if (!designSvg) return;
+    var layer = designSvg.querySelector("#layer-edge-serial");
+    if (!layer) return;
+    while (layer.firstChild) layer.removeChild(layer.firstChild);
+    appendCanvasEdgeSerialToGroup(layer);
+  }
+
   function applyCanvasEdgeBrownBarAttrs(rect, edge) {
     var layout = getCanvasEdgeBrownBarLayout(edge);
     rect.setAttribute("x", String(layout.x));
     rect.setAttribute("y", String(layout.y));
     rect.setAttribute("width", String(layout.width));
     rect.setAttribute("height", String(layout.height));
-    rect.setAttribute("fill", CANVAS_EDGE_BROWN_BAR_COLOR);
+    rect.setAttribute("fill", getLabelBarBackgroundColor());
     rect.setAttribute("stroke", "none");
   }
 
@@ -2102,17 +2693,35 @@
   }
 
   /**
-   * Innermost segment (grid-facing band) inside each top/bottom brown bar.
+   * Inner segment (grid-facing band) inside each top/bottom brown bar.
    * @param {number} barHeight
+   * @param {number} [segmentIndex] 0 = innermost row toward the grid
    * @returns {{ start: number, end: number, height: number }}
    */
-  function getBrownBarFirstSegmentInnerRelBounds(barHeight) {
+  function getBrownBarInnerSegmentRelBounds(barHeight, segmentIndex) {
     var segments =
       typeof CANVAS_EDGE_BROWN_BAR_HORIZONTAL_SEGMENTS !== "undefined"
         ? CANVAS_EDGE_BROWN_BAR_HORIZONTAL_SEGMENTS
         : 3;
     var segmentH = barHeight / segments;
-    return { start: 0, end: segmentH, height: segmentH };
+    var idx =
+      typeof segmentIndex === "number"
+        ? Math.max(0, Math.min(segmentIndex, segments - 1))
+        : 0;
+    return {
+      start: segmentH * idx,
+      end: segmentH * (idx + 1),
+      height: segmentH,
+    };
+  }
+
+  /**
+   * Innermost segment (grid-facing band) inside each top/bottom brown bar.
+   * @param {number} barHeight
+   * @returns {{ start: number, end: number, height: number }}
+   */
+  function getBrownBarFirstSegmentInnerRelBounds(barHeight) {
+    return getBrownBarInnerSegmentRelBounds(barHeight, 0);
   }
 
   /**
@@ -2141,7 +2750,7 @@
   function getBrownBarBannerDisplayText() {
     return typeof BROWN_BAR_BANNER_TEXT !== "undefined"
       ? BROWN_BAR_BANNER_TEXT
-      : "FREE.IRANIAN.WOMEN";
+      : "";
   }
 
   function getBrownBarBannerStrikeWord() {
@@ -2164,9 +2773,7 @@
   }
 
   function getBrownBarBannerFill() {
-    return typeof BROWN_BAR_BANNER_FILL !== "undefined"
-      ? BROWN_BAR_BANNER_FILL
-      : "#ffffff";
+    return getLabelBarContentColor();
   }
 
   function getBrownBarBannerLetterSpacing() {
@@ -2363,24 +2970,1701 @@
   }
 
   function appendBrownBarBannerText(g) {
+    appendLabelBarContent(g);
+  }
+
+  /**
+   * @returns {{ type: "svg" | "text", svgFile: string, text: string }[]}
+   */
+  function getLabelBarItems() {
+    if (window.LabelBarControls && window.LabelBarControls.getItems) {
+      return window.LabelBarControls.getItems();
+    }
+    return [];
+  }
+
+  function getLabelBarSvgDimensions(filename) {
+    if (
+      typeof LABEL_BAR_SVG_DIMENSIONS !== "undefined" &&
+      LABEL_BAR_SVG_DIMENSIONS[filename]
+    ) {
+      return LABEL_BAR_SVG_DIMENSIONS[filename];
+    }
+    if (labelBarSvgCache[filename]) {
+      return {
+        width: labelBarSvgCache[filename].width,
+        height: labelBarSvgCache[filename].height,
+      };
+    }
+    return null;
+  }
+
+  function getLabelBarSvgHref(filename) {
+    return (
+      "svg/" +
+      filename
+        .split("/")
+        .map(function (part) {
+          return encodeURIComponent(part);
+        })
+        .join("/")
+    );
+  }
+
+  function hexToLabelBarIconFilter(hex) {
+    var color = normalizeHexColor(hex, "#ffffff");
+    if (color === "#ffffff") return "brightness(0) invert(1)";
+    if (color === "#000000") return "brightness(0)";
+    var r = parseInt(color.slice(1, 3), 16) / 255;
+    var g = parseInt(color.slice(3, 5), 16) / 255;
+    var b = parseInt(color.slice(5, 7), 16) / 255;
+    var max = Math.max(r, g, b);
+    var min = Math.min(r, g, b);
+    var h = 0;
+    var s = 0;
+    var l = (max + min) / 2;
+    var d;
+    if (max !== min) {
+      d = max - min;
+      s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+      if (max === r) h = (g - b) / d + (g < b ? 6 : 0);
+      else if (max === g) h = (b - r) / d + 2;
+      else h = (r - g) / d + 4;
+      h /= 6;
+    }
+    return (
+      "brightness(0) saturate(100%) invert(" +
+      Math.round(l * 100) +
+      "%) sepia(" +
+      Math.round(s * 100) +
+      "%) saturate(5000%) hue-rotate(" +
+      Math.round(h * 360) +
+      "deg) brightness(" +
+      Math.round(((r + g + b) / 3) * 200) +
+      "%) contrast(" +
+      Math.round((max || 1) * 100) +
+      "%)"
+    );
+  }
+
+  function getLabelBarIconFilterStyle() {
+    return hexToLabelBarIconFilter(getLabelBarContentColor());
+  }
+
+  function labelBarSvgUsesNativeColors(file) {
+    if (!file) return false;
+    if (
+      typeof LABEL_BAR_NATIVE_COLOR_SVGS !== "undefined" &&
+      LABEL_BAR_NATIVE_COLOR_SVGS.indexOf(file) >= 0
+    ) {
+      return true;
+    }
+    return false;
+  }
+
+  function applyLabelBarSvgTintFill(root, tintColor) {
+    if (!root) return;
+    var shapes = root.querySelectorAll(
+      "path, rect, circle, ellipse, polygon, polyline, line"
+    );
+    var styleEls = root.querySelectorAll("style");
+    var i;
+    var fill;
+    var stroke;
+    var iconFill = normalizeHexColor(
+      tintColor,
+      typeof LABEL_BAR_CONTENT_COLOR_DEFAULT !== "undefined"
+        ? LABEL_BAR_CONTENT_COLOR_DEFAULT
+        : "#ffffff"
+    );
+    for (i = 0; i < styleEls.length; i++) {
+      if (styleEls[i].parentNode) {
+        styleEls[i].parentNode.removeChild(styleEls[i]);
+      }
+    }
+    for (i = 0; i < shapes.length; i++) {
+      fill = shapes[i].getAttribute("fill");
+      stroke = shapes[i].getAttribute("stroke");
+      if (fill && fill !== "none" && fill !== "transparent") {
+        shapes[i].setAttribute("fill", iconFill);
+      } else if (
+        (!fill || fill === "inherit") &&
+        shapes[i].hasAttribute("class")
+      ) {
+        shapes[i].setAttribute("fill", iconFill);
+      }
+      if (stroke && stroke !== "none" && stroke !== "transparent") {
+        shapes[i].setAttribute("stroke", iconFill);
+      }
+    }
+  }
+
+  function getLabelBarSvgTintedInnerMarkup(file) {
+    if (labelBarSvgUsesNativeColors(file)) return "";
+    var cached = labelBarSvgCache[file];
+    if (!cached) return "";
+    var tintColor = getLabelBarContentColor();
+    if (cached.tintedInnerMarkup && cached.tintedColor === tintColor) {
+      return cached.tintedInnerMarkup;
+    }
+    var parser = new DOMParser();
+    var doc = parser.parseFromString(
+      "<svg xmlns=\"http://www.w3.org/2000/svg\">" +
+        cached.innerMarkup +
+        "</svg>",
+      "image/svg+xml"
+    );
+    applyLabelBarSvgTintFill(doc.documentElement, tintColor);
+    cached.tintedInnerMarkup = doc.documentElement.innerHTML;
+    cached.tintedColor = tintColor;
+    return cached.tintedInnerMarkup;
+  }
+
+  function setSvgImageHref(img, href) {
+    img.setAttribute("href", href);
+    img.setAttributeNS("http://www.w3.org/1999/xlink", "href", href);
+  }
+
+  /**
+   * @param {string} markup full SVG document string
+   * @returns {{ width: number, height: number, innerMarkup: string, doc: Document }}
+   */
+  function parseLabelBarSvgMarkup(markup) {
+    var parser = new DOMParser();
+    var doc = parser.parseFromString(markup, "image/svg+xml");
+    var svgEl = doc.documentElement;
+    var vb = svgEl.getAttribute("viewBox");
+    var width;
+    var height;
+    if (vb) {
+      var parts = vb.trim().split(/\s+/).map(Number);
+      width = parts[2];
+      height = parts[3];
+    } else {
+      width = parseFloat(svgEl.getAttribute("width")) || 100;
+      height = parseFloat(svgEl.getAttribute("height")) || 100;
+    }
+    return {
+      width: width,
+      height: height,
+      innerMarkup: svgEl.innerHTML,
+      doc: doc,
+    };
+  }
+
+  function cacheLabelBarSvgAsset(filename, cached) {
+    cached.tintedInnerMarkup = null;
+    cached.tintedColor = null;
+    labelBarSvgCache[filename] = cached;
+    return cached;
+  }
+
+  /**
+   * @param {string} filename
+   * @returns {Promise<{ width: number, height: number, innerMarkup: string, doc: Document }>}
+   */
+  function ensureLabelBarSvgAsset(filename) {
+    if (!filename) return Promise.reject(new Error("missing filename"));
+    if (labelBarSvgCache[filename]) {
+      return Promise.resolve(labelBarSvgCache[filename]);
+    }
+    if (labelBarSvgLoadPromises[filename]) {
+      return labelBarSvgLoadPromises[filename];
+    }
+    labelBarSvgLoadPromises[filename] = fetch(getLabelBarSvgHref(filename))
+      .then(function (res) {
+        if (!res.ok) throw new Error("svg fetch failed");
+        return res.text();
+      })
+      .then(function (markup) {
+        return cacheLabelBarSvgAsset(filename, parseLabelBarSvgMarkup(markup));
+      })
+      .catch(function () {
+        var embedded =
+          typeof window !== "undefined" &&
+          window.LABEL_BAR_SVG_EMBEDDED &&
+          window.LABEL_BAR_SVG_EMBEDDED[filename];
+        if (embedded) {
+          return cacheLabelBarSvgAsset(
+            filename,
+            parseLabelBarSvgMarkup(
+              '<svg xmlns="http://www.w3.org/2000/svg">' + embedded + "</svg>"
+            )
+          );
+        }
+        throw new Error("svg unavailable: " + filename);
+      });
+    return labelBarSvgLoadPromises[filename];
+  }
+
+  /**
+   * @param {"top"|"bottom"} edge
+   * @param {{ x: number, y: number, width: number, height: number }} layout
+   * @param {number} [segmentIndex]
+   * @returns {{ x: number, y: number, width: number, height: number }}
+   */
+  function getLabelBarSegmentCanvasBounds(edge, layout, segmentIndex) {
+    var segment = getBrownBarInnerSegmentRelBounds(layout.height, segmentIndex);
+    if (edge === "bottom") {
+      return {
+        x: layout.x,
+        y: getBottomBrownBarCanvasY(segment.start, layout),
+        width: layout.width,
+        height: segment.height,
+      };
+    }
+    return {
+      x: layout.x,
+      y: getTopBrownBarMirroredCanvasY(segment.end, layout),
+      width: layout.width,
+      height: segment.height,
+    };
+  }
+
+  /**
+   * @param {"top"|"bottom"} edge
+   * @param {{ x: number, y: number, width: number, height: number }} layout
+   * @param {number} segmentIndex
+   * @returns {ReturnType<typeof getLabelBarContentArea>}
+   */
+  function getLabelBarInnerSegmentContentArea(edge, layout, segmentIndex) {
+    var vInset = getLabelBarVerticalInsetPx();
+    var halfGap = getLabelBarAdjacentRowContentGapPx() / 2;
+    var topInset = vInset;
+    var bottomInset = vInset;
+
+    // Row 1 = inner segment (index 0); row 2 = index 1. On the top bar, row 2 sits
+    // above row 1 in canvas Y, so the 5px gap belongs on seg0 top / seg1 bottom.
+    if (edge === "bottom") {
+      if (segmentIndex === 0) {
+        bottomInset = halfGap;
+      } else if (segmentIndex === 1) {
+        topInset = halfGap;
+      }
+    } else if (segmentIndex === 0) {
+      topInset = halfGap;
+    } else if (segmentIndex === 1) {
+      bottomInset = halfGap;
+    }
+
+    return getLabelBarContentArea(
+      getLabelBarSegmentCanvasBounds(edge, layout, segmentIndex),
+      topInset,
+      bottomInset
+    );
+  }
+
+  function getLabelBarEndCapRowSpan() {
+    return typeof LABEL_BAR_END_CAP_ROW_SPAN !== "undefined"
+      ? LABEL_BAR_END_CAP_ROW_SPAN
+      : 2;
+  }
+
+  /**
+   * Inner-edge band covering N horizontal brown-bar segments (for lion end caps).
+   * @param {number} barHeight
+   * @param {number} rowSpan
+   * @returns {{ start: number, end: number, height: number }}
+   */
+  function getBrownBarInnerSegmentSpanBounds(barHeight, rowSpan) {
+    var segments =
+      typeof CANVAS_EDGE_BROWN_BAR_HORIZONTAL_SEGMENTS !== "undefined"
+        ? CANVAS_EDGE_BROWN_BAR_HORIZONTAL_SEGMENTS
+        : 3;
+    var segmentH = barHeight / segments;
+    var span = Math.max(1, Math.min(rowSpan, segments));
+    return { start: 0, end: segmentH * span, height: segmentH * span };
+  }
+
+  /**
+   * @param {"top"|"bottom"} edge
+   * @param {{ x: number, y: number, width: number, height: number }} layout
+   * @returns {{ x: number, y: number, width: number, height: number }}
+   */
+  function getLabelBarEndCapCanvasBounds(edge, layout) {
+    var span = getBrownBarInnerSegmentSpanBounds(
+      layout.height,
+      getLabelBarEndCapRowSpan()
+    );
+    if (edge === "bottom") {
+      return {
+        x: layout.x,
+        y: getBottomBrownBarCanvasY(span.start, layout),
+        width: layout.width,
+        height: span.height,
+      };
+    }
+    return {
+      x: layout.x,
+      y: getTopBrownBarMirroredCanvasY(span.end, layout),
+      width: layout.width,
+      height: span.height,
+    };
+  }
+
+  /**
+   * Lion end-cap placement area (2 rows minus 5px top/bottom inset, same as other label items).
+   * @param {"top"|"bottom"} edge
+   * @param {{ x: number, y: number, width: number, height: number }} layout
+   * @returns {ReturnType<typeof getLabelBarContentArea>}
+   */
+  function getLabelBarEndCapContentArea(edge, layout) {
+    return getLabelBarContentArea(getLabelBarEndCapCanvasBounds(edge, layout));
+  }
+
+  function getLabelBarTextHeightRatio() {
+    return typeof LABEL_BAR_TEXT_FONT_HEIGHT_RATIO !== "undefined"
+      ? LABEL_BAR_TEXT_FONT_HEIGHT_RATIO
+      : 1;
+  }
+
+  function applyLabelBarTextAttrs(text, fontSize) {
+    text.setAttribute("fill", getBrownBarBannerFill());
+    text.setAttribute("font-family", getBrownBarBannerFontFamily());
+    text.setAttribute("font-weight", "700");
+    text.setAttribute("font-size", String(fontSize));
+    text.setAttribute("letter-spacing", String(getBrownBarBannerLetterSpacing()));
+    text.setAttribute("text-anchor", "start");
+    /** Same cell as SVG icons: font-size = area.height, vertically centered on cell midline. */
+    text.setAttribute("dominant-baseline", "middle");
+    text.setAttribute("alignment-baseline", "middle");
+  }
+
+  function getLabelBarMeasureGroup() {
+    if (!designSvg) return null;
+    var g = designSvg.getElementById("label-bar-measure");
+    if (!g) {
+      g = elSvg("g");
+      g.setAttribute("id", "label-bar-measure");
+      g.setAttribute("opacity", "0");
+      g.setAttribute("pointer-events", "none");
+      g.setAttribute("aria-hidden", "true");
+      designSvg.appendChild(g);
+    }
+    while (g.firstChild) g.removeChild(g.firstChild);
+    return g;
+  }
+
+  function getLabelBarBandCenterY(area) {
+    return area.y + area.height / 2;
+  }
+
+  function getLabelBarTextYOffsetPx() {
+    return typeof LABEL_BAR_TEXT_Y_OFFSET_PX !== "undefined"
+      ? LABEL_BAR_TEXT_Y_OFFSET_PX
+      : 0;
+  }
+
+  function getLabelBarTextY(area) {
+    return getLabelBarBandCenterY(area) + getLabelBarTextYOffsetPx();
+  }
+
+  /** Top bar label rows: flip glyphs/text vertically vs the bottom bar. */
+  function labelBarEdgeContentFlippedVertically(edge) {
+    return edge === "top";
+  }
+
+  /**
+   * SVG transform: vertical mirror around the content band midline (position unchanged).
+   * @param {ReturnType<typeof getLabelBarContentArea>} contentArea
+   * @returns {string}
+   */
+  function getLabelBarVerticalFlipTransform(contentArea) {
+    var cy = getLabelBarBandCenterY(contentArea);
+    return (
+      "translate(0," + cy + ") scale(1,-1) translate(0," + -cy + ")"
+    );
+  }
+
+  /**
+   * Measure text width at the same font-size used for SVG icon cell height (area.height).
+   * @param {string} text
+   * @param {number} fontSize
+   * @returns {{ width: number, bbox: { x: number, y: number, width: number, height: number } | null }}
+   */
+  function measureLabelBarTextAtCellSize(text, fontSize) {
+    var measureG = getLabelBarMeasureGroup();
+    var textEl;
+    var bb;
+    if (!measureG || !text) {
+      return {
+        width: Math.max(1, (text || "").length * fontSize * 0.55),
+        bbox: null,
+      };
+    }
+    textEl = elSvg("text");
+    applyLabelBarTextAttrs(textEl, fontSize);
+    textEl.setAttribute("x", "0");
+    textEl.setAttribute("y", "0");
+    textEl.textContent = text;
+    measureG.appendChild(textEl);
+    bb = textEl.getBBox();
+    return {
+      width: bb.width > 0 ? bb.width : Math.max(1, text.length * fontSize * 0.55),
+      bbox: { x: bb.x, y: bb.y, width: bb.width, height: bb.height },
+    };
+  }
+
+  /**
+   * Text cell matches SVG icon placement: height = area.height, y centered on cell midline.
+   * @param {string} text
+   * @param {number} maxHeight area.height (same value passed to buildLabelBarSvgSpec)
+   * @param {number} bandTopY area.y (same origin as SVG image y)
+   * @param {number} bandBottomY area.y + area.height
+   * @returns {{ fontSize: number, width: number, height: number }}
+   */
+  function fitLabelBarTextMetrics(text, maxHeight, bandTopY, bandBottomY) {
+    var cellH = Math.max(1, maxHeight * getLabelBarTextHeightRatio());
+    var fontSize = cellH;
+    var measured;
+
+    if (!text) {
+      return { fontSize: fontSize, width: cellH * 0.5, height: cellH };
+    }
+
+    measured = measureLabelBarTextAtCellSize(text, fontSize);
+
+    return {
+      fontSize: fontSize,
+      width: measured.width,
+      height: cellH,
+    };
+  }
+
+  /**
+   * @param {{ type: "svg" | "text", svgFile: string, text: string }[]} items
+   * @param {number} barWidth
+   * @param {number} segmentHeight
+   * @returns {object[]}
+   */
+  function buildLabelBarItemSpecs(items, barWidth, segmentHeight, bandTopY, bandBottomY) {
+    var specs = [];
+    var i;
+    var item;
+    var label;
+    var textMetrics;
+    var topY =
+      typeof bandTopY === "number"
+        ? bandTopY
+        : 0;
+    var bottomY =
+      typeof bandBottomY === "number"
+        ? bandBottomY
+        : segmentHeight;
+    for (i = 0; i < items.length; i++) {
+      item = items[i];
+      if (item.type === "text") {
+        label = (item.text || "").trim();
+        if (!label) continue;
+        textMetrics = fitLabelBarTextMetrics(
+          label,
+          segmentHeight,
+          topY,
+          bottomY
+        );
+        specs.push({
+          type: "text",
+          text: label,
+          width: textMetrics.width,
+          height: textMetrics.height,
+          fontSize: textMetrics.fontSize,
+        });
+      } else if (item.type === "svg" && item.svgFile) {
+        var dims = getLabelBarSvgDimensions(item.svgFile);
+        if (!dims || !dims.height) continue;
+        var svgScale = segmentHeight / dims.height;
+        specs.push({
+          type: "svg",
+          file: item.svgFile,
+          width: dims.width * svgScale,
+          height: segmentHeight,
+          scale: svgScale,
+        });
+      }
+    }
+    return specs;
+  }
+
+  function getLabelBarHorizontalInsetPx() {
+    return typeof LABEL_BAR_HORIZONTAL_INSET_PX !== "undefined"
+      ? LABEL_BAR_HORIZONTAL_INSET_PX
+      : 10;
+  }
+
+  function getLabelBarVerticalInsetPx() {
+    return typeof LABEL_BAR_VERTICAL_INSET_PX !== "undefined"
+      ? LABEL_BAR_VERTICAL_INSET_PX
+      : 10;
+  }
+
+  function getLabelBarAdjacentRowContentGapPx() {
+    return typeof LABEL_BAR_ADJACENT_ROW_CONTENT_GAP_PX !== "undefined"
+      ? LABEL_BAR_ADJACENT_ROW_CONTENT_GAP_PX
+      : 5;
+  }
+
+  /**
+   * @param {{ x: number, y: number, width: number, height: number }} bounds
+   * @param {number} [topInsetOverride]
+   * @param {number} [bottomInsetOverride]
+   * @returns {{ x: number, y: number, width: number, height: number, innerWidth: number }}
+   */
+  function getLabelBarContentArea(bounds, topInsetOverride, bottomInsetOverride) {
+    var hInset = getLabelBarHorizontalInsetPx();
+    var vInset = getLabelBarVerticalInsetPx();
+    var topInset =
+      typeof topInsetOverride === "number" ? topInsetOverride : vInset;
+    var bottomInset =
+      typeof bottomInsetOverride === "number" ? bottomInsetOverride : vInset;
+    return {
+      x: bounds.x,
+      y: bounds.y + topInset,
+      width: bounds.width,
+      height: Math.max(0, bounds.height - topInset - bottomInset),
+      innerWidth: Math.max(0, bounds.width - hInset * 2),
+      hInset: hInset,
+      vInset: vInset,
+    };
+  }
+
+  function getLabelBarItemGapPx() {
+    return typeof LABEL_BAR_ITEM_GAP_PX !== "undefined"
+      ? LABEL_BAR_ITEM_GAP_PX
+      : 5;
+  }
+
+  function getLabelBarClusterInternalGapPx() {
+    return typeof LABEL_BAR_CLUSTER_INTERNAL_GAP_PX !== "undefined"
+      ? LABEL_BAR_CLUSTER_INTERNAL_GAP_PX
+      : 10;
+  }
+
+  function getLabelBarSymbolSeparatorSizePx() {
+    return typeof LABEL_BAR_SYMBOL_SEPARATOR_SIZE_PX !== "undefined"
+      ? LABEL_BAR_SYMBOL_SEPARATOR_SIZE_PX
+      : 5;
+  }
+
+  function getLabelBarSymbolSeparatorFill() {
+    return getLabelBarContentColor();
+  }
+
+  function buildLabelBarSquareSepSpec() {
+    var size = getLabelBarSymbolSeparatorSizePx();
+    return {
+      type: "square",
+      width: size,
+      height: size,
+    };
+  }
+
+  function getLabelBarSquareSepY(area) {
+    var size = getLabelBarSymbolSeparatorSizePx();
+    return getLabelBarBandCenterY(area) - size / 2;
+  }
+
+  /**
+   * Cluster = symbol + optional caption locked with a fixed internal gap (10px).
+   * @param {({ spec: object, svgArea?: object, ageOverlayText?: string } | null)[]} parts
+   * @returns {{ width: number, items: object[] } | null}
+   */
+  function buildLabelBarCluster(parts) {
+    var pairGap = getLabelBarClusterInternalGapPx();
+    var items = [];
+    var width = 0;
+    var i;
+    var part;
+    if (!parts) return null;
+    for (i = 0; i < parts.length; i++) {
+      part = parts[i];
+      if (!part || !part.spec) continue;
+      if (items.length) width += pairGap;
+      width += part.spec.width;
+      items.push(part);
+    }
+    if (!items.length) return null;
+    return { width: width, items: items };
+  }
+
+  /**
+   * Row layout units: clusters (10px inside) and 5×5 squares only between clusters.
+   * @param {({ width: number, items: object[] } | null)[]} clusters
+   * @param {ReturnType<typeof getLabelBarContentArea>} defaultSvgArea
+   * @returns {({ type: "cluster", width: number, items: object[] } | { type: "square", width: number, spec: object, svgArea: object })[]}
+   */
+  function buildLabelBarRowLayoutUnits(clusters, defaultSvgArea) {
+    var units = [];
+    var sepSpec = buildLabelBarSquareSepSpec();
+    var hasGroup = false;
+    var ci;
+    var ji;
+    var cluster;
+    var item;
+    var clusterItems;
+
+    for (ci = 0; ci < clusters.length; ci++) {
+      cluster = clusters[ci];
+      if (!cluster) continue;
+      clusterItems = [];
+      for (ji = 0; ji < cluster.items.length; ji++) {
+        item = cluster.items[ji];
+        if (!item || !item.spec) continue;
+        clusterItems.push({
+          spec: item.spec,
+          svgArea: item.svgArea || defaultSvgArea,
+          ageOverlayText: item.ageOverlayText,
+        });
+      }
+      if (!clusterItems.length) continue;
+
+      if (hasGroup) {
+        units.push({
+          type: "square",
+          width: sepSpec.width,
+          spec: sepSpec,
+          svgArea: defaultSvgArea,
+        });
+      }
+      units.push({
+        type: "cluster",
+        width: cluster.width,
+        items: clusterItems,
+      });
+      hasGroup = true;
+    }
+    return units;
+  }
+
+  /**
+   * Spread groups across the full content span; 10px fixed gap inside each group.
+   * @param {({ width: number, items: object[] } | null)[]} clusters
+   * @param {number} spanStart
+   * @param {number} spanEnd
+   * @param {ReturnType<typeof getLabelBarContentArea>} defaultSvgArea
+   * @returns {{ spec: object, x: number, mirror: boolean, svgArea?: object, ageOverlayText?: string }[]}
+   */
+  function layoutLabelBarRowClusters(clusters, spanStart, spanEnd, defaultSvgArea) {
+    var units = buildLabelBarRowLayoutUnits(clusters, defaultSvgArea);
+    var placements = [];
+    var spreadSpecs = [];
+    var positions;
+    var internalGap = getLabelBarClusterInternalGapPx();
+    var ui;
+    var unit;
+    var x;
+    var ii;
+    var rowItem;
+
+    if (!units.length) return placements;
+
+    for (ui = 0; ui < units.length; ui++) {
+      spreadSpecs.push({ width: units[ui].width });
+    }
+    positions = layoutLabelBarSpreadInSpan(spreadSpecs, spanStart, spanEnd);
+
+    for (ui = 0; ui < units.length; ui++) {
+      unit = units[ui];
+      x = positions[ui];
+      if (unit.type === "square") {
+        placements.push({
+          spec: unit.spec,
+          x: x,
+          mirror: false,
+          svgArea: unit.svgArea,
+        });
+        continue;
+      }
+      for (ii = 0; ii < unit.items.length; ii++) {
+        rowItem = unit.items[ii];
+        placements.push({
+          spec: rowItem.spec,
+          x: x,
+          mirror: false,
+          svgArea: rowItem.svgArea,
+          ageOverlayText: rowItem.ageOverlayText,
+        });
+        if (ii < unit.items.length - 1) {
+          x += rowItem.spec.width + internalGap;
+        }
+      }
+    }
+    return placements;
+  }
+
+  /**
+   * Distribute specs across the full span width with equal gaps between each item.
+   * @param {object[]} specs
+   * @param {number} spanStart
+   * @param {number} spanEnd
+   * @returns {number[]}
+   */
+  function layoutLabelBarSpreadInSpan(specs, spanStart, spanEnd) {
+    var n = specs.length;
+    var positions = [];
+    var contentWidth = 0;
+    var spanWidth = spanEnd - spanStart;
+    var gap = 0;
+    var x;
+    var i;
+
+    if (!n) return positions;
+    for (i = 0; i < n; i++) contentWidth += specs[i].width;
+    if (n > 1) {
+      gap = (spanWidth - contentWidth) / (n - 1);
+      if (gap < 0) gap = 0;
+    }
+    x = spanStart;
+    for (i = 0; i < n; i++) {
+      positions.push(x);
+      x += specs[i].width + gap;
+    }
+    return positions;
+  }
+
+  /**
+   * Place specs left-to-right with a fixed gap, centered when they fit in the span.
+   * @param {object[]} specs
+   * @param {number} spanStart
+   * @param {number} spanEnd
+   * @returns {number[]}
+   */
+  function layoutLabelBarFixedGapInSpan(specs, spanStart, spanEnd) {
+    var gap = getLabelBarItemGapPx();
+    var n = specs.length;
+    var positions = [];
+    var clusterWidth = 0;
+    var offset;
+    var x;
+    var i;
+
+    if (!n) return positions;
+    for (i = 0; i < n; i++) clusterWidth += specs[i].width;
+    if (n > 1) clusterWidth += (n - 1) * gap;
+    offset =
+      clusterWidth < spanEnd - spanStart
+        ? (spanEnd - spanStart - clusterWidth) / 2
+        : 0;
+    x = spanStart + offset;
+    for (i = 0; i < n; i++) {
+      positions.push(x);
+      x += specs[i].width + gap;
+    }
+    return positions;
+  }
+
+  function getLabelBarEndCapSvgFile() {
+    return typeof LABEL_BAR_END_CAP_SVG !== "undefined"
+      ? LABEL_BAR_END_CAP_SVG
+      : "lion.svg";
+  }
+
+  function getLabelBarLivingInIranSvgFile() {
+    return typeof LABEL_BAR_LIVING_IN_IRAN_SVG !== "undefined"
+      ? LABEL_BAR_LIVING_IN_IRAN_SVG
+      : "IN IRAN.svg";
+  }
+
+  function getLabelBarLivingOutsideIranSvgFile() {
+    return typeof LABEL_BAR_LIVING_OUTSIDE_IRAN_SVG !== "undefined"
+      ? LABEL_BAR_LIVING_OUTSIDE_IRAN_SVG
+      : "OUTSIDE IRAN.svg";
+  }
+
+  function getLabelBarFromSvgFile() {
+    return typeof LABEL_BAR_FROM_SVG !== "undefined"
+      ? LABEL_BAR_FROM_SVG
+      : "from.svg";
+  }
+
+  function getLabelBarNowInSvgFile() {
+    return typeof LABEL_BAR_NOW_IN_SVG !== "undefined"
+      ? LABEL_BAR_NOW_IN_SVG
+      : "now in.svg";
+  }
+
+  function getLabelBarBarcodeSvgFile() {
+    return typeof LABEL_BAR_BARCODE_SVG !== "undefined"
+      ? LABEL_BAR_BARCODE_SVG
+      : "barcode.svg";
+  }
+
+  function getLabelBarLeftSvgFile() {
+    return typeof LABEL_BAR_LEFT_SVG !== "undefined"
+      ? LABEL_BAR_LEFT_SVG
+      : "left.svg";
+  }
+
+  function getLabelBarWomenSvgFile() {
+    return typeof LABEL_BAR_WOMEN_SVG !== "undefined"
+      ? LABEL_BAR_WOMEN_SVG
+      : "women.svg";
+  }
+
+  function getProfileFromText() {
+    if (
+      typeof window.IdentityControls === "undefined" ||
+      !window.IdentityControls.getFrom
+    ) {
+      return typeof LABEL_BAR_PROFILE_FROM_DEFAULT !== "undefined"
+        ? LABEL_BAR_PROFILE_FROM_DEFAULT
+        : "TEHERAN";
+    }
+    var value = String(window.IdentityControls.getFrom() || "").trim();
+    return value;
+  }
+
+  function getProfileNowInText() {
+    if (
+      typeof window.IdentityControls === "undefined" ||
+      !window.IdentityControls.getNowIn
+    ) {
+      return typeof LABEL_BAR_PROFILE_NOW_IN_DEFAULT !== "undefined"
+        ? LABEL_BAR_PROFILE_NOW_IN_DEFAULT
+        : "MAINZ";
+    }
+    return String(window.IdentityControls.getNowIn() || "").trim();
+  }
+
+  /** Name on row 2 — between leaving year and women icon (mode from Profile → Name). */
+  function getProfileNameText() {
+    if (
+      typeof window.IdentityControls === "undefined" ||
+      !window.IdentityControls.getNameLabelText
+    ) {
+      return "";
+    }
+    return String(window.IdentityControls.getNameLabelText() || "").trim();
+  }
+
+  /** Year of leaving — row 1, only when Profile “Have I lived in Iran?” is Yes. */
+  function getProfileLeavingYearText() {
+    if (
+      typeof window.IdentityControls === "undefined" ||
+      !window.IdentityControls.getLivingInIran ||
+      !window.IdentityControls.getLeavingYear
+    ) {
+      return "";
+    }
+    if (window.IdentityControls.getLivingInIran() !== true) return "";
+    return String(window.IdentityControls.getLeavingYear() || "").trim();
+  }
+
+  function getLabelBarLeftLionInnerRow1SvgFile() {
+    return typeof LABEL_BAR_LEFT_LION_INNER_ROW1_SVG !== "undefined"
+      ? LABEL_BAR_LEFT_LION_INNER_ROW1_SVG
+      : "undercover english.svg";
+  }
+
+  function getLabelBarLeftLionInnerRow1SunSvgFile() {
+    return typeof LABEL_BAR_LEFT_LION_INNER_ROW1_SUN_SVG !== "undefined"
+      ? LABEL_BAR_LEFT_LION_INNER_ROW1_SUN_SVG
+      : "sun.svg";
+  }
+
+  function getLabelBarAgeSvgFile() {
+    return typeof LABEL_BAR_AGE_SVG !== "undefined"
+      ? LABEL_BAR_AGE_SVG
+      : "age.svg";
+  }
+
+  /** Digits from Profile → Age input (shown inside the age icon circle). */
+  function getProfileAgeText() {
+    if (
+      typeof window.IdentityControls === "undefined" ||
+      !window.IdentityControls.getAge
+    ) {
+      return "";
+    }
+    return String(window.IdentityControls.getAge() || "").trim();
+  }
+
+  function getLabelBarAgeOverlayFill() {
+    return getLabelBarContentColor();
+  }
+
+  function getLabelBarAgeOverlayFontSizeRatio() {
+    return typeof LABEL_BAR_AGE_OVERLAY_FONT_SIZE_RATIO !== "undefined"
+      ? LABEL_BAR_AGE_OVERLAY_FONT_SIZE_RATIO
+      : 0.58;
+  }
+
+  function getLabelBarAgeOverlayYOffsetPx() {
+    return typeof LABEL_BAR_AGE_OVERLAY_Y_OFFSET_PX !== "undefined"
+      ? LABEL_BAR_AGE_OVERLAY_Y_OFFSET_PX
+      : 1;
+  }
+
+  /**
+   * @param {{ spec: { width: number, height: number, scale: number }, x: number }} placement
+   * @param {ReturnType<typeof getLabelBarContentArea>} contentArea
+   * @returns {{ x: number, y: number, fontSize: number }}
+   */
+  function getLabelBarAgeOverlayTextMetrics(placement, contentArea) {
+    var dims = getLabelBarSvgDimensions(getLabelBarAgeSvgFile());
+    var spec = placement.spec;
+    var cxRatio =
+      dims && dims.width
+        ? (typeof LABEL_BAR_AGE_CIRCLE_CX !== "undefined"
+            ? LABEL_BAR_AGE_CIRCLE_CX
+            : 30.5816) / dims.width
+        : 0.5;
+    var cyRatio =
+      dims && dims.height
+        ? (typeof LABEL_BAR_AGE_CIRCLE_CY !== "undefined"
+            ? LABEL_BAR_AGE_CIRCLE_CY
+            : 40.5816) / dims.height
+        : 0.5;
+    var rRatio =
+      dims && dims.height
+        ? (typeof LABEL_BAR_AGE_CIRCLE_R !== "undefined"
+            ? LABEL_BAR_AGE_CIRCLE_R
+            : 27.0816) / dims.height
+        : 0.33;
+    var circleR = spec.height * rRatio;
+    return {
+      x: placement.x + spec.width * cxRatio,
+      y: contentArea.y + spec.height * cyRatio + getLabelBarAgeOverlayYOffsetPx(),
+      fontSize: circleR * 2 * getLabelBarAgeOverlayFontSizeRatio(),
+    };
+  }
+
+  function applyLabelBarAgeOverlayTextAttrs(text, fontSize) {
+    text.setAttribute("fill", getLabelBarAgeOverlayFill());
+    text.setAttribute("font-family", getBrownBarBannerFontFamily());
+    text.setAttribute("font-weight", "700");
+    text.setAttribute("font-size", String(fontSize));
+    text.setAttribute("text-anchor", "middle");
+    text.setAttribute("dominant-baseline", "middle");
+    text.setAttribute("alignment-baseline", "middle");
+  }
+
+  function appendLabelBarAgeOverlayText(container, placement, contentArea) {
+    var overlayText = placement.ageOverlayText;
+    var metrics;
+    var text;
+    if (overlayText === undefined || !overlayText) return;
+    metrics = getLabelBarAgeOverlayTextMetrics(placement, contentArea);
+    text = elSvg("text");
+    text.setAttribute("x", String(metrics.x));
+    text.setAttribute("y", String(metrics.y));
+    applyLabelBarAgeOverlayTextAttrs(text, metrics.fontSize);
+    text.textContent = overlayText;
+    container.appendChild(text);
+  }
+
+  function pushLabelBarAgeOverlayTextExport(edgeLines, placement, contentArea) {
+    var overlayText = placement.ageOverlayText;
+    var metrics;
+    if (overlayText === undefined || !overlayText) return;
+    metrics = getLabelBarAgeOverlayTextMetrics(placement, contentArea);
+    edgeLines.push(
+      '<text x="' +
+        metrics.x +
+        '" y="' +
+        metrics.y +
+        '" fill="' +
+        getLabelBarAgeOverlayFill() +
+        '" font-family="' +
+        getBrownBarBannerFontFamily() +
+        ', sans-serif" font-weight="700" font-size="' +
+        metrics.fontSize +
+        '" text-anchor="middle" dominant-baseline="middle" alignment-baseline="middle">' +
+        overlayText +
+        "</text>"
+    );
+  }
+
+  function getLabelBarRightLionInnerRow2SvgFile() {
+    return typeof LABEL_BAR_RIGHT_LION_INNER_ROW2_SVG !== "undefined"
+      ? LABEL_BAR_RIGHT_LION_INNER_ROW2_SVG
+      : "undercover arabic.svg";
+  }
+
+  function getLabelBarLostInnerSvgFile() {
+    return typeof LABEL_BAR_LOST_INNER_SVG !== "undefined"
+      ? LABEL_BAR_LOST_INNER_SVG
+      : "LOST/man.svg";
+  }
+
+  function getLabelBarLostMiddleSvgFile() {
+    return typeof LABEL_BAR_LOST_MIDDLE_SVG !== "undefined"
+      ? LABEL_BAR_LOST_MIDDLE_SVG
+      : "LOST/2 man.svg";
+  }
+
+  function getLabelBarLostDistantSvgFile() {
+    return typeof LABEL_BAR_LOST_DISTANT_SVG !== "undefined"
+      ? LABEL_BAR_LOST_DISTANT_SVG
+      : "LOST/3 man.svg";
+  }
+
+  /** Icon from Profile Lost slider (Inner / middle / Distant circle). */
+  function getLostLabelSvgFile() {
+    var value = 1;
+    if (
+      typeof window.IdentityControls !== "undefined" &&
+      window.IdentityControls.getLostCircle
+    ) {
+      value = window.IdentityControls.getLostCircle();
+    }
+    if (value === 2) return getLabelBarLostMiddleSvgFile();
+    if (value === 3) return getLabelBarLostDistantSvgFile();
+    return getLabelBarLostInnerSvgFile();
+  }
+
+  function getLabelBarLostSvgFiles() {
+    return [
+      getLabelBarLostInnerSvgFile(),
+      getLabelBarLostMiddleSvgFile(),
+      getLabelBarLostDistantSvgFile(),
+    ];
+  }
+
+  /** Sign from Profile “Have I lived in Iran?” — only after Yes/No is chosen. */
+  function getLivingIranLabelSvgFile() {
+    if (
+      typeof window.IdentityControls === "undefined" ||
+      !window.IdentityControls.getLivingInIran
+    ) {
+      return null;
+    }
+    var choice = window.IdentityControls.getLivingInIran();
+    if (choice === true) return getLabelBarLivingInIranSvgFile();
+    if (choice === false) return getLabelBarLivingOutsideIranSvgFile();
+    return null;
+  }
+
+  function filterLabelBarCenterItems(items) {
+    var cap = getLabelBarEndCapSvgFile();
+    var inIran = getLabelBarLivingInIranSvgFile();
+    var outsideIran = getLabelBarLivingOutsideIranSvgFile();
+    var fromFile = getLabelBarFromSvgFile();
+    var nowInFile = getLabelBarNowInSvgFile();
+    var barcodeFile = getLabelBarBarcodeSvgFile();
+    var leftSignFile = getLabelBarLeftSvgFile();
+    var womenFile = getLabelBarWomenSvgFile();
+    var leftWord = getLabelBarLeftLionInnerRow1SvgFile();
+    var sunFile = getLabelBarLeftLionInnerRow1SunSvgFile();
+    var ageFile = getLabelBarAgeSvgFile();
+    var rightWord = getLabelBarRightLionInnerRow2SvgFile();
+    var lostFiles = getLabelBarLostSvgFiles();
+    return items.filter(function (item) {
+      return !(
+        item.type === "svg" &&
+        (item.svgFile === cap ||
+          item.svgFile === inIran ||
+          item.svgFile === outsideIran ||
+          item.svgFile === fromFile ||
+          item.svgFile === nowInFile ||
+          item.svgFile === barcodeFile ||
+          item.svgFile === leftSignFile ||
+          item.svgFile === womenFile ||
+          item.svgFile === leftWord ||
+          item.svgFile === sunFile ||
+          item.svgFile === ageFile ||
+          item.svgFile === rightWord ||
+          lostFiles.indexOf(item.svgFile) >= 0)
+      );
+    });
+  }
+
+  function buildLabelBarSvgSpec(file, segmentHeight) {
+    var dims = getLabelBarSvgDimensions(file);
+    if (!dims || !dims.height) return null;
+    var scale = segmentHeight / dims.height;
+    return {
+      type: "svg",
+      file: file,
+      width: dims.width * scale,
+      height: segmentHeight,
+      scale: scale,
+    };
+  }
+
+  function getLabelBarLostLabelText() {
+    return typeof LABEL_BAR_LOST_LABEL_TEXT !== "undefined"
+      ? LABEL_BAR_LOST_LABEL_TEXT
+      : "LOST";
+  }
+
+  function buildLabelBarLostLabelSpec(area) {
+    var label = (getLabelBarLostLabelText() || "").trim();
+    var textMetrics;
+    if (!label) return null;
+    textMetrics = fitLabelBarTextMetrics(
+      label,
+      area.height,
+      area.y,
+      area.y + area.height
+    );
+    return {
+      type: "text",
+      text: label,
+      width: textMetrics.width,
+      height: textMetrics.height,
+      fontSize: textMetrics.fontSize,
+    };
+  }
+
+  function getLabelBarAgeLabelText() {
+    return typeof LABEL_BAR_AGE_LABEL_TEXT !== "undefined"
+      ? LABEL_BAR_AGE_LABEL_TEXT
+      : "AGE";
+  }
+
+  function buildLabelBarAgeLabelSpec(area) {
+    var label = (getLabelBarAgeLabelText() || "").trim();
+    var textMetrics;
+    if (!label) return null;
+    textMetrics = fitLabelBarTextMetrics(
+      label,
+      area.height,
+      area.y,
+      area.y + area.height
+    );
+    return {
+      type: "text",
+      text: label,
+      width: textMetrics.width,
+      height: textMetrics.height,
+      fontSize: textMetrics.fontSize,
+    };
+  }
+
+  function buildLabelBarProfileFieldTextSpec(text, contentArea) {
+    var label = (text || "").trim();
+    var textMetrics;
+    if (!label) return null;
+    textMetrics = fitLabelBarTextMetrics(
+      label,
+      contentArea.height,
+      contentArea.y,
+      contentArea.y + contentArea.height
+    );
+    return {
+      type: "text",
+      text: label,
+      width: textMetrics.width,
+      height: textMetrics.height,
+      fontSize: textMetrics.fontSize,
+    };
+  }
+
+  /**
+   * @param {ReturnType<typeof getLabelBarContentArea>} area
+   * @param {ReturnType<typeof getLabelBarContentArea>} endCapArea
+   * @param {ReturnType<typeof getLabelBarContentArea>} row2Area
+   * @param {{ type: "svg" | "text", svgFile: string, text: string }[]} items
+   * @returns {{ spec: object, x: number, mirror: boolean, svgArea?: object }[]}
+   */
+  function computeLabelBarPlacements(area, endCapArea, row2Area, items) {
+    var placements = [];
+    var gap = getLabelBarItemGapPx();
+    var lionSpec = buildLabelBarSvgSpec(
+      getLabelBarEndCapSvgFile(),
+      endCapArea.height
+    );
+    var leftWordSpec = buildLabelBarSvgSpec(
+      getLabelBarLeftLionInnerRow1SvgFile(),
+      area.height
+    );
+    var sunSpec = buildLabelBarSvgSpec(
+      getLabelBarLeftLionInnerRow1SunSvgFile(),
+      area.height
+    );
+    var ageSpec = buildLabelBarSvgSpec(getLabelBarAgeSvgFile(), area.height);
+    var ageLabelSpec = ageSpec ? buildLabelBarAgeLabelSpec(area) : null;
+    var rightWordSpec = buildLabelBarSvgSpec(
+      getLabelBarRightLionInnerRow2SvgFile(),
+      row2Area ? row2Area.height : area.height
+    );
+    var livingRowArea = row2Area || area;
+    var livingFile = getLivingIranLabelSvgFile();
+    var livingSpec = livingFile
+      ? buildLabelBarSvgSpec(livingFile, livingRowArea.height)
+      : null;
+    var fromSpec = buildLabelBarSvgSpec(
+      getLabelBarFromSvgFile(),
+      livingRowArea.height
+    );
+    var fromTextSpec = buildLabelBarProfileFieldTextSpec(
+      getProfileFromText(),
+      livingRowArea
+    );
+    var nowInSpec = buildLabelBarSvgSpec(
+      getLabelBarNowInSvgFile(),
+      livingRowArea.height
+    );
+    var nowInTextSpec = buildLabelBarProfileFieldTextSpec(
+      getProfileNowInText(),
+      livingRowArea
+    );
+    var barcodeSpec = buildLabelBarSvgSpec(
+      getLabelBarBarcodeSvgFile(),
+      livingRowArea.height
+    );
+    var leftSignSpec = buildLabelBarSvgSpec(
+      getLabelBarLeftSvgFile(),
+      livingRowArea.height
+    );
+    var womenSpec = buildLabelBarSvgSpec(
+      getLabelBarWomenSvgFile(),
+      livingRowArea.height
+    );
+    var lostFile = getLostLabelSvgFile();
+    var lostSpec = lostFile
+      ? buildLabelBarSvgSpec(lostFile, area.height)
+      : null;
+    var lostLabelSpec = lostSpec ? buildLabelBarLostLabelSpec(area) : null;
+    var centerSpecs = buildLabelBarItemSpecs(
+      filterLabelBarCenterItems(items),
+      area.width,
+      area.height,
+      area.y,
+      area.y + area.height
+    );
+    var leftX;
+    var rightX;
+    var rowSpanStart;
+    var rowSpanEnd;
+    var row1Clusters;
+    var row2Clusters;
+    var centerCluster;
+    var ci;
+
+    if (!lionSpec) {
+      if (!centerSpecs.length) return placements;
+      rowSpanStart = area.x + area.hInset;
+      rowSpanEnd = area.x + area.width - area.hInset;
+      row1Clusters = [];
+      for (ci = 0; ci < centerSpecs.length; ci++) {
+        centerCluster = buildLabelBarCluster([{ spec: centerSpecs[ci] }]);
+        if (centerCluster) row1Clusters.push(centerCluster);
+      }
+      return layoutLabelBarRowClusters(row1Clusters, rowSpanStart, rowSpanEnd, area);
+    }
+
+    leftX = area.x + area.hInset;
+    rightX = area.x + area.width - area.hInset - lionSpec.width;
+    rowSpanStart = leftX + lionSpec.width + gap;
+    rowSpanEnd = rightX - gap;
+
+    function pushRowCluster(list, cluster) {
+      if (cluster) list.push(cluster);
+    }
+
+    row1Clusters = [];
+    pushRowCluster(
+      row1Clusters,
+      buildLabelBarCluster([
+        leftWordSpec ? { spec: leftWordSpec, svgArea: area } : null,
+      ])
+    );
+    pushRowCluster(
+      row1Clusters,
+      buildLabelBarCluster([sunSpec ? { spec: sunSpec, svgArea: area } : null])
+    );
+    pushRowCluster(
+      row1Clusters,
+      buildLabelBarCluster([barcodeSpec ? { spec: barcodeSpec, svgArea: area } : null])
+    );
+    pushRowCluster(
+      row1Clusters,
+      buildLabelBarCluster([
+        ageLabelSpec ? { spec: ageLabelSpec, svgArea: area } : null,
+        ageSpec
+          ? {
+              spec: ageSpec,
+              svgArea: area,
+              ageOverlayText: getProfileAgeText(),
+            }
+          : null,
+      ])
+    );
+    for (ci = 0; ci < centerSpecs.length; ci++) {
+      pushRowCluster(
+        row1Clusters,
+        buildLabelBarCluster([{ spec: centerSpecs[ci] }])
+      );
+    }
+    pushRowCluster(
+      row1Clusters,
+      buildLabelBarCluster([
+        lostLabelSpec ? { spec: lostLabelSpec, svgArea: area } : null,
+        lostSpec ? { spec: lostSpec, svgArea: area } : null,
+      ])
+    );
+
+    row2Clusters = [];
+    pushRowCluster(
+      row2Clusters,
+      buildLabelBarCluster([{ spec: livingSpec, svgArea: livingRowArea }])
+    );
+    pushRowCluster(
+      row2Clusters,
+      buildLabelBarCluster([
+        fromSpec ? { spec: fromSpec, svgArea: livingRowArea } : null,
+        fromTextSpec ? { spec: fromTextSpec, svgArea: livingRowArea } : null,
+      ])
+    );
+    pushRowCluster(
+      row2Clusters,
+      buildLabelBarCluster([
+        nowInSpec ? { spec: nowInSpec, svgArea: livingRowArea } : null,
+        nowInTextSpec ? { spec: nowInTextSpec, svgArea: livingRowArea } : null,
+      ])
+    );
+    var leavingYearText = getProfileLeavingYearText();
+    var leavingYearTextSpec = leavingYearText
+      ? buildLabelBarProfileFieldTextSpec(leavingYearText, livingRowArea)
+      : null;
+    var showLeavingYearRow =
+      typeof window.IdentityControls !== "undefined" &&
+      window.IdentityControls.getLivingInIran &&
+      window.IdentityControls.getLivingInIran() === true;
+    if (showLeavingYearRow) {
+      pushRowCluster(
+        row2Clusters,
+        buildLabelBarCluster([
+          leftSignSpec ? { spec: leftSignSpec, svgArea: livingRowArea } : null,
+          leavingYearTextSpec
+            ? { spec: leavingYearTextSpec, svgArea: livingRowArea }
+            : null,
+        ])
+      );
+    }
+    var nameText = getProfileNameText();
+    var nameTextSpec = nameText
+      ? buildLabelBarProfileFieldTextSpec(nameText, livingRowArea)
+      : null;
+    if (nameTextSpec) {
+      pushRowCluster(
+        row2Clusters,
+        buildLabelBarCluster([{ spec: nameTextSpec, svgArea: livingRowArea }])
+      );
+    }
+    pushRowCluster(
+      row2Clusters,
+      buildLabelBarCluster([womenSpec ? { spec: womenSpec, svgArea: livingRowArea } : null])
+    );
+    pushRowCluster(
+      row2Clusters,
+      buildLabelBarCluster([{ spec: rightWordSpec, svgArea: row2Area || area }])
+    );
+
+    placements.push({
+      spec: lionSpec,
+      x: leftX,
+      mirror: false,
+      svgArea: endCapArea,
+    });
+    placements = placements.concat(
+      layoutLabelBarRowClusters(row1Clusters, rowSpanStart, rowSpanEnd, area)
+    );
+    placements = placements.concat(
+      layoutLabelBarRowClusters(
+        row2Clusters,
+        rowSpanStart,
+        rowSpanEnd,
+        livingRowArea
+      )
+    );
+    placements.push({
+      spec: lionSpec,
+      x: rightX,
+      mirror: true,
+      svgArea: endCapArea,
+    });
+    return placements;
+  }
+
+  function appendLabelBarSvgTintedGroup(container, placement, area, mirror) {
+    var spec = placement.spec;
+    var tintedMarkup = getLabelBarSvgTintedInnerMarkup(spec.file);
+    var parser;
+    var doc;
+    var g;
+    var child;
+    var ix;
+    var scaleX;
+    if (!tintedMarkup) return false;
+
+    ix = placement.x;
+    scaleX = mirror ? -spec.scale : spec.scale;
+    g = elSvg("g");
+    g.setAttribute(
+      "transform",
+      "translate(" +
+        (mirror ? ix + spec.width : ix) +
+        "," +
+        area.y +
+        ") scale(" +
+        scaleX +
+        "," +
+        spec.scale +
+        ")"
+    );
+    parser = new DOMParser();
+    doc = parser.parseFromString(
+      '<svg xmlns="http://www.w3.org/2000/svg">' + tintedMarkup + "</svg>",
+      "image/svg+xml"
+    );
+    while ((child = doc.documentElement.firstChild)) {
+      g.appendChild(child);
+    }
+    container.appendChild(g);
+    return true;
+  }
+
+  function appendLabelBarSvgPlacement(container, placement, area) {
+    var spec = placement.spec;
+    var ix = placement.x;
+    var mirror = placement.mirror;
+    var img;
+    var wrap;
+
+    if (
+      !labelBarSvgUsesNativeColors(spec.file) &&
+      appendLabelBarSvgTintedGroup(container, placement, area, mirror)
+    ) {
+      return;
+    }
+
+    if (mirror) {
+      wrap = elSvg("g");
+      wrap.setAttribute(
+        "transform",
+        "translate(" + (ix + spec.width) + "," + area.y + ") scale(-1, 1)"
+      );
+      img = elSvg("image");
+      img.setAttribute("x", "0");
+      img.setAttribute("y", "0");
+    } else {
+      wrap = container;
+      img = elSvg("image");
+      img.setAttribute("x", String(ix));
+      img.setAttribute("y", String(area.y));
+    }
+
+    setSvgImageHref(img, getLabelBarSvgHref(spec.file));
+    img.setAttribute("width", String(spec.width));
+    img.setAttribute("height", String(spec.height));
+    img.setAttribute("preserveAspectRatio", "xMidYMid meet");
+    if (!labelBarSvgUsesNativeColors(spec.file)) {
+      img.setAttribute("style", "filter:" + getLabelBarIconFilterStyle());
+    }
+    wrap.appendChild(img);
+    if (mirror) container.appendChild(wrap);
+  }
+
+  function appendLabelBarPlacement(rowG, placement, defaultArea, flipVertical) {
+    var spec = placement.spec;
+    var contentArea = placement.svgArea || defaultArea;
+    var itemG = elSvg("g");
+    var text;
+    var mount = itemG;
+
+    itemG.setAttribute("class", "label-bar-item");
+    if (spec.type === "text") {
+      text = elSvg("text");
+      text.setAttribute("x", String(placement.x));
+      text.setAttribute("y", String(getLabelBarTextY(contentArea)));
+      applyLabelBarTextAttrs(text, spec.fontSize);
+      text.textContent = spec.text;
+      itemG.appendChild(text);
+    } else if (spec.type === "svg") {
+      appendLabelBarSvgPlacement(itemG, placement, contentArea);
+      appendLabelBarAgeOverlayText(itemG, placement, contentArea);
+    } else if (spec.type === "square") {
+      var square = elSvg("rect");
+      square.setAttribute("x", String(placement.x));
+      square.setAttribute("y", String(getLabelBarSquareSepY(contentArea)));
+      square.setAttribute("width", String(spec.width));
+      square.setAttribute("height", String(spec.height));
+      square.setAttribute("fill", getLabelBarSymbolSeparatorFill());
+      itemG.appendChild(square);
+    }
+
+    if (flipVertical) {
+      mount = elSvg("g");
+      mount.setAttribute("transform", getLabelBarVerticalFlipTransform(contentArea));
+      mount.appendChild(itemG);
+    }
+    rowG.appendChild(mount);
+  }
+
+  function pushLabelBarSvgPlacementExport(edgeLines, placement, area) {
+    var spec = placement.spec;
+    var ix = placement.x;
+    var mirror = placement.mirror;
+    var whiteMarkup = getLabelBarSvgTintedInnerMarkup(spec.file);
+    var scaleX = mirror ? -spec.scale : spec.scale;
+    var filterStyle = labelBarSvgUsesNativeColors(spec.file)
+      ? ""
+      : ' style="filter:' + getLabelBarIconFilterStyle() + '"';
+
+    if (whiteMarkup) {
+      edgeLines.push(
+        '<g transform="translate(' +
+          (mirror ? ix + spec.width : ix) +
+          " " +
+          area.y +
+          ") scale(" +
+          scaleX +
+          " " +
+          spec.scale +
+          ')">' +
+          whiteMarkup +
+          "</g>"
+      );
+      return;
+    }
+
+    if (mirror) {
+      edgeLines.push(
+        '<g transform="translate(' +
+          (ix + spec.width) +
+          "," +
+          area.y +
+          ') scale(-1,1)"><image href="' +
+          getLabelBarSvgHref(spec.file) +
+          '" x="0" y="0" width="' +
+          spec.width +
+          '" height="' +
+          spec.height +
+          '" preserveAspectRatio="xMidYMid meet"' +
+          filterStyle +
+          "/></g>"
+      );
+      return;
+    }
+
+    edgeLines.push(
+      '<image href="' +
+        getLabelBarSvgHref(spec.file) +
+        '" x="' +
+        ix +
+        '" y="' +
+        area.y +
+        '" width="' +
+        spec.width +
+        '" height="' +
+        spec.height +
+        '" preserveAspectRatio="xMidYMid meet"' +
+        filterStyle +
+        "/>"
+    );
+  }
+
+  /**
+   * @param {"top"|"bottom"} edge
+   * @param {{ x: number, y: number, width: number, height: number }} layout
+   * @param {{ type: "svg" | "text", svgFile: string, text: string }[]} items
+   * @returns {SVGElement | null}
+   */
+  function createLabelBarRowGroup(edge, layout, items) {
+    var area = getLabelBarInnerSegmentContentArea(edge, layout, 0);
+    var row2Area = getLabelBarInnerSegmentContentArea(edge, layout, 1);
+    var endCapArea = getLabelBarEndCapContentArea(edge, layout);
+    var placements = computeLabelBarPlacements(area, endCapArea, row2Area, items);
+    var rowG;
+    var pi;
+
+    if (!placements.length) return null;
+
+    rowG = elSvg("g");
+    rowG.setAttribute("data-edge", edge);
+
+    for (pi = 0; pi < placements.length; pi++) {
+      appendLabelBarPlacement(
+        rowG,
+        placements[pi],
+        area,
+        labelBarEdgeContentFlippedVertically(edge)
+      );
+    }
+
+    return rowG;
+  }
+
+  function appendLabelBarContent(g) {
+    var items = getLabelBarItems();
     var bottomLayout = getCanvasEdgeBrownBarLayout("bottom");
     var topLayout = getCanvasEdgeBrownBarLayout("top");
-    g.appendChild(createBrownBarBannerLabelGroup("bottom", bottomLayout));
-    g.appendChild(createBrownBarBannerLabelGroup("top", topLayout));
+    var bottomRow = createLabelBarRowGroup("bottom", bottomLayout, items);
+    var topRow = createLabelBarRowGroup("top", topLayout, items);
+    if (bottomRow) g.appendChild(bottomRow);
+    if (topRow) g.appendChild(topRow);
+  }
+
+  function refreshLabelBarContent() {
+    if (!designSvg) return;
+    var group = designSvg.querySelector("#edge-brown-bar-label-content");
+    if (!group) return;
+
+    var render = function () {
+      while (group.firstChild) group.removeChild(group.firstChild);
+      appendLabelBarContent(group);
+      if (typeof updateMagnifierViewBox === "function") {
+        updateMagnifierViewBox();
+      }
+      preloadLabelBarSvgAssetsForExport();
+    };
+
+    if (typeof document !== "undefined" && document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(render);
+    } else {
+      render();
+    }
+  }
+
+  function preloadLabelBarSvgAssetsForExport() {
+    var items = getLabelBarItems();
+    var files = [
+      getLabelBarEndCapSvgFile(),
+      getLabelBarLivingInIranSvgFile(),
+      getLabelBarLivingOutsideIranSvgFile(),
+      getLabelBarFromSvgFile(),
+      getLabelBarNowInSvgFile(),
+      getLabelBarBarcodeSvgFile(),
+      getLabelBarLeftSvgFile(),
+      getLabelBarWomenSvgFile(),
+      getLabelBarLeftLionInnerRow1SvgFile(),
+      getLabelBarLeftLionInnerRow1SunSvgFile(),
+      getLabelBarAgeSvgFile(),
+      getLabelBarRightLionInnerRow2SvgFile(),
+      getLabelBarLostInnerSvgFile(),
+      getLabelBarLostMiddleSvgFile(),
+      getLabelBarLostDistantSvgFile(),
+    ];
+    var i;
+    for (i = 0; i < items.length; i++) {
+      if (
+        items[i].type === "svg" &&
+        items[i].svgFile &&
+        files.indexOf(items[i].svgFile) < 0
+      ) {
+        files.push(items[i].svgFile);
+      }
+    }
+    if (!files.length) return Promise.resolve();
+    return Promise.all(
+      files.map(function (name) {
+        return ensureLabelBarSvgAsset(name);
+      })
+    ).catch(function () {
+      return [];
+    });
   }
 
   function refreshBrownBarBannerAfterMount() {
-    if (!designSvg) return;
-    var bannerG = designSvg.querySelector("#edge-brown-bar-banner-text");
-    if (!bannerG) return;
-    while (bannerG.firstChild) bannerG.removeChild(bannerG.firstChild);
-    appendBrownBarBannerText(bannerG);
+    refreshLabelBarContent();
   }
 
   function createBrownBarBannerTextGroup() {
     var g = elSvg("g");
-    g.setAttribute("id", "edge-brown-bar-banner-text");
-    appendBrownBarBannerText(g);
+    g.setAttribute("id", "edge-brown-bar-label-content");
+    appendLabelBarContent(g);
     return g;
   }
 
@@ -2409,6 +4693,18 @@
     return col % 2 === 0;
   }
 
+  function getBrownBarOuterThirdGridInsetPx() {
+    return typeof CANVAS_EDGE_BROWN_BAR_OUTER_THIRD_GRID_INSET_PX !== "undefined"
+      ? CANVAS_EDGE_BROWN_BAR_OUTER_THIRD_GRID_INSET_PX
+      : 0;
+  }
+
+  function getBrownBarOuterThirdGridInsetTopPx() {
+    return typeof CANVAS_EDGE_BROWN_BAR_OUTER_THIRD_GRID_INSET_TOP_PX !== "undefined"
+      ? CANVAS_EDGE_BROWN_BAR_OUTER_THIRD_GRID_INSET_TOP_PX
+      : getBrownBarOuterThirdGridInsetPx();
+  }
+
   /**
    * @param {{ x: number, y: number, width: number, height: number }} bottomLayout
    * @returns {string}
@@ -2433,7 +4729,9 @@
         : 3.2,
       typeof CANVAS_EDGE_BROWN_BAR_GRID_ROW_RATIOS !== "undefined"
         ? CANVAS_EDGE_BROWN_BAR_GRID_ROW_RATIOS.join(",")
-        : "0.4,0.2,0.4",
+        : "0.4,0.4,0.2",
+      getBrownBarOuterThirdGridInsetPx(),
+      getBrownBarOuterThirdGridInsetTopPx(),
     ].join("|");
   }
 
@@ -2619,8 +4917,9 @@
       typeof CANVAS_EDGE_BROWN_BAR_OUTER_THIRD_GRID_VERTICAL_LINES !== "undefined"
         ? CANVAS_EDGE_BROWN_BAR_OUTER_THIRD_GRID_VERTICAL_LINES
         : 10;
-    var x0 = Math.round(bottomLayout.x);
-    var x1 = x0 + Math.round(bottomLayout.width);
+    var inset = getBrownBarOuterThirdGridInsetPx();
+    var x0 = Math.round(bottomLayout.x) + inset;
+    var x1 = Math.round(bottomLayout.x + bottomLayout.width) - inset;
     cachedBrownBarGridXBounds = buildRandomBrownBarGridXBounds(
       x0,
       x1,
@@ -2646,11 +4945,28 @@
     var section = getBrownBarOuterThirdInnerRelBounds(layout.height);
     var yStart = getBrownBarCanvasYFromInnerRel(section.start, edge, layout);
     var yEnd = getBrownBarCanvasYFromInnerRel(section.end, edge, layout);
-    var yTop = Math.round(Math.min(yStart, yEnd));
-    var yBottom = Math.round(Math.max(yStart, yEnd));
-    var totalH = yBottom - yTop;
+    var insetOuter = getBrownBarOuterThirdGridInsetPx();
+    var insetInner = getBrownBarOuterThirdGridInsetTopPx();
+    var yInner =
+      edge === "bottom"
+        ? Math.round(Math.min(yStart, yEnd))
+        : Math.round(Math.max(yStart, yEnd));
+    var yOuter =
+      edge === "bottom"
+        ? Math.round(Math.max(yStart, yEnd))
+        : Math.round(Math.min(yStart, yEnd));
+    var yTop;
+    var yBottom;
+    if (edge === "bottom") {
+      yTop = yInner + insetInner;
+      yBottom = yOuter - insetOuter;
+    } else {
+      yTop = yOuter + insetOuter;
+      yBottom = yInner - insetInner;
+    }
+    var totalH = Math.max(0, yBottom - yTop);
     var rowCount = hCount + 1;
-    var defaultRowRatios = [0.4, 0.2, 0.4];
+    var defaultRowRatios = [0.4, 0.4, 0.2];
     var rowRatios =
       typeof CANVAS_EDGE_BROWN_BAR_GRID_ROW_RATIOS !== "undefined" &&
       CANVAS_EDGE_BROWN_BAR_GRID_ROW_RATIOS.length === rowCount
@@ -2693,10 +5009,6 @@
       typeof CANVAS_EDGE_BROWN_BAR_OUTER_THIRD_GRID_HORIZONTAL_LINES !== "undefined"
         ? CANVAS_EDGE_BROWN_BAR_OUTER_THIRD_GRID_HORIZONTAL_LINES
         : 2;
-    var baseFill =
-      typeof CANVAS_EDGE_BROWN_BAR_GRID_CELL_BASE_FILL !== "undefined"
-        ? CANVAS_EDGE_BROWN_BAR_GRID_CELL_BASE_FILL
-        : BG_COLOR;
     var edges = ["bottom", "top"];
     var ei;
     var edge;
@@ -2713,59 +5025,17 @@
         for (col = 0; col <= vCount; col++) {
           cell = getOuterThirdGridCellRect(edge, layout, row, col);
           fill = isOuterThirdGridCellBrownFill(row, col)
-            ? CANVAS_EDGE_BROWN_BAR_COLOR
-            : baseFill;
+            ? getLabelBarBackgroundColor()
+            : getLabelBarContentColor();
           appendBrownBarGridCellFillRect(g, cell, fill);
         }
       }
     }
   }
 
-  /**
-   * @param {SVGElement} g
-   */
-  function appendCanvasEdgeBrownBarDivisionLines(g) {
-    var bottomLayout = getCanvasEdgeBrownBarLayout("bottom");
-    var topLayout = getCanvasEdgeBrownBarLayout("top");
-    var innerRelYs = getCanvasEdgeBrownBarInnerRelativeYOffsets(bottomLayout.height);
-    var yi;
-    var innerRelY;
-    var yBottom;
-    var yTop;
-
-    for (yi = 0; yi < innerRelYs.length; yi++) {
-      innerRelY = innerRelYs[yi];
-      yBottom = getBottomBrownBarCanvasY(innerRelY, bottomLayout);
-      yTop = getTopBrownBarMirroredCanvasY(innerRelY, topLayout);
-      appendBorderDivisionLine(
-        g,
-        bottomLayout.x,
-        yBottom,
-        bottomLayout.x + bottomLayout.width,
-        yBottom
-      );
-      appendBorderDivisionLine(
-        g,
-        topLayout.x,
-        yTop,
-        topLayout.x + topLayout.width,
-        yTop
-      );
-    }
-  }
-
   function createCanvasEdgeBrownBarDivisionsGroup() {
     var g = elSvg("g");
     g.setAttribute("id", "edge-brown-bar-divisions");
-    var lines = elSvg("g");
-    lines.setAttribute("id", "edge-brown-bar-section-lines");
-    lines.setAttribute("fill", "none");
-    lines.setAttribute("stroke", CANVAS_EDGE_BROWN_BAR_DIVISION_STROKE);
-    lines.setAttribute("stroke-width", String(BORDER_DIVISION_STROKE_WIDTH));
-    lines.setAttribute("stroke-linecap", "butt");
-    lines.setAttribute("stroke-linejoin", "miter");
-    appendCanvasEdgeBrownBarDivisionLines(lines);
-    g.appendChild(lines);
     var fills = elSvg("g");
     fills.setAttribute("id", "edge-brown-bar-grid-fills");
     fills.setAttribute("stroke", "none");
@@ -2778,7 +5048,6 @@
     g.appendChild(createCanvasEdgeBrownBarRect("top"));
     g.appendChild(createCanvasEdgeBrownBarRect("bottom"));
     g.appendChild(createCanvasEdgeBrownBarDivisionsGroup());
-    g.appendChild(createBrownBarBannerTextGroup());
   }
 
   function updateCanvasEdgeBrownBars() {
@@ -2790,60 +5059,22 @@
     var divGroup = designSvg.querySelector("#edge-brown-bar-divisions");
     if (divGroup) {
       while (divGroup.firstChild) divGroup.removeChild(divGroup.firstChild);
-      var lines = elSvg("g");
-      lines.setAttribute("id", "edge-brown-bar-section-lines");
-      lines.setAttribute("fill", "none");
-      lines.setAttribute("stroke", CANVAS_EDGE_BROWN_BAR_DIVISION_STROKE);
-      lines.setAttribute("stroke-width", String(BORDER_DIVISION_STROKE_WIDTH));
-      lines.setAttribute("stroke-linecap", "butt");
-      lines.setAttribute("stroke-linejoin", "miter");
-      appendCanvasEdgeBrownBarDivisionLines(lines);
-      divGroup.appendChild(lines);
       var fills = elSvg("g");
       fills.setAttribute("id", "edge-brown-bar-grid-fills");
       fills.setAttribute("stroke", "none");
       appendCanvasEdgeBrownBarOuterThirdGridFills(fills);
       divGroup.appendChild(fills);
     }
-    var bannerGroup = designSvg.querySelector("#edge-brown-bar-banner-text");
+    var bannerGroup = designSvg.querySelector("#edge-brown-bar-label-content");
     if (bannerGroup) {
-      while (bannerGroup.firstChild) bannerGroup.removeChild(bannerGroup.firstChild);
-      appendBrownBarBannerText(bannerGroup);
+      refreshLabelBarContent();
     }
-  }
-
-  function pushCanvasEdgeBrownBarExportLine(
-    lines,
-    layout,
-    y,
-    stroke,
-    strokeWidth
-  ) {
-    lines.push(
-      '<line x1="' +
-        layout.x +
-        '" y1="' +
-        y +
-        '" x2="' +
-        (layout.x + layout.width) +
-        '" y2="' +
-        y +
-        '" stroke="' +
-        stroke +
-        '" stroke-width="' +
-        strokeWidth +
-        '"/>'
-    );
+    updateCanvasEdgeSerialLayer();
   }
 
   function pushCanvasEdgeBrownBarExportLines(lines) {
     var bottomLayout = getCanvasEdgeBrownBarLayout("bottom");
     var topLayout = getCanvasEdgeBrownBarLayout("top");
-    var innerRelYs = getCanvasEdgeBrownBarInnerRelativeYOffsets(bottomLayout.height);
-    var yi;
-    var innerRelY;
-    var divStroke = CANVAS_EDGE_BROWN_BAR_DIVISION_STROKE;
-    var divWidth = BORDER_DIVISION_STROKE_WIDTH;
 
     lines.push(
       '<rect id="bottom-brown-bar" x="' +
@@ -2855,7 +5086,7 @@
         '" height="' +
         bottomLayout.height +
         '" fill="' +
-        CANVAS_EDGE_BROWN_BAR_COLOR +
+        getLabelBarBackgroundColor() +
         '" stroke="none"/>'
     );
     lines.push(
@@ -2868,103 +5099,177 @@
         '" height="' +
         topLayout.height +
         '" fill="' +
-        CANVAS_EDGE_BROWN_BAR_COLOR +
+        getLabelBarBackgroundColor() +
         '" stroke="none"/>'
     );
 
-    lines.push(
-      '<g id="edge-brown-bar-section-lines" fill="none" stroke="' +
-        divStroke +
-        '" stroke-width="' +
-        divWidth +
-        '" stroke-linecap="butt" stroke-linejoin="miter">'
-    );
-    for (yi = 0; yi < innerRelYs.length; yi++) {
-      innerRelY = innerRelYs[yi];
-      pushCanvasEdgeBrownBarExportLine(
-        lines,
-        bottomLayout,
-        getBottomBrownBarCanvasY(innerRelY, bottomLayout),
-        divStroke,
-        divWidth
-      );
-      pushCanvasEdgeBrownBarExportLine(
-        lines,
-        topLayout,
-        getTopBrownBarMirroredCanvasY(innerRelY, topLayout),
-        divStroke,
-        divWidth
-      );
-    }
-    lines.push("</g>");
     lines.push('<g id="edge-brown-bar-grid-fills" stroke="none">');
     pushCanvasEdgeBrownBarOuterThirdGridFillsExport(lines);
     lines.push("</g>");
     pushCanvasEdgeBrownBarBannerTextExport(lines);
   }
 
+  function pushCanvasEdgeSerialDigitCirclesExport(
+    lines,
+    centerX,
+    centerY,
+    digit,
+    r,
+    gap,
+    fill
+  ) {
+    var count = Math.max(0, Math.min(9, Math.floor(digit)));
+    var step = 2 * r + gap;
+    var totalWidth = count * 2 * r + (count - 1) * gap;
+    var startX = centerX - totalWidth / 2 + r;
+    var ci;
+
+    for (ci = 0; ci < count; ci++) {
+      lines.push(
+        '<circle cx="' +
+          (startX + ci * step) +
+          '" cy="' +
+          centerY +
+          '" r="' +
+          r +
+          '" fill="' +
+          fill +
+          '" stroke="none"/>'
+      );
+    }
+  }
+
+  function pushCanvasEdgeSerialExport(lines) {
+    var serial = ensureCanvasEdgeSerial();
+    var strips = [
+      getCanvasEdgeSerialStripLayout("top"),
+      getCanvasEdgeSerialStripLayout("bottom"),
+    ];
+    var fill = getCanvasEdgeSerialFill();
+    var si;
+    var strip;
+    var xs;
+    var metrics;
+    var centerY;
+    var i;
+    var digit;
+
+    lines.push('<g id="layer-edge-serial" fill="' + fill + '" stroke="none">');
+    for (si = 0; si < strips.length; si++) {
+      strip = strips[si];
+      if (strip.height <= 0) continue;
+      xs = getCanvasEdgeSerialDigitXPositions(strip.width);
+      metrics = getCanvasEdgeSerialCircleMetrics(strip);
+      if (metrics.r <= 0) continue;
+      centerY = strip.y + strip.height / 2;
+      for (i = 0; i < serial.length && i < xs.length; i++) {
+        digit = parseInt(serial.charAt(i), 10);
+        if (isNaN(digit)) continue;
+        pushCanvasEdgeSerialDigitCirclesExport(
+          lines,
+          strip.x + xs[i],
+          centerY,
+          digit,
+          metrics.r,
+          metrics.gap,
+          fill
+        );
+      }
+    }
+    lines.push("</g>");
+  }
+
   function pushCanvasEdgeBrownBarBannerTextExport(lines) {
+    var items = getLabelBarItems();
     var bottomLayout = getCanvasEdgeBrownBarLayout("bottom");
     var topLayout = getCanvasEdgeBrownBarLayout("top");
-    var fontFamily = getBrownBarBannerFontFamily();
-    var fill = getBrownBarBannerFill();
-    var label = getBrownBarBannerDisplayText();
     var edges = [
       ["bottom", bottomLayout],
       ["top", topLayout],
     ];
+    var rowMarkup = [];
     var ei;
     var edge;
     var layout;
-    var metrics;
-    var canvasY;
-    var strike;
+    var placements;
+    var pi;
+    var placement;
+    var edgeLines;
 
-    lines.push('<g id="edge-brown-bar-banner-text">');
     for (ei = 0; ei < edges.length; ei++) {
       edge = edges[ei][0];
       layout = edges[ei][1];
-      metrics = getBrownBarBannerTextMetrics(layout);
-      canvasY =
-        edge === "bottom"
-          ? getBottomBrownBarCanvasY(metrics.centerInnerRelY, layout)
-          : getTopBrownBarMirroredCanvasY(metrics.centerInnerRelY, layout);
-      strike = getBrownBarBannerStrikeLineGeometry(metrics, canvasY);
-      lines.push(
-        '<text x="' +
-          metrics.x +
-          '" y="' +
-          canvasY +
-          '" fill="' +
-          fill +
-          '" font-family="' +
-          fontFamily +
-          ', sans-serif" font-weight="700" font-size="' +
-          metrics.fontSize +
-          '" letter-spacing="' +
-          getBrownBarBannerLetterSpacing() +
-          '" text-anchor="middle" dominant-baseline="middle" alignment-baseline="middle" dy="' +
-          metrics.opticalDy +
-          '">' +
-          label +
-          "</text>"
-      );
-      lines.push(
-        '<line x1="' +
-          strike.x1 +
-          '" y1="' +
-          strike.y1 +
-          '" x2="' +
-          strike.x2 +
-          '" y2="' +
-          strike.y2 +
-          '" stroke="' +
-          fill +
-          '" stroke-width="' +
-          strike.strokeWidth +
-          '" stroke-linecap="butt"/>'
-      );
+      var area = getLabelBarInnerSegmentContentArea(edge, layout, 0);
+      var row2Area = getLabelBarInnerSegmentContentArea(edge, layout, 1);
+      var endCapArea = getLabelBarEndCapContentArea(edge, layout);
+      placements = computeLabelBarPlacements(area, endCapArea, row2Area, items);
+      if (!placements.length) continue;
+      edgeLines = ['<g data-edge="' + edge + '">'];
+      for (pi = 0; pi < placements.length; pi++) {
+        placement = placements[pi];
+        var placementArea = placement.svgArea || area;
+        var flipVertical = labelBarEdgeContentFlippedVertically(edge);
+        if (flipVertical) {
+          edgeLines.push(
+            '<g transform="' + getLabelBarVerticalFlipTransform(placementArea) + '">'
+          );
+        }
+        if (placement.spec.type === "text") {
+          edgeLines.push(
+            '<text x="' +
+              placement.x +
+              '" y="' +
+              getLabelBarTextY(placementArea) +
+              '" fill="' +
+              getBrownBarBannerFill() +
+              '" font-family="' +
+              getBrownBarBannerFontFamily() +
+              ', sans-serif" font-weight="700" font-size="' +
+              placement.spec.fontSize +
+              '" letter-spacing="' +
+              getBrownBarBannerLetterSpacing() +
+              '" text-anchor="start" dominant-baseline="middle" alignment-baseline="middle">' +
+              placement.spec.text +
+              "</text>"
+          );
+        } else if (placement.spec.type === "svg") {
+          pushLabelBarSvgPlacementExport(
+            edgeLines,
+            placement,
+            placementArea
+          );
+          pushLabelBarAgeOverlayTextExport(
+            edgeLines,
+            placement,
+            placementArea
+          );
+        } else if (placement.spec.type === "square") {
+          edgeLines.push(
+            '<rect x="' +
+              placement.x +
+              '" y="' +
+              getLabelBarSquareSepY(placementArea) +
+              '" width="' +
+              placement.spec.width +
+              '" height="' +
+              placement.spec.height +
+              '" fill="' +
+              getLabelBarSymbolSeparatorFill() +
+              '"/>'
+          );
+        }
+        if (flipVertical) {
+          edgeLines.push("</g>");
+        }
+      }
+      edgeLines.push("</g>");
+      rowMarkup = rowMarkup.concat(edgeLines);
     }
+
+    if (!rowMarkup.length) return;
+
+    lines.push('<g id="edge-brown-bar-label-content">');
+    lines.push.apply(lines, rowMarkup);
     lines.push("</g>");
   }
 
@@ -2979,10 +5284,6 @@
       typeof CANVAS_EDGE_BROWN_BAR_OUTER_THIRD_GRID_HORIZONTAL_LINES !== "undefined"
         ? CANVAS_EDGE_BROWN_BAR_OUTER_THIRD_GRID_HORIZONTAL_LINES
         : 2;
-    var baseFill =
-      typeof CANVAS_EDGE_BROWN_BAR_GRID_CELL_BASE_FILL !== "undefined"
-        ? CANVAS_EDGE_BROWN_BAR_GRID_CELL_BASE_FILL
-        : BG_COLOR;
     var edges = ["bottom", "top"];
     var ei;
     var edge;
@@ -2999,8 +5300,8 @@
         for (col = 0; col <= vCount; col++) {
           cell = getOuterThirdGridCellRect(edge, layout, row, col);
           fill = isOuterThirdGridCellBrownFill(row, col)
-            ? CANVAS_EDGE_BROWN_BAR_COLOR
-            : baseFill;
+            ? getLabelBarBackgroundColor()
+            : getLabelBarContentColor();
           lines.push(
             '<rect x="' +
               cell.x +
@@ -3032,10 +5333,8 @@
    */
   function pushBorderDivisionExportLines(lines) {
     var b = getCanvasBorderPx();
-    var frameY = getBorderDivisionFrameY();
     var i;
     var y;
-    var x;
 
     lines.push(
       '<g id="layer-border-divisions" fill="none" stroke="' +
@@ -3045,47 +5344,106 @@
         '">'
     );
 
+    var home = isBodyAutonomyHomeChecked();
+    var outside = isBodyAutonomyOutsideChecked();
     var yBounds = getLeftRightBorderCellYBounds();
     var j;
     var yTop;
     var yBottom;
     var h;
+    var cellType;
     var rightX = CANVAS_W - b;
-    for (j = 0; j < yBounds.length - 1; j++) {
-      yTop = yBounds[j];
-      yBottom = yBounds[j + 1];
-      h = yBottom - yTop;
-      if (isBorderSideBrownCell(j)) {
-        pushBorderSideBrownCellXPatternExport(lines, 0, b, yTop, yBottom);
-        pushBorderSideBrownCellXPatternExport(lines, rightX, b, yTop, yBottom);
-      } else if (isBorderSideGreySolidCell(j)) {
-        lines.push(
-          '<rect x="0" y="' +
-            yTop +
-            '" width="' +
-            b +
-            '" height="' +
-            h +
-            '" fill="' +
-            BORDER_SIDE_CELL_COLOR_GREY +
-            '"/>'
+    if (home || outside) {
+      for (j = 0; j < yBounds.length - 1; j++) {
+        yTop = yBounds[j];
+        yBottom = yBounds[j + 1];
+        h = yBottom - yTop;
+        cellType = getBorderSideCellType(j);
+        if (cellType === "outside") {
+          if (!outside) continue;
+          pushBorderSideBrownCellXPatternExport(lines, 0, b, yTop, yBottom);
+          pushBorderSideBrownCellXPatternExport(lines, rightX, b, yTop, yBottom);
+        } else if (cellType === "grey") {
+          if (!home || !outside) continue;
+          lines.push(
+            '<rect x="0" y="' +
+              yTop +
+              '" width="' +
+              b +
+              '" height="' +
+              h +
+              '" fill="' +
+              BORDER_SIDE_CELL_COLOR_GREY +
+              '"/>'
+          );
+          lines.push(
+            '<rect x="' +
+              rightX +
+              '" y="' +
+              yTop +
+              '" width="' +
+              b +
+              '" height="' +
+              h +
+              '" fill="' +
+              BORDER_SIDE_CELL_COLOR_GREY +
+              '"/>'
+          );
+        } else if (cellType === "beige") {
+          if (!home || !outside) continue;
+          var beigeFillExport =
+            typeof BORDER_SIDE_CELL_COLOR_BEIGE !== "undefined"
+              ? BORDER_SIDE_CELL_COLOR_BEIGE
+              : BORDER_SIDE_X_FILL_RIGHT;
+          lines.push(
+            '<rect x="0" y="' +
+              yTop +
+              '" width="' +
+              b +
+              '" height="' +
+              h +
+              '" fill="' +
+              beigeFillExport +
+              '"/>'
+          );
+          lines.push(
+            '<rect x="' +
+              rightX +
+              '" y="' +
+              yTop +
+              '" width="' +
+              b +
+              '" height="' +
+              h +
+              '" fill="' +
+              beigeFillExport +
+              '"/>'
+          );
+        } else {
+          if (!home) continue;
+          pushBorderSideBlueCellXPatternExport(lines, 0, b, yTop, yBottom);
+          pushBorderSideBlueCellXPatternExport(lines, rightX, b, yTop, yBottom);
+        }
+      }
+    }
+
+    if (home && outside) {
+      var rhombusFill;
+      for (j = 0; j < yBounds.length - 1; j++) {
+        cellType = getBorderSideCellType(j);
+        if (!isBorderSideSolidColorOnlyCell(cellType, home, outside)) continue;
+        yTop = yBounds[j];
+        yBottom = yBounds[j + 1];
+        rhombusFill = getBorderSideRhombusFillForCellType(cellType);
+        pushBorderSideCellRhombusExport(lines, 0, b, yTop, yBottom, rhombusFill);
+        pushBorderSideCellRhombusExport(
+          lines,
+          rightX,
+          b,
+          yTop,
+          yBottom,
+          rhombusFill
         );
-        lines.push(
-          '<rect x="' +
-            rightX +
-            '" y="' +
-            yTop +
-            '" width="' +
-            b +
-            '" height="' +
-            h +
-            '" fill="' +
-            BORDER_SIDE_CELL_COLOR_GREY +
-            '"/>'
-        );
-      } else {
-        pushBorderSideBlueCellXPatternExport(lines, 0, b, yTop, yBottom);
-        pushBorderSideBlueCellXPatternExport(lines, rightX, b, yTop, yBottom);
       }
     }
 
@@ -3156,75 +5514,55 @@
       );
     }
 
-    for (i = 1; i < BORDER_TOP_BOTTOM_SEGMENTS; i++) {
-      x = (CANVAS_W * i) / BORDER_TOP_BOTTOM_SEGMENTS;
-      if (x <= b || x >= CANVAS_W - b) continue;
-      lines.push(
-        '<line x1="' +
-          x +
-          '" y1="0" x2="' +
-          x +
-          '" y2="' +
-          frameY.top +
-          '"/>'
-      );
-      lines.push(
-        '<line x1="' +
-          x +
-          '" y1="' +
-          frameY.bottom +
-          '" x2="' +
-          x +
-          '" y2="' +
-          CANVAS_H +
-          '"/>'
-      );
-    }
-
-    for (j = 0; j < yBounds.length - 1; j++) {
-      if (!isBorderSideBrownCell(j)) continue;
-      yTop = yBounds[j];
-      yBottom = yBounds[j + 1];
-      lines.push(
-        '<line x1="0" y1="' +
-          yTop +
-          '" x2="' +
-          b +
-          '" y2="' +
-          yBottom +
-          '"/>'
-      );
-      lines.push(
-        '<line x1="' +
-          b +
-          '" y1="' +
-          yTop +
-          '" x2="0" y2="' +
-          yBottom +
-          '"/>'
-      );
-      lines.push(
-        '<line x1="' +
-          rightX +
-          '" y1="' +
-          yTop +
-          '" x2="' +
-          CANVAS_W +
-          '" y2="' +
-          yBottom +
-          '"/>'
-      );
-      lines.push(
-        '<line x1="' +
-          CANVAS_W +
-          '" y1="' +
-          yTop +
-          '" x2="' +
-          rightX +
-          '" y2="' +
-          yBottom +
-          '"/>'
-      );
+    var outlineOnly = !home && !outside;
+    if (outlineOnly || outside) {
+      for (j = 0; j < yBounds.length - 1; j++) {
+        cellType = getBorderSideCellType(j);
+        if (cellType === "grey" || cellType === "beige") continue;
+        if (!outlineOnly && cellType !== "outside") continue;
+        yTop = yBounds[j];
+        yBottom = yBounds[j + 1];
+        lines.push(
+          '<line x1="0" y1="' +
+            yTop +
+            '" x2="' +
+            b +
+            '" y2="' +
+            yBottom +
+            '"/>'
+        );
+        lines.push(
+          '<line x1="' +
+            b +
+            '" y1="' +
+            yTop +
+            '" x2="0" y2="' +
+            yBottom +
+            '"/>'
+        );
+        lines.push(
+          '<line x1="' +
+            rightX +
+            '" y1="' +
+            yTop +
+            '" x2="' +
+            CANVAS_W +
+            '" y2="' +
+            yBottom +
+            '"/>'
+        );
+        lines.push(
+          '<line x1="' +
+            CANVAS_W +
+            '" y1="' +
+            yTop +
+            '" x2="' +
+            rightX +
+            '" y2="' +
+            yBottom +
+            '"/>'
+        );
+      }
     }
 
     lines.push("</g>");
@@ -3272,11 +5610,12 @@
     svg.appendChild(defs);
 
     var borderFill = elSvg("rect");
+    borderFill.setAttribute("id", "canvas-background-fill");
     borderFill.setAttribute("x", "0");
     borderFill.setAttribute("y", "0");
     borderFill.setAttribute("width", String(CANVAS_W));
     borderFill.setAttribute("height", String(CANVAS_H));
-    borderFill.setAttribute("fill", BG_COLOR);
+    borderFill.setAttribute("fill", getCanvasBackgroundColor());
     svg.appendChild(borderFill);
 
     svg.appendChild(createBorderDivisionLinesGroup());
@@ -3319,6 +5658,15 @@
     clippedDiamonds.appendChild(diamondLayer);
     innerContent.appendChild(clippedDiamonds);
 
+    var clippedAutoMerge = createInnerContentClipGroup(
+      "inner-clipped-auto-merge-fills"
+    );
+    var autoMergeLayer = elSvg("g");
+    autoMergeLayer.setAttribute("id", "layer-auto-merge-fills");
+    autoMergeLayer.setAttribute("clip-path", "url(#canvas-clip)");
+    clippedAutoMerge.appendChild(autoMergeLayer);
+    innerContent.appendChild(clippedAutoMerge);
+
     innerContent.appendChild(createGridBoundaryRect());
 
     var clippedPattern = createInnerContentClipGroup("inner-clipped-pattern");
@@ -3328,19 +5676,16 @@
     clippedPattern.appendChild(pattern);
     innerContent.appendChild(clippedPattern);
 
-    var clippedLetters = createInnerContentClipGroup("inner-clipped-letter-markers");
-    var letterLayer = elSvg("g");
-    letterLayer.setAttribute("id", "layer-letter-markers");
-    letterLayer.setAttribute("clip-path", "url(#canvas-clip)");
-    clippedLetters.appendChild(letterLayer);
-    innerContent.appendChild(clippedLetters);
-
     svg.appendChild(innerContent);
 
     var edgeBrownBars = elSvg("g");
     edgeBrownBars.setAttribute("id", "layer-edge-brown-bars");
     populateEdgeBrownBarsLayer(edgeBrownBars);
     svg.appendChild(edgeBrownBars);
+
+    svg.appendChild(createBrownBarBannerTextGroup());
+
+    svg.appendChild(createCanvasEdgeSerialGroup());
 
     svg.appendChild(createFrameInsetOverlayLayer());
 
@@ -3411,23 +5756,25 @@
       syncCircleSelection(true);
     }
 
-    if (layoutSig !== lastLetterMarkerLayoutSignature) {
-      lastLetterMarkerLayoutSignature = layoutSig;
-      syncLetterOctagonMarkers();
-    }
-
     var diamondSig = buildDiamondLayoutSignature();
     if (diamondSig !== lastDiamondLayoutSignature) {
       lastDiamondLayoutSignature = diamondSig;
-      syncDiamondFill(true);
+      syncDiamondFill(false);
     }
 
     var densityOut = document.getElementById("circle-density-out");
     if (densityOut) densityOut.textContent = String(getCircleDensity()) + "%";
 
-    var diamondPercentOut = document.getElementById("diamond-fill-percent-out");
-    if (diamondPercentOut) {
-      diamondPercentOut.textContent = String(getDiamondFillPercent()) + "%";
+    var prideFillOut = document.getElementById("pride-fill-percent-out");
+    if (prideFillOut) {
+      prideFillOut.textContent = String(getPrideFillPercent()) + "%";
+    }
+
+    updateAutoMergeIntensityOutput();
+
+    var angerLengthOut = document.getElementById("anger-vertical-length-out");
+    if (angerLengthOut) {
+      angerLengthOut.textContent = String(getAngerVerticalLengthPercent()) + "%";
     }
 
     var strokeOut = document.getElementById("grid-stroke-width-out");
@@ -3444,18 +5791,88 @@
     applyMergeReveal();
     syncVerticalGridLines(false);
     renderVerticalGridLayer();
+    renderAutoMergeFillsLayer();
     updateGridBoundaryRect();
     updateBorderDivisionLines();
     updateCanvasEdgeBrownBars();
     renderPatternLayer();
-    renderLetterMarkersLayer();
     updateFrameInsetOverlayLayer();
     layoutStage();
     updateResetButton();
   }
 
   function renderAfterSliderChange() {
+    var hadAutoMerge = autoMergeEdgeKeys.size > 0;
     clearMergeState();
+    clearAutoMergeState();
+    render();
+    if (hadAutoMerge) {
+      runAutoMerge();
+    }
+  }
+
+  function randomIntInRange(min, max) {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+  }
+
+  function randomSteppedValue(min, max, step) {
+    var steps = Math.round((max - min) / step);
+    var n = Math.floor(Math.random() * (steps + 1));
+    var value = min + n * step;
+    if (step < 1) {
+      var decimals = String(step).indexOf(".") >= 0
+        ? String(step).split(".")[1].length
+        : 2;
+      value = Number(value.toFixed(decimals));
+    }
+    return value;
+  }
+
+  function setSliderValue(id, value) {
+    var slider = document.getElementById(id);
+    if (!slider) return;
+    slider.value = String(value);
+  }
+
+  function randomizeAllDesignControls() {
+    setSliderValue("octagons-n", randomIntInRange(OCTAGONS_N_MIN, OCTAGONS_N_MAX));
+    setSliderValue(
+      "inner-scale",
+      randomSteppedValue(INNER_SCALE_MIN, INNER_SCALE_MAX, 0.01)
+    );
+    setSliderValue(
+      "grid-stroke-width",
+      randomIntInRange(GRID_STROKE_WIDTH_MIN, GRID_STROKE_WIDTH_MAX)
+    );
+    setSliderValue(
+      "border-side-segments",
+      randomIntInRange(
+        BORDER_LEFT_RIGHT_SEGMENTS_MIN,
+        BORDER_LEFT_RIGHT_SEGMENTS_MAX
+      )
+    );
+    setSliderValue(
+      "anger-vertical-length",
+      randomIntInRange(ANGER_VERTICAL_LENGTH_MIN, ANGER_VERTICAL_LENGTH_MAX)
+    );
+    setSliderValue(
+      "circle-density",
+      randomIntInRange(CIRCLE_DENSITY_MIN, CIRCLE_DENSITY_MAX)
+    );
+    setSliderValue(
+      "pride-fill-percent",
+      randomIntInRange(PRIDE_FILL_PERCENT_MIN, PRIDE_FILL_PERCENT_MAX)
+    );
+
+    var homeCb = document.getElementById("body-autonomy-home");
+    var outsideCb = document.getElementById("body-autonomy-outside");
+    if (homeCb) homeCb.checked = Math.random() < 0.5;
+    if (outsideCb) outsideCb.checked = Math.random() < 0.5;
+
+    regenerateBorderSideSegmentRatios();
+    clearMergeState();
+    syncCircleSelection(true);
+    syncPrideShapes();
     render();
   }
 
@@ -3552,81 +5969,6 @@
     }
   }
 
-  /**
-   * @param {string[]} lines
-   * @param {{ markers: { cx: number, cy: number, r: number, char: string }[] }} column
-   * @param {string} strokeColor
-   */
-  function pushLetterMarkerColumnExport(lines, column, strokeColor) {
-    var markers = column.markers;
-    if (!markers.length) return;
-
-    var top = markers[0];
-    var bottom = markers[markers.length - 1];
-    lines.push(
-      '<line x1="' +
-        top.cx +
-        '" y1="' +
-        top.cy +
-        '" x2="' +
-        bottom.cx +
-        '" y2="' +
-        bottom.cy +
-        '" stroke="' +
-        strokeColor +
-        '" stroke-width="' +
-        getCircleStrokeWidth() +
-        '" fill="none"/>'
-    );
-
-    var i;
-    for (i = 0; i < markers.length; i++) {
-      var m = markers[i];
-      lines.push(
-        '<circle cx="' +
-          m.cx +
-          '" cy="' +
-          m.cy +
-          '" r="' +
-          m.r +
-          '" fill="' +
-          strokeColor +
-          '" stroke="none"/>'
-      );
-    }
-
-    for (i = 0; i < markers.length; i++) {
-      var mk = markers[i];
-      var fontSize = 2 * mk.r * LETTER_MARKER_FONT_SIZE_RATIO;
-      var char = mk.char || "";
-      lines.push(
-        '<text x="' +
-          mk.cx +
-          '" y="' +
-          mk.cy +
-          '" fill="#ffffff" font-weight="bold" font-family="Helvetica, Arial, sans-serif" text-anchor="middle" dominant-baseline="central" font-size="' +
-          fontSize +
-          '">' +
-          char +
-          "</text>"
-      );
-    }
-  }
-
-  function pushLetterMarkersExportLines(lines) {
-    ensureLetterMarkerAnchor(false);
-    var bundle = buildLetterMarkerBundle();
-    if (!bundle || !bundle.columns.length) return;
-
-    var strokeColor = getPatternStrokeColor();
-    lines.push('<g id="layer-letter-markers">');
-    var c;
-    for (c = 0; c < bundle.columns.length; c++) {
-      pushLetterMarkerColumnExport(lines, bundle.columns[c], strokeColor);
-    }
-    lines.push("</g>");
-  }
-
   function getExportFontFaceCss(fontDataUri) {
     var src = fontDataUri
       ? 'url("' + fontDataUri + '") format("truetype")'
@@ -3699,7 +6041,7 @@
         '" height="' +
         CANVAS_H +
         '" fill="' +
-        BG_COLOR +
+        getCanvasBackgroundColor() +
         '"/>'
     );
     pushBorderDivisionExportLines(lines);
@@ -3710,6 +6052,7 @@
 
     pushGridMaskExportLines(lines);
     pushStippleDotsExportLines(lines);
+    pushAutoMergeFillExportLines(lines);
 
     pushVerticalGridExportLines(lines);
 
@@ -3769,7 +6112,9 @@
 
     if (circles.length) {
       lines.push(
-        '<g id="layer-circles" fill="none" stroke="' +
+        '<g id="layer-circles" fill="' +
+          getCircleFillColor() +
+          '" stroke="' +
           getPatternStrokeColor() +
           '" stroke-width="' +
           circleStroke +
@@ -3792,13 +6137,12 @@
       lines.push("</g>");
     }
 
-    pushLetterMarkersExportLines(lines);
-
     lines.push("</g>");
     lines.push("</g>");
     lines.push('<g id="layer-edge-brown-bars">');
     pushCanvasEdgeBrownBarExportLines(lines);
     lines.push("</g>");
+    pushCanvasEdgeSerialExport(lines);
     if (frameInsetOverlayVisible) {
       pushFrameInsetOverlayExportLines(lines);
     }
@@ -3823,7 +6167,7 @@
         ? document.fonts.ready
         : Promise.resolve();
 
-    Promise.all([fontReady, loadExportFontDataUri()])
+    Promise.all([fontReady, loadExportFontDataUri(), preloadLabelBarSvgAssetsForExport()])
       .then(function (results) {
         var fontDataUri = results[1];
         try {
@@ -4109,6 +6453,7 @@
 
   function onResetGrid() {
     clearMergeState();
+    clearAutoMergeState();
     renderPatternAndVerticalLayers();
   }
 
@@ -4129,6 +6474,19 @@
       innerSlider.addEventListener("input", renderAfterSliderChange);
     }
 
+    var canvasBackgroundColorInput = document.getElementById(
+      "canvas-background-color"
+    );
+    if (canvasBackgroundColorInput) {
+      canvasBackgroundColorInput.value =
+        typeof CANVAS_BACKGROUND_COLOR_DEFAULT !== "undefined"
+          ? CANVAS_BACKGROUND_COLOR_DEFAULT
+          : BG_COLOR;
+      canvasBackgroundColorInput.addEventListener("input", function () {
+        updateCanvasBackgroundColor();
+      });
+    }
+
     var patternColorInput = document.getElementById("pattern-stroke-color");
     if (patternColorInput) {
       patternColorInput.value = PATTERN_STROKE_COLOR_DEFAULT;
@@ -4136,7 +6494,7 @@
         updateGridBoundaryRect();
         renderVerticalGridLayer();
         renderPatternLayer();
-        renderLetterMarkersLayer();
+        renderAutoMergeFillsLayer();
         updateFrameInsetOverlayLayer();
         var borderDivisions =
           designSvg && designSvg.querySelector("#layer-border-divisions");
@@ -4147,10 +6505,47 @@
       });
     }
 
+    var circleFillColorInput = document.getElementById("circle-fill-color");
+    if (circleFillColorInput) {
+      circleFillColorInput.value =
+        typeof CIRCLE_FILL_COLOR_DEFAULT !== "undefined"
+          ? CIRCLE_FILL_COLOR_DEFAULT
+          : "#ffffff";
+      circleFillColorInput.addEventListener("input", function () {
+        renderPatternLayer();
+      });
+    }
+
     var diamondFillColorInput = document.getElementById("diamond-fill-color");
     if (diamondFillColorInput) {
       diamondFillColorInput.value = DIAMOND_FILL_COLOR_DEFAULT;
-      diamondFillColorInput.addEventListener("input", renderDiamondFillsLayer);
+      diamondFillColorInput.addEventListener("input", function () {
+        renderDiamondFillsLayer();
+      });
+    }
+
+    function onLabelBarColorChange() {
+      updateCanvasEdgeBrownBars();
+    }
+
+    var labelBarBackgroundColorInput = document.getElementById(
+      "label-bar-background-color"
+    );
+    if (labelBarBackgroundColorInput) {
+      labelBarBackgroundColorInput.value =
+        typeof LABEL_BAR_BACKGROUND_COLOR_DEFAULT !== "undefined"
+          ? LABEL_BAR_BACKGROUND_COLOR_DEFAULT
+          : CANVAS_EDGE_BROWN_BAR_COLOR;
+      labelBarBackgroundColorInput.addEventListener("input", onLabelBarColorChange);
+    }
+
+    var labelBarContentColorInput = document.getElementById("label-bar-content-color");
+    if (labelBarContentColorInput) {
+      labelBarContentColorInput.value =
+        typeof LABEL_BAR_CONTENT_COLOR_DEFAULT !== "undefined"
+          ? LABEL_BAR_CONTENT_COLOR_DEFAULT
+          : "#ffffff";
+      labelBarContentColorInput.addEventListener("input", onLabelBarColorChange);
     }
 
     var borderSideSegmentsSlider = document.getElementById("border-side-segments");
@@ -4159,6 +6554,7 @@
       borderSideSegmentsSlider.max = String(BORDER_LEFT_RIGHT_SEGMENTS_MAX);
       borderSideSegmentsSlider.value = String(BORDER_LEFT_RIGHT_SEGMENTS_DEFAULT);
       borderSideSegmentsSlider.addEventListener("input", function () {
+        regenerateBorderSideSegmentRatios();
         var borderSideOut = document.getElementById("border-side-segments-out");
         if (borderSideOut) {
           borderSideOut.textContent = String(getBorderLeftRightSegments());
@@ -4166,6 +6562,11 @@
         updateBorderDivisionLines();
       });
     }
+
+    ["body-autonomy-home", "body-autonomy-outside"].forEach(function (id) {
+      var cb = document.getElementById(id);
+      if (cb) cb.addEventListener("change", updateBorderDivisionLines);
+    });
 
     var gridStrokeSlider = document.getElementById("grid-stroke-width");
     if (gridStrokeSlider) {
@@ -4177,7 +6578,6 @@
         if (strokeOut) strokeOut.textContent = String(getGridStrokeWidth()) + " px";
         renderVerticalGridLayer();
         renderPatternLayer();
-        renderLetterMarkersLayer();
       });
     }
 
@@ -4194,36 +6594,56 @@
       });
     }
 
-    var diamondFillPercentSlider = document.getElementById("diamond-fill-percent");
-    if (diamondFillPercentSlider) {
-      diamondFillPercentSlider.min = String(DIAMOND_FILL_PERCENT_MIN);
-      diamondFillPercentSlider.max = String(DIAMOND_FILL_PERCENT_MAX);
-      diamondFillPercentSlider.value = String(DIAMOND_FILL_PERCENT_DEFAULT);
-      diamondFillPercentSlider.addEventListener("input", function () {
-        syncDiamondFill(true);
-        var diamondPercentOut = document.getElementById("diamond-fill-percent-out");
-        if (diamondPercentOut) {
-          diamondPercentOut.textContent = String(getDiamondFillPercent()) + "%";
+    var angerVerticalLengthSlider = document.getElementById("anger-vertical-length");
+    if (angerVerticalLengthSlider) {
+      angerVerticalLengthSlider.min = String(ANGER_VERTICAL_LENGTH_MIN);
+      angerVerticalLengthSlider.max = String(ANGER_VERTICAL_LENGTH_MAX);
+      angerVerticalLengthSlider.value = String(ANGER_VERTICAL_LENGTH_DEFAULT);
+      angerVerticalLengthSlider.addEventListener("input", function () {
+        var angerLengthOut = document.getElementById("anger-vertical-length-out");
+        if (angerLengthOut) {
+          angerLengthOut.textContent =
+            String(getAngerVerticalLengthPercent()) + "%";
         }
-        renderDiamondFillsLayer();
+        renderVerticalGridLayer();
       });
     }
 
-    var letterMarkerWordInput = document.getElementById("letter-marker-word");
-    if (letterMarkerWordInput) {
-      letterMarkerWordInput.value = letterMarkerWord;
-      letterMarkerWordInput.addEventListener("input", function () {
-        letterMarkerWord = letterMarkerWordInput.value;
-        ensureLetterMarkerAnchor(false);
-        renderLetterMarkersLayer();
-      });
+    var randomizeAllControlsBtn = document.getElementById(
+      "randomize-all-controls-btn"
+    );
+    if (randomizeAllControlsBtn) {
+      randomizeAllControlsBtn.addEventListener("click", randomizeAllDesignControls);
     }
 
     var randomizeCirclesBtn = document.getElementById("randomize-circles-btn");
     if (randomizeCirclesBtn) {
       randomizeCirclesBtn.addEventListener("click", function () {
         syncCircleSelection(true);
-        syncDiamondFill(true);
+        syncPrideShapes();
+        renderPatternLayer();
+      });
+    }
+
+    var prideFillPercentSlider = document.getElementById("pride-fill-percent");
+    if (prideFillPercentSlider) {
+      prideFillPercentSlider.min = String(PRIDE_FILL_PERCENT_MIN);
+      prideFillPercentSlider.max = String(PRIDE_FILL_PERCENT_MAX);
+      prideFillPercentSlider.value = String(PRIDE_FILL_PERCENT_DEFAULT);
+      prideFillPercentSlider.addEventListener("input", function () {
+        var prideFillOut = document.getElementById("pride-fill-percent-out");
+        if (prideFillOut) {
+          prideFillOut.textContent = String(getPrideFillPercent()) + "%";
+        }
+        syncPrideShapes();
+        renderPatternLayer();
+      });
+    }
+
+    var prideColorShapesBtn = document.getElementById("pride-color-shapes-btn");
+    if (prideColorShapesBtn) {
+      prideColorShapesBtn.addEventListener("click", function () {
+        syncPrideShapes();
         renderPatternLayer();
       });
     }
@@ -4253,6 +6673,37 @@
 
     var resetBtn = document.getElementById("reset-grid-btn");
     if (resetBtn) resetBtn.addEventListener("click", onResetGrid);
+
+    var autoMergeIntensitySlider = document.getElementById("auto-merge-intensity");
+    if (autoMergeIntensitySlider) {
+      autoMergeIntensitySlider.min = String(
+        typeof AUTO_MERGE_INTENSITY_MIN !== "undefined"
+          ? AUTO_MERGE_INTENSITY_MIN
+          : 0
+      );
+      autoMergeIntensitySlider.max = String(
+        typeof AUTO_MERGE_INTENSITY_MAX !== "undefined"
+          ? AUTO_MERGE_INTENSITY_MAX
+          : 100
+      );
+      autoMergeIntensitySlider.value = String(
+        typeof AUTO_MERGE_INTENSITY_DEFAULT !== "undefined"
+          ? AUTO_MERGE_INTENSITY_DEFAULT
+          : 50
+      );
+      autoMergeIntensitySlider.addEventListener("input", function () {
+        updateAutoMergeIntensityOutput();
+        if (autoMergeEdgeKeys.size > 0) {
+          runAutoMerge();
+        }
+      });
+    }
+    updateAutoMergeIntensityOutput();
+
+    var autoMergeBtn = document.getElementById("auto-merge-btn");
+    if (autoMergeBtn) {
+      autoMergeBtn.addEventListener("click", runAutoMerge);
+    }
 
     var dotsFileInput = document.getElementById("bg-dots-file-input");
     var dotsFileMeta = document.getElementById("bg-dots-file-meta");
@@ -4430,6 +6881,32 @@
     }
 
     updateStippleSliderOutputs();
+
+    if (window.LabelBarControls && window.LabelBarControls.init) {
+      window.LabelBarControls.init(refreshLabelBarContent);
+    }
+
+    if (window.IdentityControls && window.IdentityControls.setOnLivingInIranChange) {
+      window.IdentityControls.setOnLivingInIranChange(refreshLabelBarContent);
+    }
+    if (window.IdentityControls && window.IdentityControls.setOnLeavingYearChange) {
+      window.IdentityControls.setOnLeavingYearChange(refreshLabelBarContent);
+    }
+    if (window.IdentityControls && window.IdentityControls.setOnLostCircleChange) {
+      window.IdentityControls.setOnLostCircleChange(refreshLabelBarContent);
+    }
+    if (window.IdentityControls && window.IdentityControls.setOnAgeChange) {
+      window.IdentityControls.setOnAgeChange(refreshLabelBarContent);
+    }
+    if (window.IdentityControls && window.IdentityControls.setOnFromChange) {
+      window.IdentityControls.setOnFromChange(refreshLabelBarContent);
+    }
+    if (window.IdentityControls && window.IdentityControls.setOnNowInChange) {
+      window.IdentityControls.setOnNowInChange(refreshLabelBarContent);
+    }
+    if (window.IdentityControls && window.IdentityControls.setOnNameChange) {
+      window.IdentityControls.setOnNameChange(refreshLabelBarContent);
+    }
 
     window.addEventListener("resize", layoutStage);
     lastCircleLayoutSignature = "";
