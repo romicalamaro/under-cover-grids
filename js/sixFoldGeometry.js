@@ -1,5 +1,5 @@
 /**
- * Rotated-square swastika repeat unit: quadrant axes, pinwheel squares, 4×4 grids, tiled.
+ * 6-fold rotated-square repeat unit: quadrant axes, pinwheel squares, 4×4 grids, tiled.
  * Per quadrant: TL/BR +36° CW, TR/BL −36° CCW; whole unit rotated 90° CW on the canvas.
  */
 (function (global) {
@@ -335,7 +335,7 @@
     return Array.from(map.values());
   }
 
-  global.SwastikaGeometry = {
+  global.SixFoldGeometry = {
     buildAllSegments: buildAllSegments,
   };
 })(typeof window !== "undefined" ? window : this);

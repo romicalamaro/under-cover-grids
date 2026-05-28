@@ -270,7 +270,7 @@
       var blob = new Blob([markup], {
         type: "image/svg+xml;charset=utf-8",
       });
-      downloadBlob(blob, "nested-star-octagons-export-70x180cm.svg");
+      downloadBlob(blob, "star-grid-export-70x180cm.svg");
     } catch (e) {
       console.error(e);
       alert("SVG export failed.");

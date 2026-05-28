@@ -10,11 +10,11 @@
   }
 
   function getUnitSize() {
-    var slider = document.getElementById("swastika-unit-size");
-    var v = slider ? Number(slider.value) : SWASTIKA_UNIT_DEFAULT;
+    var slider = document.getElementById("six-fold-unit-size");
+    var v = slider ? Number(slider.value) : SIX_FOLD_UNIT_DEFAULT;
     return Math.min(
-      SWASTIKA_UNIT_MAX,
-      Math.max(SWASTIKA_UNIT_MIN, Math.round(v))
+      SIX_FOLD_UNIT_MAX,
+      Math.max(SIX_FOLD_UNIT_MIN, Math.round(v))
     );
   }
 
@@ -22,7 +22,7 @@
     var g = elSvg("g");
     g.setAttribute("fill", "none");
     g.setAttribute("stroke", PATTERN_STROKE_COLOR_DEFAULT);
-    g.setAttribute("stroke-width", String(SWASTIKA_STROKE_WIDTH));
+    g.setAttribute("stroke-width", String(SIX_FOLD_STROKE_WIDTH));
     g.setAttribute("stroke-linecap", "square");
     g.setAttribute("stroke-linejoin", "miter");
 
@@ -45,7 +45,7 @@
     svg.setAttribute("viewBox", "0 0 " + CANVAS_W + " " + CANVAS_H);
     svg.setAttribute("xmlns", NS);
     svg.setAttribute("role", "img");
-    svg.setAttribute("aria-label", "Rotated square swastika grid");
+    svg.setAttribute("aria-label", "6-fold rotated-square grid");
 
     var defs = elSvg("defs");
     var clip = elSvg("clipPath");
@@ -77,7 +77,7 @@
 
   function render() {
     var unitSize = getUnitSize();
-    var out = document.getElementById("swastika-unit-size-out");
+    var out = document.getElementById("six-fold-unit-size-out");
     if (out) out.textContent = String(unitSize) + " px";
 
     var info = document.getElementById("tile-info");
@@ -94,7 +94,7 @@
         " across canvas";
     }
 
-    cachedSegments = SwastikaGeometry.buildAllSegments(
+    cachedSegments = SixFoldGeometry.buildAllSegments(
       unitSize,
       CANVAS_W,
       CANVAS_H
@@ -131,14 +131,14 @@
   function buildExportSvgString() {
     var segments = cachedSegments.length
       ? cachedSegments
-      : SwastikaGeometry.buildAllSegments(
+      : SixFoldGeometry.buildAllSegments(
           getUnitSize(),
           CANVAS_W,
           CANVAS_H
         );
     var lines = [];
     var stroke = PATTERN_STROKE_COLOR_DEFAULT;
-    var sw = SWASTIKA_STROKE_WIDTH;
+    var sw = SIX_FOLD_STROKE_WIDTH;
 
     lines.push('<?xml version="1.0" encoding="UTF-8"?>');
     lines.push(
@@ -216,7 +216,7 @@
       var blob = new Blob([markup], {
         type: "image/svg+xml;charset=utf-8",
       });
-      downloadBlob(blob, "swastika-export-70x180cm.svg");
+      downloadBlob(blob, "six-fold-export-70x180cm.svg");
     } catch (e) {
       console.error(e);
       alert("SVG export failed.");
@@ -226,11 +226,11 @@
   }
 
   function init() {
-    var slider = document.getElementById("swastika-unit-size");
+    var slider = document.getElementById("six-fold-unit-size");
     if (slider) {
-      slider.min = String(SWASTIKA_UNIT_MIN);
-      slider.max = String(SWASTIKA_UNIT_MAX);
-      slider.value = String(SWASTIKA_UNIT_DEFAULT);
+      slider.min = String(SIX_FOLD_UNIT_MIN);
+      slider.max = String(SIX_FOLD_UNIT_MAX);
+      slider.value = String(SIX_FOLD_UNIT_DEFAULT);
       slider.addEventListener("input", render);
     }
 

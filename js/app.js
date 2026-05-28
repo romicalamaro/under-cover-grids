@@ -1,6 +1,11 @@
 (function () {
   "use strict";
 
+  var HALF_CIRCLE_BUILD_ID = "half-circle-y450-2026-05-28T16:30";
+  var HALF_CIRCLE_RADIUS_SCALE = 0.9;
+  var HALF_CIRCLE_INNER_ARC_PAIR_GAP_PX = 20;
+  var HALF_CIRCLE_FAN_STROKE_WIDTH = 1.5;
+  var HALF_CIRCLE_FOCAL_Y = 450;
   var NS = "http://www.w3.org/2000/svg";
   var designSvg = null;
   var cachedExportFontDataUri = null;
@@ -27,14 +32,38 @@
   var lastCircleLayoutSignature = "";
   var diamondFilledIds = new Set();
   var lastDiamondLayoutSignature = "";
-  /** @type {{ dots: { cx: number, cy: number, r: number, fill: string }[], outW: number, outH: number } | null} */
-  var stippleDotsCache = null;
-  /** @type {HTMLImageElement | null} */
-  var stippleSourceImage = null;
-  var stippleSrcW = 0;
-  var stippleSrcH = 0;
-  var stippleColorMode = "bw";
-  var stippleGenerationId = 0;
+  var HOPE_STIPPLE_IMAGE = "stipple-1779907006832.png";
+  var HOPE_DOTS_MASK_ID = "hope-dots-mask";
+  var HOPE_DOTS_MASK_INVERT_FILTER_ID = "hope-dots-mask-invert-filter";
+  var hopeStippleImageReady = false;
+  var hopeStippleExportDataUri = null;
+  var hopeStippleRawExportDataUri = null;
+  var HOPE_DOTS_EXPORT_SAMPLE_STEP_PX =
+    typeof window !== "undefined" &&
+    typeof HOPE_DOTS_EXPORT_SAMPLE_STEP_PX !== "undefined"
+      ? HOPE_DOTS_EXPORT_SAMPLE_STEP_PX
+      : 6;
+  var HOPE_DOTS_EXPORT_ALPHA_THRESHOLD =
+    typeof window !== "undefined" &&
+    typeof HOPE_DOTS_EXPORT_ALPHA_THRESHOLD !== "undefined"
+      ? HOPE_DOTS_EXPORT_ALPHA_THRESHOLD
+      : 10;
+  var HOPE_DOTS_EXPORT_RADIUS_MIN_PX =
+    typeof window !== "undefined" &&
+    typeof HOPE_DOTS_EXPORT_RADIUS_MIN_PX !== "undefined"
+      ? HOPE_DOTS_EXPORT_RADIUS_MIN_PX
+      : 0.45;
+  var HOPE_DOTS_EXPORT_RADIUS_MAX_PX =
+    typeof window !== "undefined" &&
+    typeof HOPE_DOTS_EXPORT_RADIUS_MAX_PX !== "undefined"
+      ? HOPE_DOTS_EXPORT_RADIUS_MAX_PX
+      : 1.15;
+  var hopeDotsColor =
+    typeof HOPE_DOTS_COLOR_DEFAULT !== "undefined"
+      ? HOPE_DOTS_COLOR_DEFAULT
+      : "#000000";
+  var hopePipetteActive = false;
+  var hopePipetteListenerBound = false;
   /** Frame inset overlay (lines, caps, ellipses, diagonals); default hidden */
   var frameInsetOverlayVisible = false;
 
@@ -66,6 +95,10 @@
   var lastBrownBarGridLayoutSignature = "";
   /** Random height ratios for left/right margin rows (regenerated on slider input). */
   var cachedBorderSideSegmentRatios = null;
+  /** Stable shuffled order for whitening left/right margin division cells. */
+  var cachedBorderSideWhiteCellOrder = null;
+  /** Cell ids (col-row) currently painted white by the color-fade slider. */
+  var borderSideWhiteCellIds = new Set();
   /** One random 8-digit serial per page load (top + bottom white strips). */
   var canvasEdgeSerial = null;
   /** Cached inline SVG assets for the dynamic label bar. */
@@ -124,15 +157,26 @@
     return emotionCanvasVisible[key] !== false;
   }
 
-  function syncFeelingsCanvasToggleButtons(key) {
-    var onBtn = document.getElementById("feelings-" + key + "-canvas-on");
-    var offBtn = document.getElementById("feelings-" + key + "-canvas-off");
+  function syncVisibilityTogglePair(onId, offId, visible) {
+    var onBtn = document.getElementById(onId);
+    var offBtn = document.getElementById(offId);
     if (!onBtn || !offBtn) return;
-    var visible = isEmotionCanvasVisible(key);
     onBtn.classList.toggle("is-active", visible);
     offBtn.classList.toggle("is-active", !visible);
     onBtn.setAttribute("aria-pressed", String(visible));
     offBtn.setAttribute("aria-pressed", String(!visible));
+  }
+
+  function syncFeelingsCanvasToggleButtons(key) {
+    var visible = isEmotionCanvasVisible(key);
+    syncVisibilityTogglePair(
+      "feelings-" + key + "-canvas-on",
+      "feelings-" + key + "-canvas-off",
+      visible
+    );
+    if (key === "hope") {
+      syncVisibilityTogglePair("hope-layer-on", "hope-layer-off", visible);
+    }
   }
 
   function setEmotionCanvasVisible(key, visible) {
@@ -146,6 +190,10 @@
     renderVerticalGridLayer();
     renderDiamondFillsLayer();
     renderPatternLayer();
+    if (isStarGrid()) {
+      renderBackgroundLayer();
+      renderGridMaskLayer("refreshEmotionCanvasLayers");
+    }
     renderAutoMergeFillsLayer();
     applyMergeReveal();
     renderStippleDotsLayer();
@@ -176,6 +224,424 @@
         }
       })(key);
     }
+
+    var hopeOnBtn = document.getElementById("hope-layer-on");
+    var hopeOffBtn = document.getElementById("hope-layer-off");
+    if (hopeOnBtn) {
+      hopeOnBtn.addEventListener("click", function () {
+        setEmotionCanvasVisible("hope", true);
+      });
+    }
+    if (hopeOffBtn) {
+      hopeOffBtn.addEventListener("click", function () {
+        setEmotionCanvasVisible("hope", false);
+      });
+    }
+  }
+
+  function hexToRgb(hex) {
+    var h = hex.replace("#", "");
+    if (h.length === 3) {
+      h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+    }
+    if (h.length !== 6) return { r: 0, g: 0, b: 0 };
+    return {
+      r: parseInt(h.slice(0, 2), 16),
+      g: parseInt(h.slice(2, 4), 16),
+      b: parseInt(h.slice(4, 6), 16),
+    };
+  }
+
+  function parseCssColorToHex(cssColor) {
+    if (!cssColor || cssColor === "none" || cssColor === "transparent") {
+      return null;
+    }
+    if (cssColor.charAt(0) === "#") {
+      if (cssColor.length === 4) {
+        return (
+          "#" +
+          cssColor[1] +
+          cssColor[1] +
+          cssColor[2] +
+          cssColor[2] +
+          cssColor[3] +
+          cssColor[3]
+        );
+      }
+      return cssColor.length === 7 ? cssColor : null;
+    }
+    var m = cssColor.match(
+      /rgba?\(\s*([\d.]+%?)\s*,\s*([\d.]+%?)\s*,\s*([\d.]+%?)(?:\s*,\s*([\d.]+%?))?\s*\)/
+    );
+    if (!m) return null;
+    if (m[4] !== undefined) {
+      var alpha = m[4].indexOf("%") >= 0 ? parseFloat(m[4]) / 100 : parseFloat(m[4]);
+      if (alpha < 0.05) return null;
+    }
+    function channel(v) {
+      if (String(v).indexOf("%") >= 0) {
+        return Math.round((parseFloat(v) / 100) * 255);
+      }
+      return Math.max(0, Math.min(255, Math.round(Number(v))));
+    }
+    var r = channel(m[1]);
+    var g = channel(m[2]);
+    var b = channel(m[3]);
+    return (
+      "#" +
+      [r, g, b]
+        .map(function (n) {
+          return n.toString(16).padStart(2, "0");
+        })
+        .join("")
+    );
+  }
+
+  function getHopeDotsColor() {
+    var input = document.getElementById("hope-dots-color");
+    return input ? input.value : hopeDotsColor;
+  }
+
+  function setHopeDotsColor(hex) {
+    if (!hex) return;
+    hopeDotsColor = hex;
+    var input = document.getElementById("hope-dots-color");
+    if (input) input.value = hex;
+    refreshHopeColoredExportDataUri();
+    renderStippleDotsLayer();
+  }
+
+  function bakeHopeColoredStippleDataUri(img, colorHex) {
+    try {
+      var canvas = document.createElement("canvas");
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      var ctx = canvas.getContext("2d");
+      if (!ctx) return null;
+      ctx.drawImage(img, 0, 0);
+      var imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      var rgb = hexToRgb(colorHex);
+      var data = imageData.data;
+      var i;
+      var lum;
+      var dot;
+      for (i = 0; i < data.length; i += 4) {
+        lum = (data[i] + data[i + 1] + data[i + 2]) / 3;
+        dot = 1 - lum / 255;
+        if (dot < 0.04) {
+          data[i + 3] = 0;
+        } else {
+          data[i] = rgb.r;
+          data[i + 1] = rgb.g;
+          data[i + 2] = rgb.b;
+          data[i + 3] = Math.round(255 * dot);
+        }
+      }
+      ctx.putImageData(imageData, 0, 0);
+      return canvas.toDataURL("image/png");
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function blobToDataUri(blob) {
+    return new Promise(function (resolve) {
+      try {
+        var reader = new FileReader();
+        reader.onload = function () {
+          resolve(typeof reader.result === "string" ? reader.result : null);
+        };
+        reader.onerror = function () {
+          resolve(null);
+        };
+        reader.readAsDataURL(blob);
+      } catch (e) {
+        resolve(null);
+      }
+    });
+  }
+
+  function ensureHopeStippleRawExportDataUri() {
+    if (hopeStippleRawExportDataUri) {
+      return Promise.resolve(hopeStippleRawExportDataUri);
+    }
+    return fetch(HOPE_STIPPLE_IMAGE)
+      .then(function (res) {
+        if (!res || !res.ok) return null;
+        return res.blob();
+      })
+      .then(function (blob) {
+        if (!blob) return null;
+        return blobToDataUri(blob);
+      })
+      .then(function (dataUri) {
+        if (dataUri) hopeStippleRawExportDataUri = dataUri;
+        return hopeStippleRawExportDataUri;
+      })
+      .catch(function () {
+        return hopeStippleRawExportDataUri;
+      });
+  }
+
+  function hash01FromInts(a, b, salt) {
+    var x = (a | 0) * 374761393 + (b | 0) * 668265263 + (salt | 0) * 362437;
+    x = (x ^ (x >> 13)) | 0;
+    x = (x * 1274126177) | 0;
+    x = (x ^ (x >> 16)) | 0;
+    return ((x >>> 0) % 100000) / 100000;
+  }
+
+  function buildHopeDotsCirclesExportLines() {
+    if (
+      !isEmotionCanvasVisible("hope") ||
+      !hasActiveMergeCutouts() ||
+      !hopeStippleImageReady
+    ) {
+      return Promise.resolve(null);
+    }
+
+    var dotColor = getHopeDotsColor();
+
+    // Procedural circles (no image sampling). Stable under file:// export.
+    return new Promise(function (resolve) {
+      try {
+        var step = Math.max(3, Math.round(Number(HOPE_DOTS_EXPORT_SAMPLE_STEP_PX) || 7));
+        var jitter = step * 0.42;
+        var rMin = Math.max(0.05, Number(HOPE_DOTS_EXPORT_RADIUS_MIN_PX) || 0.5);
+        var rMax = Math.max(rMin, Number(HOPE_DOTS_EXPORT_RADIUS_MAX_PX) || 1.25);
+
+        var mergedRegions = getMergedRegionsForMask();
+        if (!mergedRegions || !mergedRegions.length) return resolve(null);
+
+        var lines = [];
+        lines.push("<defs>");
+        lines.push('<clipPath id="' + MERGE_REGIONS_CLIP_ID + '">');
+        for (var i = 0; i < mergedRegions.length; i++) {
+          var pts = mergedRegions[i].points;
+          if (!pts || !pts.length) continue;
+          var pointsAttr = "";
+          for (var p = 0; p < pts.length; p++) {
+            if (p) pointsAttr += " ";
+            pointsAttr += pts[p].x + "," + pts[p].y;
+          }
+          lines.push('<polygon points="' + pointsAttr + '"/>');
+        }
+        lines.push("</clipPath>");
+        lines.push("</defs>");
+
+        lines.push('<g clip-path="url(#inner-content-clip)">');
+        lines.push(
+          '<g id="layer-stipple-dots" clip-path="url(#' +
+            MERGE_REGIONS_CLIP_ID +
+            ')" fill="' +
+            dotColor +
+            '" stroke="none">'
+        );
+
+        var circleCount = 0;
+        var tested = 0;
+        for (var y = 0; y < CANVAS_H; y += step) {
+          for (var x = 0; x < CANVAS_W; x += step) {
+            var cx =
+              x +
+              step * 0.5 +
+              (hash01FromInts(x, y, 11) - 0.5) * 2 * jitter;
+            var cy =
+              y +
+              step * 0.5 +
+              (hash01FromInts(x, y, 23) - 0.5) * 2 * jitter;
+            tested++;
+
+            var inside = false;
+            for (var ri = 0; ri < mergedRegions.length; ri++) {
+              var rpts = mergedRegions[ri].points;
+              if (rpts && rpts.length && hopePointInPolygon(cx, cy, rpts)) {
+                inside = true;
+                break;
+              }
+            }
+            if (!inside) continue;
+
+            var t = hash01FromInts(x, y, 37);
+            if (t < 0.25) continue; // thin out a bit
+
+            var r = rMin + (rMax - rMin) * t;
+            lines.push(
+              '<circle cx="' +
+                cx.toFixed(2) +
+                '" cy="' +
+                cy.toFixed(2) +
+                '" r="' +
+                r.toFixed(2) +
+                '"/>'
+            );
+            circleCount++;
+          }
+        }
+
+        lines.push("</g>");
+        lines.push("</g>");
+        resolve(lines);
+      } catch (e) {
+        resolve(null);
+      }
+    });
+  }
+
+  function refreshHopeColoredExportDataUri() {
+    if (!hopeStippleImageReady) return;
+    var img = new Image();
+    img.onload = function () {
+      hopeStippleExportDataUri = bakeHopeColoredStippleDataUri(
+        img,
+        getHopeDotsColor()
+      );
+    };
+    img.src = HOPE_STIPPLE_IMAGE;
+  }
+
+  function ensureHopeDotsMaskDef(defs) {
+    if (!defs || !hopeStippleImageReady) return;
+
+    var filter = defs.querySelector("#" + HOPE_DOTS_MASK_INVERT_FILTER_ID);
+    if (!filter) {
+      filter = elSvg("filter");
+      filter.setAttribute("id", HOPE_DOTS_MASK_INVERT_FILTER_ID);
+      var cm = elSvg("feColorMatrix");
+      cm.setAttribute("type", "matrix");
+      cm.setAttribute(
+        "values",
+        "0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  -1 -1 -1 1 1"
+      );
+      filter.appendChild(cm);
+      defs.appendChild(filter);
+    }
+
+    var mask = defs.querySelector("#" + HOPE_DOTS_MASK_ID);
+    if (!mask) {
+      mask = elSvg("mask");
+      mask.setAttribute("id", HOPE_DOTS_MASK_ID);
+      mask.setAttribute("maskUnits", "userSpaceOnUse");
+      mask.setAttribute("x", "0");
+      mask.setAttribute("y", "0");
+      mask.setAttribute("width", String(CANVAS_W));
+      mask.setAttribute("height", String(CANVAS_H));
+      defs.appendChild(mask);
+    }
+
+    while (mask.firstChild) mask.removeChild(mask.firstChild);
+    var maskImg = elSvg("image");
+    maskImg.setAttribute("href", HOPE_STIPPLE_IMAGE);
+    maskImg.setAttribute("filter", "url(#" + HOPE_DOTS_MASK_INVERT_FILTER_ID + ")");
+    maskImg.setAttribute("x", "0");
+    maskImg.setAttribute("y", "0");
+    maskImg.setAttribute("width", String(CANVAS_W));
+    maskImg.setAttribute("height", String(CANVAS_H));
+    maskImg.setAttribute("preserveAspectRatio", "none");
+    mask.appendChild(maskImg);
+  }
+
+  function setHopePipetteActive(active) {
+    hopePipetteActive = !!active;
+    document.body.classList.toggle("hope-pipette-active", hopePipetteActive);
+    var btn = document.getElementById("hope-dots-pipette-btn");
+    if (btn) {
+      btn.classList.toggle("is-active", hopePipetteActive);
+      btn.setAttribute("aria-pressed", String(hopePipetteActive));
+    }
+  }
+
+  function sampleColorAtClientPoint(clientX, clientY) {
+    var el = document.elementFromPoint(clientX, clientY);
+    while (el && el !== document.documentElement) {
+      if (el.id === "hope-dots-pipette-btn" || el.closest(".sidebar")) {
+        return null;
+      }
+      var cs = window.getComputedStyle(el);
+      var candidates = [cs.fill, cs.stroke, cs.color];
+      var i;
+      var hex;
+      for (i = 0; i < candidates.length; i++) {
+        hex = parseCssColorToHex(candidates[i]);
+        if (hex) return hex;
+      }
+      el = el.parentElement;
+    }
+    return null;
+  }
+
+  function runHopeEyeDropper() {
+    if (!window.EyeDropper) return false;
+    var dropper = new window.EyeDropper();
+    dropper
+      .open()
+      .then(function (result) {
+        setHopeDotsColor(result.sRGBHex);
+        setHopePipetteActive(false);
+      })
+      .catch(function () {
+        setHopePipetteActive(false);
+      });
+    return true;
+  }
+
+  function onHopePipettePointerDown(e) {
+    if (!hopePipetteActive || interactionMode !== "view" || !designSvg) return;
+    if (!designSvg.contains(e.target)) return;
+    var hex = sampleColorAtClientPoint(e.clientX, e.clientY);
+    if (hex) setHopeDotsColor(hex);
+    setHopePipetteActive(false);
+    e.preventDefault();
+    e.stopPropagation();
+  }
+
+  function bindHopePipetteCanvasListener() {
+    if (hopePipetteListenerBound || !designSvg) return;
+    designSvg.addEventListener("pointerdown", onHopePipettePointerDown, true);
+    hopePipetteListenerBound = true;
+  }
+
+  function initHopeDotsColorControls() {
+    var colorInput = document.getElementById("hope-dots-color");
+    var pipetteBtn = document.getElementById("hope-dots-pipette-btn");
+    if (colorInput) {
+      colorInput.value = hopeDotsColor;
+      colorInput.addEventListener("input", function () {
+        setHopeDotsColor(colorInput.value);
+      });
+    }
+    if (pipetteBtn) {
+      pipetteBtn.addEventListener("click", function () {
+        if (hopePipetteActive) {
+          setHopePipetteActive(false);
+          return;
+        }
+        if (!runHopeEyeDropper()) {
+          setHopePipetteActive(true);
+        }
+      });
+    }
+    bindHopePipetteCanvasListener();
+  }
+
+  function loadHopeStippleImage() {
+    var img = new Image();
+    img.onload = function () {
+      hopeStippleImageReady = true;
+      hopeStippleExportDataUri = bakeHopeColoredStippleDataUri(
+        img,
+        getHopeDotsColor()
+      );
+      ensureHopeStippleRawExportDataUri();
+      renderStippleDotsLayer();
+      applyMergeReveal();
+    };
+    img.onerror = function () {
+      hopeStippleImageReady = false;
+      hopeStippleExportDataUri = null;
+      hopeStippleRawExportDataUri = null;
+    };
+    img.src = HOPE_STIPPLE_IMAGE;
   }
 
   function getStarGridOctagonsNMax() {
@@ -283,14 +749,8 @@
     if (innerScaleWrap) innerScaleWrap.hidden = isStarGrid();
   }
 
-  /** Star grid: deferred until later integration steps (gradient, emotions, etc.). */
-  var STAR_GRID_DEFERRED_LAYER_SELECTORS = [
-    "#inner-clipped-background",
-    "#inner-clipped-stipple-dots",
-    "#inner-clipped-grid-mask",
-    "#inner-clipped-auto-merge-fills",
-    "#layer-frame-inset-overlay",
-  ];
+  /** Star grid: layers not used yet (gradient overlay, etc.). */
+  var STAR_GRID_DEFERRED_LAYER_SELECTORS = ["#layer-frame-inset-overlay"];
 
   function setSvgSubtreeVisible(selector, visible) {
     if (!designSvg) return;
@@ -512,11 +972,149 @@
   }
 
   function getBorderLeftRightSegments() {
+    return BORDER_LEFT_RIGHT_SEGMENTS_DEFAULT;
+  }
+
+  /**
+   * Section 3 (Family and friends in Iran): 3-step control that changes only
+   * the border strip thickness (in columns of the existing border width).
+   * @returns {1|2|3}
+   */
+  function getBorderSideThicknessColumns() {
     var slider = document.getElementById("border-side-segments");
-    var v = slider ? Number(slider.value) : BORDER_LEFT_RIGHT_SEGMENTS_DEFAULT;
-    return Math.min(
-      BORDER_LEFT_RIGHT_SEGMENTS_MAX,
-      Math.max(BORDER_LEFT_RIGHT_SEGMENTS_MIN, Math.round(v))
+    var v = slider ? Number(slider.value) : 1;
+    var clamped = Math.min(3, Math.max(1, Math.round(v)));
+    return /** @type {1|2|3} */ (clamped);
+  }
+
+  /**
+   * @param {1|2|3} cols
+   * @returns {"Thin"|"Medium"|"Thick"}
+   */
+  function borderSideThicknessLabel(cols) {
+    if (cols === 1) return "Thin";
+    if (cols === 2) return "Medium";
+    return "Thick";
+  }
+
+  function getBorderSideWhiteFillSliderValue() {
+    var slider = document.getElementById("border-side-white-fill");
+    var fallback =
+      typeof BORDER_SIDE_WHITE_FILL_DEFAULT !== "undefined"
+        ? BORDER_SIDE_WHITE_FILL_DEFAULT
+        : 0;
+    var v = slider ? Number(slider.value) : fallback;
+    var min =
+      typeof BORDER_SIDE_WHITE_FILL_MIN !== "undefined"
+        ? BORDER_SIDE_WHITE_FILL_MIN
+        : 0;
+    var max =
+      typeof BORDER_SIDE_WHITE_FILL_MAX !== "undefined"
+        ? BORDER_SIDE_WHITE_FILL_MAX
+        : 100;
+    return Math.min(max, Math.max(min, Math.round(v)));
+  }
+
+  /**
+   * Effective share of margin division cells painted white (0 … cap).
+   * @returns {number}
+   */
+  function getBorderSideWhiteFillTargetPercent() {
+    var cap =
+      typeof BORDER_SIDE_WHITE_CAP_PERCENT !== "undefined"
+        ? BORDER_SIDE_WHITE_CAP_PERCENT
+        : 60;
+    var sliderMax =
+      typeof BORDER_SIDE_WHITE_FILL_MAX !== "undefined"
+        ? BORDER_SIDE_WHITE_FILL_MAX
+        : 100;
+    return Math.round(
+      (getBorderSideWhiteFillSliderValue() * cap) / sliderMax
+    );
+  }
+
+  function syncBorderSideWhiteFillOutput() {
+    var out = document.getElementById("border-side-white-fill-out");
+    if (out) {
+      out.textContent = String(getBorderSideWhiteFillTargetPercent()) + "%";
+    }
+  }
+
+  /**
+   * Left/right margin division slots (one per column × row).
+   * @returns {{ id: string }[]}
+   */
+  function getBorderSideDivisionCellCatalog() {
+    var cols = getBorderSideThicknessColumns();
+    var yBounds = getLeftRightBorderCellYBounds();
+    var rowCount = yBounds.length - 1;
+    var catalog = [];
+    var c;
+    var r;
+    for (c = 0; c < cols; c++) {
+      for (r = 0; r < rowCount; r++) {
+        catalog.push({ id: String(c) + "-" + String(r) });
+      }
+    }
+    return catalog;
+  }
+
+  /**
+   * @param {boolean} forceReshuffle
+   */
+  function syncBorderSideWhiteCells(forceReshuffle) {
+    var catalog = getBorderSideDivisionCellCatalog();
+    var catalogIds = catalog.map(function (item) {
+      return item.id;
+    });
+    var validSet = new Set(catalogIds);
+
+    if (forceReshuffle || !cachedBorderSideWhiteCellOrder) {
+      cachedBorderSideWhiteCellOrder = shufflePickIds(catalog, catalogIds.length);
+    } else {
+      cachedBorderSideWhiteCellOrder = cachedBorderSideWhiteCellOrder.filter(
+        function (id) {
+          return validSet.has(id);
+        }
+      );
+      var existing = new Set(cachedBorderSideWhiteCellOrder);
+      var newcomers = [];
+      var i;
+      for (i = 0; i < catalogIds.length; i++) {
+        if (!existing.has(catalogIds[i])) newcomers.push(catalogIds[i]);
+      }
+      if (newcomers.length) {
+        for (i = newcomers.length - 1; i > 0; i--) {
+          var j = Math.floor(Math.random() * (i + 1));
+          var tmp = newcomers[i];
+          newcomers[i] = newcomers[j];
+          newcomers[j] = tmp;
+        }
+        cachedBorderSideWhiteCellOrder =
+          cachedBorderSideWhiteCellOrder.concat(newcomers);
+      }
+    }
+
+    var targetPercent = getBorderSideWhiteFillTargetPercent();
+    var target = Math.round((catalog.length * targetPercent) / 100);
+    if (target < 0) target = 0;
+    if (target > catalog.length) target = catalog.length;
+
+    borderSideWhiteCellIds.clear();
+    for (i = 0; i < target; i++) {
+      borderSideWhiteCellIds.add(cachedBorderSideWhiteCellOrder[i]);
+    }
+  }
+
+  /**
+   * @param {number} colIndex 0 = outer margin column
+   * @param {number} rowIndex 0 = top row
+   * @returns {boolean}
+   */
+  function isBorderSideCellWhitened(colIndex, rowIndex) {
+    if (getBorderSideWhiteFillTargetPercent() <= 0) return false;
+    return borderSideWhiteCellIds.has(
+      String(colIndex) + "-" + String(rowIndex)
     );
   }
 
@@ -624,7 +1222,10 @@
     var borderFill = designSvg.querySelector("#canvas-background-fill");
     if (borderFill) borderFill.setAttribute("fill", fill);
     if (isStarGrid()) {
+      renderBackgroundLayer();
       updateBorderDivisionLines();
+      renderGridMaskLayer("canvas-background-color");
+      applyMergeReveal();
       return;
     }
     renderBackgroundLayer();
@@ -669,7 +1270,8 @@
   }
 
   function hasActiveMergeCutouts() {
-    return removedEdges.size > 0;
+    if (removedEdges.size > 0) return true;
+    return !!(stickyMergedCutoutFaces && stickyMergedCutoutFaces.length);
   }
 
   function updateGridWhiteMaskDef(defs, mergedRegions, bounds) {
@@ -759,13 +1361,18 @@
     if (!defs || !layer) return;
 
     var bounds = getGridContentBounds();
-    var freshRegions = TopkapiGeometry.getMergedPolygonRegions(
-      cachedAllSegments,
+    var mergeSegments = getSegmentsForMergeRegionDetection();
+    var rawMergedRegions = TopkapiGeometry.getMergedPolygonRegions(
+      mergeSegments,
       removedEdges
     );
+    var freshRegions = filterHopeMergeRegionsForGridType(rawMergedRegions);
     var mergedRegions;
     if (!removedEdges.size) {
       stickyMergedCutoutFaces = null;
+      mergedRegions = freshRegions;
+    } else if (isStarGrid()) {
+      stickyMergedCutoutFaces = freshRegions;
       mergedRegions = freshRegions;
     } else if (trigger === "restore" || interactionMode === "restore") {
       stickyMergedCutoutFaces = freshRegions;
@@ -807,8 +1414,11 @@
     var dotsClipped = designSvg.querySelector("#inner-clipped-stipple-dots");
     var dotsLayer = designSvg.querySelector("#layer-stipple-dots");
     var defs = designSvg.querySelector("defs");
+    var hasClipDef = !!(
+      defs && defs.querySelector("#" + MERGE_REGIONS_CLIP_ID)
+    );
     if (maskClipped) {
-      maskClipped.style.display = active ? "" : "none";
+      maskClipped.style.display = active && showHope ? "" : "none";
     }
 
     if (!active || !showHope) {
@@ -818,11 +1428,12 @@
     }
 
     if (dotsClipped) dotsClipped.style.display = "";
-    if (dotsLayer && defs && defs.querySelector("#" + MERGE_REGIONS_CLIP_ID)) {
+    if (dotsLayer && hasClipDef) {
       dotsLayer.setAttribute("clip-path", "url(#" + MERGE_REGIONS_CLIP_ID + ")");
     } else if (dotsLayer) {
       dotsLayer.removeAttribute("clip-path");
     }
+
     renderStippleDotsLayer();
   }
 
@@ -830,9 +1441,11 @@
    * @returns {{ points: { x: number, y: number }[] }[]}
    */
   function getMergedRegionsForMask() {
-    var freshRegions = TopkapiGeometry.getMergedPolygonRegions(
-      cachedAllSegments,
-      removedEdges
+    var freshRegions = filterHopeMergeRegionsForGridType(
+      TopkapiGeometry.getMergedPolygonRegions(
+        getSegmentsForMergeRegionDetection(),
+        removedEdges
+      )
     );
     if (!removedEdges.size) return freshRegions;
     if (stickyMergedCutoutFaces) return stickyMergedCutoutFaces;
@@ -1096,23 +1709,6 @@
     lines.push("</g>");
   }
 
-  /**
-   * Fit uploaded image into canvas at resolution percent.
-   * @param {number} resolutionPct
-   * @returns {{ outW: number, outH: number }}
-   */
-  function getStippleOutputSize(resolutionPct) {
-    if (!stippleSrcW || !stippleSrcH) {
-      return { outW: CANVAS_W, outH: CANVAS_H };
-    }
-    var pct = resolutionPct / 100;
-    var fit = Math.min(CANVAS_W / stippleSrcW, CANVAS_H / stippleSrcH) * pct;
-    return {
-      outW: Math.max(1, Math.round(stippleSrcW * fit)),
-      outH: Math.max(1, Math.round(stippleSrcH * fit)),
-    };
-  }
-
   function renderStippleDotsLayer() {
     if (!designSvg) return;
     var layer = designSvg.querySelector("#layer-stipple-dots");
@@ -1124,36 +1720,28 @@
     if (
       !isEmotionCanvasVisible("hope") ||
       !hasActiveMergeCutouts() ||
-      !stippleDotsCache ||
-      !stippleDotsCache.dots.length
+      !hopeStippleImageReady
     ) {
       applyMergeReveal();
       return;
     }
 
-    if (defs && defs.querySelector("#" + MERGE_REGIONS_CLIP_ID)) {
+    var hasMergeClip = !!(
+      defs && defs.querySelector("#" + MERGE_REGIONS_CLIP_ID)
+    );
+    if (hasMergeClip) {
       layer.setAttribute("clip-path", "url(#" + MERGE_REGIONS_CLIP_ID + ")");
     }
 
-    var cache = stippleDotsCache;
-    var scale = Math.min(CANVAS_W / cache.outW, CANVAS_H / cache.outH);
-    var offsetX = (CANVAS_W - cache.outW * scale) / 2;
-    var offsetY = (CANVAS_H - cache.outH * scale) / 2;
-    var dots = cache.dots;
-    var i;
-    var d;
-    var circle;
-
-    for (i = 0; i < dots.length; i++) {
-      d = dots[i];
-      circle = elSvg("circle");
-      circle.setAttribute("cx", String(offsetX + d.cx * scale));
-      circle.setAttribute("cy", String(offsetY + d.cy * scale));
-      circle.setAttribute("r", String(d.r * scale));
-      circle.setAttribute("fill", d.fill);
-      circle.setAttribute("stroke", "none");
-      layer.appendChild(circle);
-    }
+    ensureHopeDotsMaskDef(defs);
+    var fill = elSvg("rect");
+    fill.setAttribute("x", "0");
+    fill.setAttribute("y", "0");
+    fill.setAttribute("width", String(CANVAS_W));
+    fill.setAttribute("height", String(CANVAS_H));
+    fill.setAttribute("fill", getHopeDotsColor());
+    fill.setAttribute("mask", "url(#" + HOPE_DOTS_MASK_ID + ")");
+    layer.appendChild(fill);
   }
 
   /**
@@ -1163,8 +1751,7 @@
     if (
       !isEmotionCanvasVisible("hope") ||
       !hasActiveMergeCutouts() ||
-      !stippleDotsCache ||
-      !stippleDotsCache.dots.length
+      !hopeStippleImageReady
     ) {
       return;
     }
@@ -1191,32 +1778,60 @@
       lines.push("</defs>");
     }
 
-    var cache = stippleDotsCache;
-    var scale = Math.min(CANVAS_W / cache.outW, CANVAS_H / cache.outH);
-    var offsetX = (CANVAS_W - cache.outW * scale) / 2;
-    var offsetY = (CANVAS_H - cache.outH * scale) / 2;
-    var dots = cache.dots;
-    var i;
-    var d;
+    var imageHref = hopeStippleExportDataUri || hopeStippleRawExportDataUri || HOPE_STIPPLE_IMAGE;
+    var dotColor = getHopeDotsColor();
 
     lines.push('<g clip-path="url(#inner-content-clip)">');
+    lines.push("<defs>");
+    lines.push(
+      '<filter id="' +
+        HOPE_DOTS_MASK_INVERT_FILTER_ID +
+        '-export"><feColorMatrix type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  -1 -1 -1 1 1"/></filter>'
+    );
+    lines.push(
+      '<mask id="' +
+        HOPE_DOTS_MASK_ID +
+        '-export" maskUnits="userSpaceOnUse" x="0" y="0" width="' +
+        CANVAS_W +
+        '" height="' +
+        CANVAS_H +
+        '"><image href="' +
+        imageHref +
+        '" filter="url(#' +
+        HOPE_DOTS_MASK_INVERT_FILTER_ID +
+        '-export)" x="0" y="0" width="' +
+        CANVAS_W +
+        '" height="' +
+        CANVAS_H +
+        '" preserveAspectRatio="none"/></mask>'
+    );
+    lines.push("</defs>");
     lines.push(
       '<g id="layer-stipple-dots" clip-path="url(#' +
         MERGE_REGIONS_CLIP_ID +
         ')">'
     );
-    for (i = 0; i < dots.length; i++) {
-      d = dots[i];
+    if (hopeStippleExportDataUri) {
       lines.push(
-        '<circle cx="' +
-          (offsetX + d.cx * scale) +
-          '" cy="' +
-          (offsetY + d.cy * scale) +
-          '" r="' +
-          d.r * scale +
+        '<image href="' +
+          imageHref +
+          '" x="0" y="0" width="' +
+          CANVAS_W +
+          '" height="' +
+          CANVAS_H +
+          '" preserveAspectRatio="none"/>'
+      );
+    } else {
+      lines.push(
+        '<rect x="0" y="0" width="' +
+          CANVAS_W +
+          '" height="' +
+          CANVAS_H +
           '" fill="' +
-          d.fill +
-          '" stroke="none"/>'
+          dotColor +
+          '" mask="url(#' +
+          HOPE_DOTS_MASK_ID +
+          '-export)"/>'
       );
     }
     lines.push("</g>");
@@ -1228,11 +1843,28 @@
   }
 
   function getUprightSquareCatalog() {
+    if (isStarGrid()) {
+      if (
+        typeof NestedStarOctagonsGeometry === "undefined" ||
+        !NestedStarOctagonsGeometry.buildJunctionCircleCatalog
+      ) {
+        return [];
+      }
+      return NestedStarOctagonsGeometry.buildJunctionCircleCatalog(
+        getStarLayout(),
+        CANVAS_W,
+        CANVAS_H
+      );
+    }
     return TopkapiGeometry.buildUprightSquareCatalog(
       lastOctagonsN,
       CANVAS_W,
       CANVAS_H
     );
+  }
+
+  function buildCircleLayoutSignature() {
+    return buildDiamondLayoutSignature();
   }
 
   function getDiamondCatalog() {
@@ -1508,6 +2140,219 @@
     );
   }
 
+  /**
+   * Inner star fill outlines as segments (tracing only — not drawn as extra lines).
+   * @param {{ outline: { x: number, y: number }[] }[]} starFills
+   * @returns {{ x1: number, y1: number, x2: number, y2: number }[]}
+   */
+  function starFillOutlineSegments(starFills) {
+    var out = [];
+    var seen = new Set();
+    var fi;
+    var ei;
+    var pts;
+    var n;
+    var a;
+    var b;
+    var key;
+
+    for (fi = 0; fi < starFills.length; fi++) {
+      pts = starFills[fi].outline;
+      if (!pts || pts.length < 3) continue;
+      n = pts.length;
+      for (ei = 0; ei < n; ei++) {
+        a = pts[ei];
+        b = pts[(ei + 1) % n];
+        key = TopkapiGeometry.segmentKey(a.x, a.y, b.x, b.y);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push({ x1: a.x, y1: a.y, x2: b.x, y2: b.y });
+      }
+    }
+    return out;
+  }
+
+  /** Line network for face tracing / merge (includes star fill boundaries on star grid). */
+  function getAllSegmentsForTracing() {
+    if (!isStarGrid() || !cachedStarFills.length) {
+      return cachedAllSegments;
+    }
+    var seen = new Set();
+    var out = [];
+    var i;
+    var s;
+    var key;
+    for (i = 0; i < cachedAllSegments.length; i++) {
+      s = cachedAllSegments[i];
+      key = TopkapiGeometry.segmentKey(s.x1, s.y1, s.x2, s.y2);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(s);
+    }
+    var extra = starFillOutlineSegments(cachedStarFills);
+    for (i = 0; i < extra.length; i++) {
+      s = extra[i];
+      key = TopkapiGeometry.segmentKey(s.x1, s.y1, s.x2, s.y2);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(s);
+    }
+    return out;
+  }
+
+  /**
+   * Hope mask / merge cutouts use the same segment network as drag tracing (includes
+   * star fill outlines on the star grid). False positives are filtered in
+   * filterHopeMergeRegionsForGridType (min area + multi-star enclosure).
+   * @returns {{x1:number,y1:number,x2:number,y2:number}[]}
+   */
+  function getSegmentsForMergeRegionDetection() {
+    return getAllSegmentsForTracing();
+  }
+
+  function hopePointInPolygon(px, py, points) {
+    var inside = false;
+    var i;
+    var j;
+    for (i = 0, j = points.length - 1; i < points.length; j = i++) {
+      var yi = points[i].y;
+      var yj = points[j].y;
+      if ((yi > py) !== (yj > py)) {
+        if (
+          px <
+          ((points[j].x - points[i].x) * (py - yi)) / (yj - yi) + points[i].x
+        ) {
+          inside = !inside;
+        }
+      }
+    }
+    return inside;
+  }
+
+  function getStarFillCentroid(outline) {
+    var x = 0;
+    var y = 450;
+    var i;
+    for (i = 0; i < outline.length; i++) {
+      x += outline[i].x;
+      y += outline[i].y;
+    }
+    return { x: x / outline.length, y: y / outline.length };
+  }
+
+  /** How many star cells lie inside a merged Hope cutout (must be 2+ for a real merge). */
+  function countStarFillsInsideMergeRegion(region) {
+    if (!cachedStarFills.length || !region.points.length) return 0;
+    var count = 0;
+    var i;
+    var outline;
+    var c;
+    for (i = 0; i < cachedStarFills.length; i++) {
+      outline = cachedStarFills[i].outline;
+      if (!outline || outline.length < 3) continue;
+      c = getStarFillCentroid(outline);
+      if (hopePointInPolygon(c.x, c.y, region.points)) count++;
+    }
+    return count;
+  }
+
+  function polygonAreaAbs(points) {
+    var area = 0;
+    var i;
+    var j;
+    for (i = 0; i < points.length; i++) {
+      j = (i + 1) % points.length;
+      area += points[i].x * points[j].y - points[j].x * points[i].y;
+    }
+    return Math.abs(area * 0.5);
+  }
+
+  function getStarGridHopeMergeMinAreaPx() {
+    var tile = lastTileSize;
+    if (!tile || tile <= 0) {
+      tile = getStarLayout().tileSize;
+    }
+    var frac =
+      typeof STAR_GRID_HOPE_MERGE_MIN_AREA_TILE_FRACTION !== "undefined"
+        ? STAR_GRID_HOPE_MERGE_MIN_AREA_TILE_FRACTION
+        : 0.45;
+    return tile * tile * frac;
+  }
+
+  /**
+   * Star grid: drop micro-faces and single-star false positives; keep real multi-star merges.
+   * @param {{ points: { x: number, y: number }[] }[]} regions
+   * @returns {{ points: { x: number, y: number }[] }[]}
+   */
+  function filterHopeMergeRegionsForGridType(regions) {
+    if (!isStarGrid() || !regions.length) return regions;
+    var minArea = getStarGridHopeMergeMinAreaPx();
+    var out = [];
+    var i;
+    for (i = 0; i < regions.length; i++) {
+      if (polygonAreaAbs(regions[i].points) < minArea) continue;
+      if (countStarFillsInsideMergeRegion(regions[i]) < 2) continue;
+      out.push(regions[i]);
+    }
+    return out;
+  }
+
+  function isConvexPolygon(points) {
+    var n = points.length;
+    if (n < 4) return false;
+    var sign = 0;
+    for (var i = 0; i < n; i++) {
+      var a = points[i];
+      var b = points[(i + 1) % n];
+      var c = points[(i + 2) % n];
+      var abx = b.x - a.x;
+      var aby = b.y - a.y;
+      var bcx = c.x - b.x;
+      var bcy = c.y - b.y;
+      var cross = abx * bcy - aby * bcx;
+      if (Math.abs(cross) < 1e-6) continue;
+      var s = cross > 0 ? 1 : -1;
+      if (sign === 0) sign = s;
+      else if (s !== sign) return false;
+    }
+    return sign !== 0;
+  }
+
+  /**
+   * Pride star-grid preference: drop "simple" single-cell octagon fills.
+   * These show up often as a plain convex 8-sided region roughly one tile in area.
+   * @param {{ points: { x: number, y: number }[] }[]} regions
+   * @returns {{ points: { x: number, y: number }[] }[]}
+   */
+  function filterStarGridPrideAutoMergeRegions(regions) {
+    if (!isStarGrid() || !regions.length) return regions;
+    var layout = getStarLayout();
+    var T = layout && layout.tileSize ? layout.tileSize : lastTileSize;
+    if (!T || T <= 0) return regions;
+    var tileArea = T * T;
+
+    var out = [];
+    for (var i = 0; i < regions.length; i++) {
+      var region = regions[i];
+      var pts = region.points || [];
+      if (pts.length < 3) continue;
+
+      var starsInside = countStarFillsInsideMergeRegion(region);
+      var area = polygonAreaAbs(pts);
+      var isSimpleOctagon =
+        starsInside <= 1 &&
+        pts.length >= 8 &&
+        pts.length <= 10 &&
+        isConvexPolygon(pts) &&
+        area > tileArea * 0.55 &&
+        area < tileArea * 0.95;
+
+      if (isSimpleOctagon) continue;
+      out.push(region);
+    }
+    return out;
+  }
+
   function isSegmentRemoved(key) {
     if (removedEdges.has(key)) return true;
     if (isEmotionCanvasVisible("pride") && autoMergeEdgeKeys.has(key)) {
@@ -1578,7 +2423,7 @@
     var changed = false;
     var combined = getCombinedRemovedEdgeSet();
     var pruneKeys = TopkapiGeometry.findDanglingPruneKeys(
-      cachedAllSegments,
+      getAllSegmentsForTracing(),
       combined
     );
     var j;
@@ -1594,12 +2439,13 @@
   }
 
   function runAutoMerge() {
-    if (!cachedAllSegments.length) return;
+    var allSegments = getAllSegmentsForTracing();
+    if (!allSegments.length) return;
 
     clearAutoMergeState();
 
     var bounds = getGridContentBounds();
-    var manualVisible = getVisibleSegmentsManualOnly(cachedAllSegments);
+    var manualVisible = getVisibleSegmentsManualOnly(allSegments);
     var baselineFaces = TopkapiGeometry.traceFaces(manualVisible);
     var plan = TopkapiGeometry.computeAutoMergePlan(
       baselineFaces,
@@ -1625,7 +2471,7 @@
 
     for (ci = 0; ci < clusters.length; ci++) {
       fillRegion = TopkapiGeometry.getClusterFillRegion(
-        cachedAllSegments,
+        allSegments,
         baselineFaces,
         clusters[ci].faceIndices,
         clusters[ci].edgeKeys,
@@ -1634,17 +2480,22 @@
       if (fillRegion) fillRegions.push(fillRegion);
     }
 
-    fillRegions = TopkapiGeometry.appendOrphanAutoMergeFillRegions(
-      fillRegions,
-      cachedAllSegments,
-      baselineFaces,
-      autoMergeEdgeKeys
-    );
+    // Star grid has thousands of small faces; orphan detection fills ~300 extra
+    // regions and blankets the canvas. Octagon grid still uses orphan fills.
+    if (!isStarGrid()) {
+      fillRegions = TopkapiGeometry.appendOrphanAutoMergeFillRegions(
+        fillRegions,
+        allSegments,
+        baselineFaces,
+        autoMergeEdgeKeys
+      );
+    }
 
     autoMergeFillRegions = TopkapiGeometry.filterAutoMergeFillRegions(
       fillRegions,
       baselineFaces
     );
+    autoMergeFillRegions = filterStarGridPrideAutoMergeRegions(autoMergeFillRegions);
 
     renderPatternAndVerticalLayers();
     renderAutoMergeFillsLayer();
@@ -1699,9 +2550,8 @@
       p.setAttribute("d", d);
       p.setAttribute("fill", BG_COLOR);
       p.setAttribute("fill-rule", "nonzero");
-      p.setAttribute("stroke", getPatternStrokeColor());
-      p.setAttribute("stroke-width", String(getGridStrokeWidth()));
-      p.setAttribute("stroke-linejoin", "miter");
+      // Outlines are drawn as line segments (includes star-fill edges for merge).
+      p.setAttribute("stroke", "none");
       g.appendChild(p);
     }
     return g;
@@ -1725,6 +2575,33 @@
       CANVAS_W,
       CANVAS_H
     );
+  }
+
+  /**
+   * Canvas X of the inner edge of the border strip (inward from white margin).
+   * Thin = 1 column, Medium = 2, Thick = 3.
+   * @returns {number}
+   */
+  function getBorderStripInnerEdgePx() {
+    return getBorderSideThicknessColumns() * getCanvasBorderPx();
+  }
+
+  /**
+   * Grid-boundary rect in inner-content coordinates, inset horizontally so the
+   * thick outline sits on the inner edge of the innermost border column.
+   * @returns {{ x: number, y: number, width: number, height: number }}
+   */
+  function getGridBoundaryDisplayBounds() {
+    var bounds = getGridContentBounds();
+    var inset = getBorderStripInnerEdgePx();
+    var off = getInnerContentOffset();
+    var s = getInnerContentScale();
+    return {
+      x: (inset - off.x) / s,
+      y: bounds.y,
+      width: (CANVAS_W - 2 * inset) / s,
+      height: bounds.height,
+    };
   }
 
   function getVerticalGridStrokeWidth() {
@@ -1880,6 +2757,9 @@
       ? collectStarGridVerticalAnchorXCoords()
       : TopkapiGeometry.collectUniqueGridXCoords(cachedAllSegments);
     var bounds = getGridContentBounds();
+    // "Fear" verticals are currently driven by the Anger layer logic.
+    // Restrict verticals to the left third of the grid content area.
+    var xBounds = { x: bounds.x, width: bounds.width / 3 };
     var yTop = bounds.y;
     var yBottom = bounds.y + bounds.height;
     var minDist = getVerticalLineMinDistance();
@@ -1889,7 +2769,7 @@
     var line;
 
     for (i = 0; i < xs.length; i++) {
-      if (!isVerticalLineXInGridBounds(xs[i], bounds)) continue;
+      if (!isVerticalLineXInGridBounds(xs[i], xBounds)) continue;
       if (
         lastPlacedX !== null &&
         isVerticalLineTooClose(xs[i], lastPlacedX, minDist)
@@ -1992,9 +2872,14 @@
   function renderPatternAndVerticalLayers() {
     syncVerticalGridLines(false);
     renderVerticalGridLayer();
+    if (isStarGrid()) {
+      renderBackgroundLayer();
+    }
     renderPatternLayer();
     renderGridMaskLayer("renderPatternAndVerticalLayers");
     renderAutoMergeFillsLayer();
+    applyMergeReveal();
+    renderStippleDotsLayer();
   }
 
   function applyGridBoundaryAttrs(rect, bounds) {
@@ -2014,7 +2899,7 @@
   function createGridBoundaryRect() {
     var rect = elSvg("rect");
     rect.setAttribute("id", "grid-boundary");
-    applyGridBoundaryAttrs(rect, getGridContentBounds());
+    applyGridBoundaryAttrs(rect, getGridBoundaryDisplayBounds());
     applyGridBoundaryStyle(rect);
     return rect;
   }
@@ -2023,7 +2908,7 @@
     if (!designSvg) return;
     var rect = designSvg.querySelector("#grid-boundary");
     if (!rect) return;
-    applyGridBoundaryAttrs(rect, getGridContentBounds());
+    applyGridBoundaryAttrs(rect, getGridBoundaryDisplayBounds());
     applyGridBoundaryStyle(rect);
   }
 
@@ -2351,14 +3236,262 @@
 
   var BORDER_DIVISION_STROKE_WIDTH = 1;
 
+  var BORDER_DIVISION_STROKE_WIDTH = 1;
+  var BORDER_SIDE_WHITE_INNER_SHADOW_FILTER_ID =
+    "border-side-white-inner-shadow-blur";
+  var BORDER_SIDE_WHITE_INNER_SHADOW_LEFT_GRAD_ID =
+    "border-side-white-inner-shadow-left";
+  var BORDER_SIDE_WHITE_INNER_SHADOW_TOP_GRAD_ID =
+    "border-side-white-inner-shadow-top";
+
+  function getBorderSideWhiteInnerShadowDepth(cellW, cellH) {
+    var maxPx =
+      typeof BORDER_SIDE_WHITE_INNER_SHADOW_DEPTH_MAX_PX !== "undefined"
+        ? BORDER_SIDE_WHITE_INNER_SHADOW_DEPTH_MAX_PX
+        : 16;
+    var ratio =
+      typeof BORDER_SIDE_WHITE_INNER_SHADOW_DEPTH_RATIO !== "undefined"
+        ? BORDER_SIDE_WHITE_INNER_SHADOW_DEPTH_RATIO
+        : 0.34;
+    return Math.max(3, Math.min(maxPx, Math.round(Math.min(cellW, cellH) * ratio)));
+  }
+
+  function getBorderSideWhiteInnerShadowBlur() {
+    return typeof BORDER_SIDE_WHITE_INNER_SHADOW_BLUR !== "undefined"
+      ? BORDER_SIDE_WHITE_INNER_SHADOW_BLUR
+      : 2.8;
+  }
+
+  function getBorderSideWhiteInnerShadowOpacity() {
+    return typeof BORDER_SIDE_WHITE_INNER_SHADOW_OPACITY !== "undefined"
+      ? BORDER_SIDE_WHITE_INNER_SHADOW_OPACITY
+      : 0.24;
+  }
+
+  /**
+   * @param {SVGElement} defs
+   */
+  function ensureBorderSideWhiteInnerShadowDefs(defs) {
+    if (!defs || getBorderSideWhiteFillTargetPercent() <= 0) return;
+
+    var ids = [
+      BORDER_SIDE_WHITE_INNER_SHADOW_FILTER_ID,
+      BORDER_SIDE_WHITE_INNER_SHADOW_LEFT_GRAD_ID,
+      BORDER_SIDE_WHITE_INNER_SHADOW_TOP_GRAD_ID,
+    ];
+    var i;
+    for (i = 0; i < ids.length; i++) {
+      var existing = defs.querySelector("#" + ids[i]);
+      if (existing) defs.removeChild(existing);
+    }
+
+    var blur = getBorderSideWhiteInnerShadowBlur();
+    var filter = elSvg("filter");
+    filter.setAttribute("id", BORDER_SIDE_WHITE_INNER_SHADOW_FILTER_ID);
+    filter.setAttribute("x", "-40%");
+    filter.setAttribute("y", "-40%");
+    filter.setAttribute("width", "180%");
+    filter.setAttribute("height", "180%");
+    filter.setAttribute("color-interpolation-filters", "sRGB");
+    var gauss = elSvg("feGaussianBlur");
+    gauss.setAttribute("in", "SourceGraphic");
+    gauss.setAttribute("stdDeviation", String(blur));
+    filter.appendChild(gauss);
+    defs.appendChild(filter);
+
+    var shadowColor = getPatternStrokeColor();
+    var opacity = String(getBorderSideWhiteInnerShadowOpacity());
+
+    function appendShadowGradient(id, x1, y1, x2, y2) {
+      var grad = elSvg("linearGradient");
+      grad.setAttribute("id", id);
+      grad.setAttribute("gradientUnits", "objectBoundingBox");
+      grad.setAttribute("x1", x1);
+      grad.setAttribute("y1", y1);
+      grad.setAttribute("x2", x2);
+      grad.setAttribute("y2", y2);
+      var stop0 = elSvg("stop");
+      stop0.setAttribute("offset", "0%");
+      stop0.setAttribute("stop-color", shadowColor);
+      stop0.setAttribute("stop-opacity", opacity);
+      var stop1 = elSvg("stop");
+      stop1.setAttribute("offset", "100%");
+      stop1.setAttribute("stop-color", shadowColor);
+      stop1.setAttribute("stop-opacity", "0");
+      grad.appendChild(stop0);
+      grad.appendChild(stop1);
+      defs.appendChild(grad);
+    }
+
+    appendShadowGradient(
+      BORDER_SIDE_WHITE_INNER_SHADOW_LEFT_GRAD_ID,
+      "0",
+      "0",
+      "1",
+      "0"
+    );
+    appendShadowGradient(
+      BORDER_SIDE_WHITE_INNER_SHADOW_TOP_GRAD_ID,
+      "0",
+      "0",
+      "0",
+      "1"
+    );
+  }
+
+  /**
+   * @param {string[]} lines
+   */
+  function pushBorderSideWhiteInnerShadowDefLines(lines) {
+    if (getBorderSideWhiteFillTargetPercent() <= 0) return;
+
+    var blur = getBorderSideWhiteInnerShadowBlur();
+    var shadowColor = getPatternStrokeColor();
+    var opacity = String(getBorderSideWhiteInnerShadowOpacity());
+
+    lines.push(
+      '<filter id="' +
+        BORDER_SIDE_WHITE_INNER_SHADOW_FILTER_ID +
+        '" x="-40%" y="-40%" width="180%" height="180%" color-interpolation-filters="sRGB">' +
+        '<feGaussianBlur in="SourceGraphic" stdDeviation="' +
+        blur +
+        '"/>' +
+        "</filter>"
+    );
+    lines.push(
+      '<linearGradient id="' +
+        BORDER_SIDE_WHITE_INNER_SHADOW_LEFT_GRAD_ID +
+        '" gradientUnits="objectBoundingBox" x1="0" y1="0" x2="1" y2="0">' +
+        '<stop offset="0%" stop-color="' +
+        shadowColor +
+        '" stop-opacity="' +
+        opacity +
+        '"/>' +
+        '<stop offset="100%" stop-color="' +
+        shadowColor +
+        '" stop-opacity="0"/>' +
+        "</linearGradient>"
+    );
+    lines.push(
+      '<linearGradient id="' +
+        BORDER_SIDE_WHITE_INNER_SHADOW_TOP_GRAD_ID +
+        '" gradientUnits="objectBoundingBox" x1="0" y1="0" x2="0" y2="1">' +
+        '<stop offset="0%" stop-color="' +
+        shadowColor +
+        '" stop-opacity="' +
+        opacity +
+        '"/>' +
+        '<stop offset="100%" stop-color="' +
+        shadowColor +
+        '" stop-opacity="0"/>' +
+        "</linearGradient>"
+    );
+  }
+
+  /**
+   * Soft inset shadow along the top + left inner edges of one whitened cell.
+   * @param {SVGElement} g
+   * @param {number} x
+   * @param {number} b
+   * @param {number} yTop
+   * @param {number} yBottom
+   */
+  function appendBorderSideWhitenedCellInnerShadowAtX(g, x, b, yTop, yBottom) {
+    if (getBorderSideWhiteFillTargetPercent() <= 0) return;
+
+    var h = yBottom - yTop;
+    var depth = getBorderSideWhiteInnerShadowDepth(b, h);
+    var filterUrl = "url(#" + BORDER_SIDE_WHITE_INNER_SHADOW_FILTER_ID + ")";
+
+    var left = elSvg("rect");
+    left.setAttribute("x", String(x));
+    left.setAttribute("y", String(yTop));
+    left.setAttribute("width", String(depth));
+    left.setAttribute("height", String(h));
+    left.setAttribute(
+      "fill",
+      "url(#" + BORDER_SIDE_WHITE_INNER_SHADOW_LEFT_GRAD_ID + ")"
+    );
+    left.setAttribute("filter", filterUrl);
+    left.setAttribute("stroke", "none");
+    left.setAttribute("pointer-events", "none");
+    g.appendChild(left);
+
+    var top = elSvg("rect");
+    top.setAttribute("x", String(x));
+    top.setAttribute("y", String(yTop));
+    top.setAttribute("width", String(b));
+    top.setAttribute("height", String(depth));
+    top.setAttribute(
+      "fill",
+      "url(#" + BORDER_SIDE_WHITE_INNER_SHADOW_TOP_GRAD_ID + ")"
+    );
+    top.setAttribute("filter", filterUrl);
+    top.setAttribute("stroke", "none");
+    top.setAttribute("pointer-events", "none");
+    g.appendChild(top);
+  }
+
+  /**
+   * @param {string[]} lines
+   * @param {number} x
+   * @param {number} b
+   * @param {number} yTop
+   * @param {number} yBottom
+   */
+  function pushBorderSideWhitenedCellInnerShadowAtXExport(
+    lines,
+    x,
+    b,
+    yTop,
+    yBottom
+  ) {
+    if (getBorderSideWhiteFillTargetPercent() <= 0) return;
+
+    var h = yBottom - yTop;
+    var depth = getBorderSideWhiteInnerShadowDepth(b, h);
+    var filterUrl = "url(#" + BORDER_SIDE_WHITE_INNER_SHADOW_FILTER_ID + ")";
+    var leftGrad = "url(#" + BORDER_SIDE_WHITE_INNER_SHADOW_LEFT_GRAD_ID + ")";
+    var topGrad = "url(#" + BORDER_SIDE_WHITE_INNER_SHADOW_TOP_GRAD_ID + ")";
+
+    lines.push(
+      '<rect x="' +
+        x +
+        '" y="' +
+        yTop +
+        '" width="' +
+        depth +
+        '" height="' +
+        h +
+        '" fill="' +
+        leftGrad +
+        '" filter="' +
+        filterUrl +
+        '" stroke="none"/>'
+    );
+    lines.push(
+      '<rect x="' +
+        x +
+        '" y="' +
+        yTop +
+        '" width="' +
+        b +
+        '" height="' +
+        depth +
+        '" fill="' +
+        topGrad +
+        '" filter="' +
+        filterUrl +
+        '" stroke="none"/>'
+    );
+  }
+
   function isBodyAutonomyHomeChecked() {
-    var el = document.getElementById("body-autonomy-home");
-    return el ? el.checked : false;
+    return true;
   }
 
   function isBodyAutonomyOutsideChecked() {
-    var el = document.getElementById("body-autonomy-outside");
-    return el ? el.checked : false;
+    return true;
   }
 
   /**
@@ -2391,6 +3524,9 @@
     line.setAttribute("y1", String(y1));
     line.setAttribute("x2", String(x2));
     line.setAttribute("y2", String(y2));
+    line.setAttribute("stroke", getPatternStrokeColor());
+    line.setAttribute("stroke-width", String(BORDER_DIVISION_STROKE_WIDTH));
+    line.setAttribute("shape-rendering", "crispEdges");
     container.appendChild(line);
   }
 
@@ -2564,6 +3700,368 @@
   }
 
   /**
+   * @param {SVGElement} g
+   * @param {number} cellX
+   * @param {number} cellW
+   * @param {number} yTop
+   * @param {number} yBottom
+   */
+  function appendBorderSideCellRhombusOutline(g, cellX, cellW, yTop, yBottom) {
+    var points = getBorderSideCellRhombusPoints(cellX, cellW, yTop, yBottom);
+    var poly = elSvg("polygon");
+    var i;
+    var parts = [];
+    for (i = 0; i < points.length; i++) {
+      parts.push(String(points[i][0]) + "," + String(points[i][1]));
+    }
+    poly.setAttribute("points", parts.join(" "));
+    poly.setAttribute("fill", "none");
+    poly.setAttribute("stroke", getPatternStrokeColor());
+    poly.setAttribute("stroke-width", String(BORDER_DIVISION_STROKE_WIDTH));
+    g.appendChild(poly);
+  }
+
+  /**
+   * Full cell frame (top, bottom, left, right) on top of white fill.
+   * @param {SVGElement} g
+   * @param {number} x
+   * @param {number} b
+   * @param {number} yTop
+   * @param {number} yBottom
+   */
+  function appendBorderSideWhitenedCellFrameLinesAtX(g, x, b, yTop, yBottom) {
+    appendBorderDivisionLine(g, x, yTop, x + b, yTop);
+    appendBorderDivisionLine(g, x, yBottom, x + b, yBottom);
+    appendBorderDivisionLine(g, x, yTop, x, yBottom);
+    appendBorderDivisionLine(g, x + b, yTop, x + b, yBottom);
+  }
+
+  /**
+   * Vertical dividers between adjacent margin columns (full strip height).
+   * @param {SVGElement} g
+   */
+  function appendLeftRightBorderColumnDividers(g) {
+    var b = getCanvasBorderPx();
+    var cols = getBorderSideThicknessColumns();
+    if (cols <= 1) return;
+
+    var divY = getLeftRightBorderDivisionYBounds();
+    var c;
+    for (c = 1; c < cols; c++) {
+      var xLeft = c * b;
+      appendBorderDivisionLine(g, xLeft, divY.top, xLeft, divY.bottom);
+      var xRight = CANVAS_W - c * b;
+      appendBorderDivisionLine(g, xRight, divY.top, xRight, divY.bottom);
+    }
+  }
+
+  /**
+   * X / rhombus outlines on a whitened margin cell (one column).
+   * @param {SVGElement} g
+   * @param {number} x
+   * @param {number} b
+   * @param {number} yTop
+   * @param {number} yBottom
+   * @param {"home"|"grey"|"outside"|"beige"} cellType
+   * @param {boolean} home
+   * @param {boolean} outside
+   * @param {boolean} outlineOnly
+   */
+  function appendBorderSideWhitenedCellOutlinesAtX(
+    g,
+    x,
+    b,
+    yTop,
+    yBottom,
+    cellType,
+    home,
+    outside,
+    outlineOnly
+  ) {
+    if (cellType === "grey" || cellType === "beige") {
+      if (home && outside) {
+        appendBorderSideCellRhombusOutline(g, x, b, yTop, yBottom);
+      }
+      appendBorderSideWhitenedCellFrameLinesAtX(g, x, b, yTop, yBottom);
+      return;
+    }
+    if (cellType === "outside") {
+      if (outside || outlineOnly) {
+        appendBorderSideCellDiagonalsAtX(g, x, b, yTop, yBottom);
+      }
+      appendBorderSideWhitenedCellFrameLinesAtX(g, x, b, yTop, yBottom);
+      return;
+    }
+    if (home || outlineOnly) {
+      appendBorderSideCellDiagonalsAtX(g, x, b, yTop, yBottom);
+    }
+    appendBorderSideWhitenedCellFrameLinesAtX(g, x, b, yTop, yBottom);
+  }
+
+  /**
+   * @param {SVGElement} g
+   * @param {number} b
+   * @param {number} rightX
+   * @param {number} yTop
+   * @param {number} yBottom
+   * @param {"home"|"grey"|"outside"|"beige"} cellType
+   * @param {boolean} home
+   * @param {boolean} outside
+   * @param {boolean} outlineOnly
+   */
+  function appendBorderSideWhitenedCellOutlines(
+    g,
+    b,
+    rightX,
+    yTop,
+    yBottom,
+    cellType,
+    home,
+    outside,
+    outlineOnly
+  ) {
+    appendBorderSideWhitenedCellOutlinesAtX(
+      g,
+      0,
+      b,
+      yTop,
+      yBottom,
+      cellType,
+      home,
+      outside,
+      outlineOnly
+    );
+    appendBorderSideWhitenedCellOutlinesAtX(
+      g,
+      rightX,
+      b,
+      yTop,
+      yBottom,
+      cellType,
+      home,
+      outside,
+      outlineOnly
+    );
+  }
+
+  /**
+   * @param {string[]} lines
+   * @param {number} cellX
+   * @param {number} cellW
+   * @param {number} yTop
+   * @param {number} yBottom
+   */
+  function pushBorderSideCellRhombusOutlineExport(
+    lines,
+    cellX,
+    cellW,
+    yTop,
+    yBottom
+  ) {
+    var points = getBorderSideCellRhombusPoints(cellX, cellW, yTop, yBottom);
+    var i;
+    var parts = [];
+    for (i = 0; i < points.length; i++) {
+      parts.push(String(points[i][0]) + "," + String(points[i][1]));
+    }
+    lines.push(
+      '<polygon points="' +
+        parts.join(" ") +
+        '" fill="none" stroke="' +
+        getPatternStrokeColor() +
+        '" stroke-width="' +
+        BORDER_DIVISION_STROKE_WIDTH +
+        '"/>'
+    );
+  }
+
+  /**
+   * @param {string[]} lines
+   * @param {number} x
+   * @param {number} b
+   * @param {number} yTop
+   * @param {number} yBottom
+   */
+  function pushBorderSideCellDiagonalsAtXExport(lines, x, b, yTop, yBottom) {
+    var stroke = getPatternStrokeColor();
+    var sw = BORDER_DIVISION_STROKE_WIDTH;
+    lines.push(
+      '<line x1="' +
+        x +
+        '" y1="' +
+        yTop +
+        '" x2="' +
+        (x + b) +
+        '" y2="' +
+        yBottom +
+        '" stroke="' +
+        stroke +
+        '" stroke-width="' +
+        sw +
+        '" shape-rendering="crispEdges"/>'
+    );
+    lines.push(
+      '<line x1="' +
+        (x + b) +
+        '" y1="' +
+        yTop +
+        '" x2="' +
+        x +
+        '" y2="' +
+        yBottom +
+        '" stroke="' +
+        stroke +
+        '" stroke-width="' +
+        sw +
+        '" shape-rendering="crispEdges"/>'
+    );
+  }
+
+  /**
+   * @param {string[]} lines
+   * @param {number} x
+   * @param {number} x2
+   * @param {number} y
+   */
+  function pushBorderDivisionLineExport(lines, x, y, x2, y2) {
+    lines.push(
+      '<line x1="' +
+        x +
+        '" y1="' +
+        y +
+        '" x2="' +
+        x2 +
+        '" y2="' +
+        y2 +
+        '" stroke="' +
+        getPatternStrokeColor() +
+        '" stroke-width="' +
+        BORDER_DIVISION_STROKE_WIDTH +
+        '" shape-rendering="crispEdges"/>'
+    );
+  }
+
+  /**
+   * @param {string[]} lines
+   * @param {number} x
+   * @param {number} b
+   * @param {number} yTop
+   * @param {number} yBottom
+   */
+  function pushBorderSideWhitenedCellFrameLinesAtXExport(lines, x, b, yTop, yBottom) {
+    pushBorderDivisionLineExport(lines, x, yTop, x + b, yTop);
+    pushBorderDivisionLineExport(lines, x, yBottom, x + b, yBottom);
+    pushBorderDivisionLineExport(lines, x, yTop, x, yBottom);
+    pushBorderDivisionLineExport(lines, x + b, yTop, x + b, yBottom);
+  }
+
+  /**
+   * @param {string[]} lines
+   */
+  function pushLeftRightBorderColumnDividersExport(lines) {
+    var b = getCanvasBorderPx();
+    var cols = getBorderSideThicknessColumns();
+    if (cols <= 1) return;
+
+    var divY = getLeftRightBorderDivisionYBounds();
+    var c;
+    for (c = 1; c < cols; c++) {
+      var xLeft = c * b;
+      pushBorderDivisionLineExport(lines, xLeft, divY.top, xLeft, divY.bottom);
+      var xRight = CANVAS_W - c * b;
+      pushBorderDivisionLineExport(lines, xRight, divY.top, xRight, divY.bottom);
+    }
+  }
+
+  /**
+   * @param {string[]} lines
+   * @param {number} x
+   * @param {number} b
+   * @param {number} yTop
+   * @param {number} yBottom
+   * @param {"home"|"grey"|"outside"|"beige"} cellType
+   * @param {boolean} home
+   * @param {boolean} outside
+   * @param {boolean} outlineOnly
+   */
+  function pushBorderSideWhitenedCellOutlinesAtXExport(
+    lines,
+    x,
+    b,
+    yTop,
+    yBottom,
+    cellType,
+    home,
+    outside,
+    outlineOnly
+  ) {
+    if (cellType === "grey" || cellType === "beige") {
+      if (home && outside) {
+        pushBorderSideCellRhombusOutlineExport(lines, x, b, yTop, yBottom);
+      }
+      pushBorderSideWhitenedCellFrameLinesAtXExport(lines, x, b, yTop, yBottom);
+      return;
+    }
+    if (cellType === "outside") {
+      if (outside || outlineOnly) {
+        pushBorderSideCellDiagonalsAtXExport(lines, x, b, yTop, yBottom);
+      }
+      pushBorderSideWhitenedCellFrameLinesAtXExport(lines, x, b, yTop, yBottom);
+      return;
+    }
+    if (home || outlineOnly) {
+      pushBorderSideCellDiagonalsAtXExport(lines, x, b, yTop, yBottom);
+    }
+    pushBorderSideWhitenedCellFrameLinesAtXExport(lines, x, b, yTop, yBottom);
+  }
+
+  /**
+   * @param {string[]} lines
+   * @param {number} b
+   * @param {number} rightX
+   * @param {number} yTop
+   * @param {number} yBottom
+   * @param {"home"|"grey"|"outside"|"beige"} cellType
+   * @param {boolean} home
+   * @param {boolean} outside
+   * @param {boolean} outlineOnly
+   */
+  function pushBorderSideWhitenedCellOutlinesExport(
+    lines,
+    b,
+    rightX,
+    yTop,
+    yBottom,
+    cellType,
+    home,
+    outside,
+    outlineOnly
+  ) {
+    pushBorderSideWhitenedCellOutlinesAtXExport(
+      lines,
+      0,
+      b,
+      yTop,
+      yBottom,
+      cellType,
+      home,
+      outside,
+      outlineOnly
+    );
+    pushBorderSideWhitenedCellOutlinesAtXExport(
+      lines,
+      rightX,
+      b,
+      yTop,
+      yBottom,
+      cellType,
+      home,
+      outside,
+      outlineOnly
+    );
+  }
+
+  /**
    * @param {string[]} lines
    * @param {number} cellX
    * @param {number} cellW
@@ -2614,6 +4112,7 @@
     for (j = 0; j < yBounds.length - 1; j++) {
       cellType = getBorderSideCellType(j);
       if (!isBorderSideSolidColorOnlyCell(cellType, home, outside)) continue;
+      if (isBorderSideCellWhitened(0, j)) continue;
       yTop = yBounds[j];
       yBottom = yBounds[j + 1];
       rhombusFill = getBorderSideRhombusFillForCellType(cellType);
@@ -2892,6 +4391,28 @@
       h = yBottom - yTop;
       cellType = getBorderSideCellType(j);
 
+      if (isBorderSideCellWhitened(0, j)) {
+        appendBorderSideSolidCellRect(
+          g,
+          0,
+          yTop,
+          b,
+          h,
+          getCanvasBackgroundColor()
+        );
+        appendBorderSideWhitenedCellInnerShadowAtX(g, 0, b, yTop, yBottom);
+        appendBorderSideSolidCellRect(
+          g,
+          rightX,
+          yTop,
+          b,
+          h,
+          getCanvasBackgroundColor()
+        );
+        appendBorderSideWhitenedCellInnerShadowAtX(g, rightX, b, yTop, yBottom);
+        continue;
+      }
+
       if (cellType === "outside") {
         if (!outside) continue;
         appendBorderSideBrownCellXPatternFills(g, 0, b, yTop, yBottom);
@@ -2938,11 +4459,22 @@
    * @param {number} yTop
    * @param {number} yBottom
    */
+  function appendBorderSideCellDiagonalsAtX(g, x, b, yTop, yBottom) {
+    appendBorderDivisionLine(g, x, yTop, x + b, yBottom);
+    appendBorderDivisionLine(g, x + b, yTop, x, yBottom);
+  }
+
+  /**
+   * Corner-to-corner X strokes in one left/right margin cell.
+   * @param {SVGElement} g
+   * @param {number} b
+   * @param {number} rightX
+   * @param {number} yTop
+   * @param {number} yBottom
+   */
   function appendBorderSideCellDiagonals(g, b, rightX, yTop, yBottom) {
-    appendBorderDivisionLine(g, 0, yTop, b, yBottom);
-    appendBorderDivisionLine(g, b, yTop, 0, yBottom);
-    appendBorderDivisionLine(g, rightX, yTop, CANVAS_W, yBottom);
-    appendBorderDivisionLine(g, CANVAS_W, yTop, rightX, yBottom);
+    appendBorderSideCellDiagonalsAtX(g, 0, b, yTop, yBottom);
+    appendBorderSideCellDiagonalsAtX(g, rightX, b, yTop, yBottom);
   }
 
   /**
@@ -2954,7 +4486,7 @@
     var home = isBodyAutonomyHomeChecked();
     var outside = isBodyAutonomyOutsideChecked();
     var outlineOnly = !home && !outside;
-    if (!outlineOnly && !outside) return;
+    if (!outlineOnly && !outside && getBorderSideWhiteFillTargetPercent() <= 0) return;
 
     var b = getCanvasBorderPx();
     var yBounds = getLeftRightBorderCellYBounds();
@@ -2966,10 +4498,26 @@
 
     for (j = 0; j < yBounds.length - 1; j++) {
       cellType = getBorderSideCellType(j);
-      if (cellType === "grey" || cellType === "beige") continue;
-      if (!outlineOnly && cellType !== "outside") continue;
       yTop = yBounds[j];
       yBottom = yBounds[j + 1];
+
+      if (isBorderSideCellWhitened(0, j)) {
+        appendBorderSideWhitenedCellOutlines(
+          g,
+          b,
+          rightX,
+          yTop,
+          yBottom,
+          cellType,
+          home,
+          outside,
+          outlineOnly
+        );
+        continue;
+      }
+
+      if (cellType === "grey" || cellType === "beige") continue;
+      if (!outlineOnly && cellType !== "outside") continue;
       appendBorderSideCellDiagonals(g, b, rightX, yTop, yBottom);
     }
   }
@@ -3003,6 +4551,255 @@
       appendBorderDivisionLine(g, 0, y, b, y);
       appendBorderDivisionLine(g, CANVAS_W - b, y, CANVAS_W, y);
     }
+  }
+
+  /**
+   * Border thickness overlays: extra columns/bands drawn on top of the grid,
+   * extending inward from the existing 1-column border. Does not change margins.
+   * @param {SVGElement} g
+   */
+  function appendBorderDivisionOverlayLayersToGroup(g) {
+    var cols = getBorderSideThicknessColumns();
+    var extra = Math.max(0, cols - 1);
+    if (!extra) return;
+
+    var b = getCanvasBorderPx();
+    var home = isBodyAutonomyHomeChecked();
+    var outside = isBodyAutonomyOutsideChecked();
+    var outlineOnly = !home && !outside;
+
+    g.setAttribute("fill", "none");
+    g.setAttribute("stroke", getPatternStrokeColor());
+    g.setAttribute("stroke-width", String(BORDER_DIVISION_STROKE_WIDTH));
+
+    var __overlayBaseRects = 0;
+
+    function appendOverlayCellBase(x, y, w, h) {
+      __overlayBaseRects++;
+      var rect = elSvg("rect");
+      rect.setAttribute("x", String(x));
+      rect.setAttribute("y", String(y));
+      rect.setAttribute("width", String(w));
+      rect.setAttribute("height", String(h));
+      rect.setAttribute("fill", getCanvasBackgroundColor());
+      rect.setAttribute("stroke", "none");
+      rect.setAttribute("shape-rendering", "crispEdges");
+      g.appendChild(rect);
+    }
+
+    // Left/right overlays use the same variable-height rows as the margin strip.
+    var yBounds = getLeftRightBorderCellYBounds();
+    var divY = getLeftRightBorderDivisionYBounds();
+    var sideInteriorY = getLeftRightBorderInteriorYPositions();
+    var rightBase = CANVAS_W - b;
+
+    // Overlay columns start at x=b (inset by one column), going inward.
+    for (var c = 1; c <= extra; c++) {
+      var leftX = c * b;
+      var rightX = rightBase - c * b;
+      // Middle column (2nd overall) is vertically mirrored vs 1st + 3rd.
+      // When thickness is 2, the only overlay column is the 2nd one → mirrored.
+      // When thickness is 3, c=1 is the 2nd column → mirrored; c=2 is the 3rd → normal.
+      var isMirrored = c === 1;
+      var rowCount = yBounds.length - 1;
+
+      // Cell fills first (white bases must sit below division lines).
+      for (var j = 0; j < yBounds.length - 1; j++) {
+        var yTop = yBounds[j];
+        var yBottom = yBounds[j + 1];
+        var h = yBottom - yTop;
+        var cellIndex = isMirrored ? rowCount - 1 - j : j;
+        var cellType = getBorderSideCellType(cellIndex);
+
+        // Ensure overlay cells match the white margin background (no grid bleed-through).
+        appendOverlayCellBase(leftX, yTop, b, h);
+        appendOverlayCellBase(rightX, yTop, b, h);
+
+        if (isBorderSideCellWhitened(c, j)) {
+          appendBorderSideWhitenedCellInnerShadowAtX(g, leftX, b, yTop, yBottom);
+          appendBorderSideWhitenedCellInnerShadowAtX(
+            g,
+            rightX,
+            b,
+            yTop,
+            yBottom
+          );
+          appendBorderSideWhitenedCellOutlinesAtX(
+            g,
+            leftX,
+            b,
+            yTop,
+            yBottom,
+            cellType,
+            home,
+            outside,
+            outlineOnly
+          );
+          appendBorderSideWhitenedCellOutlinesAtX(
+            g,
+            rightX,
+            b,
+            yTop,
+            yBottom,
+            cellType,
+            home,
+            outside,
+            outlineOnly
+          );
+          continue;
+        }
+
+        if (cellType === "outside") {
+          if (outside) {
+            appendBorderSideBrownCellXPatternFills(g, leftX, b, yTop, yBottom);
+            appendBorderSideBrownCellXPatternFills(g, rightX, b, yTop, yBottom);
+          }
+          if (outside || outlineOnly) {
+            appendBorderSideCellDiagonalsAtX(g, leftX, b, yTop, yBottom);
+            appendBorderSideCellDiagonalsAtX(g, rightX, b, yTop, yBottom);
+          }
+        } else if (cellType === "grey") {
+          if (home && outside) {
+            appendBorderSideSolidCellRect(
+              g,
+              leftX,
+              yTop,
+              b,
+              h,
+              BORDER_SIDE_CELL_COLOR_GREY
+            );
+            appendBorderSideSolidCellRect(
+              g,
+              rightX,
+              yTop,
+              b,
+              h,
+              BORDER_SIDE_CELL_COLOR_GREY
+            );
+          }
+        } else if (cellType === "beige") {
+          if (home && outside) {
+            var beigeFill =
+              typeof BORDER_SIDE_CELL_COLOR_BEIGE !== "undefined"
+                ? BORDER_SIDE_CELL_COLOR_BEIGE
+                : BORDER_SIDE_X_FILL_RIGHT;
+            appendBorderSideSolidCellRect(g, leftX, yTop, b, h, beigeFill);
+            appendBorderSideSolidCellRect(g, rightX, yTop, b, h, beigeFill);
+          }
+        } else {
+          // "home"
+          if (home) {
+            appendBorderSideBlueCellXPatternFills(g, leftX, b, yTop, yBottom);
+            appendBorderSideBlueCellXPatternFills(g, rightX, b, yTop, yBottom);
+          }
+          if (outlineOnly) {
+            appendBorderSideCellDiagonalsAtX(g, leftX, b, yTop, yBottom);
+            appendBorderSideCellDiagonalsAtX(g, rightX, b, yTop, yBottom);
+          }
+        }
+
+        // Solid-only rhombus overlays (same as margin strip).
+        if (home && outside && (cellType === "grey" || cellType === "beige")) {
+          var rhombusFill = getBorderSideRhombusFillForCellType(
+            /** @type {"grey"|"beige"} */ (cellType)
+          );
+          appendBorderSideCellRhombus(g, leftX, b, yTop, yBottom, rhombusFill);
+          appendBorderSideCellRhombus(g, rightX, b, yTop, yBottom, rhombusFill);
+        }
+      }
+
+      // Division lines on top of cell fills.
+      appendBorderDivisionLine(g, leftX, divY.top, leftX + b, divY.top);
+      appendBorderDivisionLine(g, leftX, divY.bottom, leftX + b, divY.bottom);
+      appendBorderDivisionLine(g, rightX, divY.top, rightX + b, divY.top);
+      appendBorderDivisionLine(g, rightX, divY.bottom, rightX + b, divY.bottom);
+      for (var i = 0; i < sideInteriorY.length; i++) {
+        var yLine = sideInteriorY[i];
+        appendBorderDivisionLine(g, leftX, yLine, leftX + b, yLine);
+        appendBorderDivisionLine(g, rightX, yLine, rightX + b, yLine);
+      }
+    }
+
+    // Top/bottom overlays: simple b×b cells across the inner width (avoid corners).
+    var innerX0 = b;
+    var innerX1 = CANVAS_W - b;
+    var cellsAcross = Math.floor(Math.max(0, innerX1 - innerX0) / b);
+    for (var t = 1; t <= extra; t++) {
+      var topY0 = t * b;
+      var topY1 = (t + 1) * b;
+      var bottomY0 = CANVAS_H - (t + 1) * b;
+      var bottomY1 = CANVAS_H - t * b;
+
+      for (var xi = 0; xi < cellsAcross; xi++) {
+        var x = innerX0 + xi * b;
+        var ct = getBorderSideCellType(xi);
+        var hhTop = topY1 - topY0;
+        var hhBottom = bottomY1 - bottomY0;
+
+        function drawBandCell(y0, y1, hh) {
+          // White base so the grid underneath doesn't show through.
+          appendOverlayCellBase(x, y0, b, hh);
+
+          if (ct === "outside") {
+            if (outside) appendBorderSideBrownCellXPatternFills(g, x, b, y0, y1);
+            if (outside || outlineOnly) appendBorderSideCellDiagonalsAtX(g, x, b, y0, y1);
+          } else if (ct === "grey") {
+            if (home && outside)
+              appendBorderSideSolidCellRect(g, x, y0, b, hh, BORDER_SIDE_CELL_COLOR_GREY);
+          } else if (ct === "beige") {
+            if (home && outside) {
+              var beigeFill2 =
+                typeof BORDER_SIDE_CELL_COLOR_BEIGE !== "undefined"
+                  ? BORDER_SIDE_CELL_COLOR_BEIGE
+                  : BORDER_SIDE_X_FILL_RIGHT;
+              appendBorderSideSolidCellRect(g, x, y0, b, hh, beigeFill2);
+            }
+          } else {
+            if (home) appendBorderSideBlueCellXPatternFills(g, x, b, y0, y1);
+            if (outlineOnly) appendBorderSideCellDiagonalsAtX(g, x, b, y0, y1);
+          }
+
+          if (home && outside && (ct === "grey" || ct === "beige")) {
+            var rFill = getBorderSideRhombusFillForCellType(
+              /** @type {"grey"|"beige"} */ (ct)
+            );
+            appendBorderSideCellRhombus(g, x, b, y0, y1, rFill);
+          }
+
+          // Vertical divider between cells (matches division-line style).
+          appendBorderDivisionLine(g, x, y0, x, y1);
+        }
+
+        drawBandCell(topY0, topY1, hhTop);
+        drawBandCell(bottomY0, bottomY1, hhBottom);
+      }
+
+      // Close the band edges.
+      appendBorderDivisionLine(g, innerX0, topY0, innerX1, topY0);
+      appendBorderDivisionLine(g, innerX0, topY1, innerX1, topY1);
+      appendBorderDivisionLine(g, innerX0, bottomY0, innerX1, bottomY0);
+      appendBorderDivisionLine(g, innerX0, bottomY1, innerX1, bottomY1);
+    }
+
+    // Column separators on top of all overlay fills.
+    appendLeftRightBorderColumnDividers(g);
+  }
+
+  function createBorderDivisionOverlayGroup() {
+    var g = elSvg("g");
+    g.setAttribute("id", "layer-border-divisions-overlay");
+    appendBorderDivisionOverlayLayersToGroup(g);
+    return g;
+  }
+
+  function updateBorderDivisionOverlay() {
+    if (!designSvg) return;
+    syncBorderSideWhiteCells(false);
+    ensureBorderSideWhiteInnerShadowDefs(designSvg.querySelector("defs"));
+    var g = designSvg.querySelector("#layer-border-divisions-overlay");
+    if (!g) return;
+    while (g.firstChild) g.removeChild(g.firstChild);
+    appendBorderDivisionOverlayLayersToGroup(g);
   }
 
   /**
@@ -3600,9 +5397,6 @@
    * @returns {{ type: "svg" | "text", svgFile: string, text: string }[]}
    */
   function getLabelBarItems() {
-    if (window.LabelBarControls && window.LabelBarControls.getItems) {
-      return window.LabelBarControls.getItems();
-    }
     return [];
   }
 
@@ -3668,6 +5462,15 @@
       Math.round((max || 1) * 100) +
       "%)"
     );
+  }
+
+  function invalidateLabelBarSvgTintCache() {
+    var file;
+    for (file in labelBarSvgCache) {
+      if (!Object.prototype.hasOwnProperty.call(labelBarSvgCache, file)) continue;
+      labelBarSvgCache[file].tintedInnerMarkup = null;
+      labelBarSvgCache[file].tintedColor = null;
+    }
   }
 
   function getLabelBarIconFilterStyle() {
@@ -3942,7 +5745,7 @@
   }
 
   function applyLabelBarTextAttrs(text, fontSize) {
-    text.setAttribute("fill", getBrownBarBannerFill());
+    text.setAttribute("fill", getLabelBarContentColor());
     text.setAttribute("font-family", getBrownBarBannerFontFamily());
     text.setAttribute("font-weight", "700");
     text.setAttribute("font-size", String(fontSize));
@@ -5231,7 +7034,16 @@
       if (typeof updateMagnifierViewBox === "function") {
         updateMagnifierViewBox();
       }
-      preloadLabelBarSvgAssetsForExport();
+      preloadLabelBarSvgAssetsForExport().then(function () {
+        if (!designSvg) return;
+        var labelGroup = designSvg.querySelector("#edge-brown-bar-label-content");
+        if (!labelGroup) return;
+        while (labelGroup.firstChild) labelGroup.removeChild(labelGroup.firstChild);
+        appendLabelBarContent(labelGroup);
+        if (typeof updateMagnifierViewBox === "function") {
+          updateMagnifierViewBox();
+        }
+      });
     };
 
     if (typeof document !== "undefined" && document.fonts && document.fonts.ready) {
@@ -5945,6 +7757,8 @@
 
   function updateBorderDivisionLines() {
     if (!designSvg) return;
+    syncBorderSideWhiteCells(false);
+    ensureBorderSideWhiteInnerShadowDefs(designSvg.querySelector("defs"));
     var g = designSvg.querySelector("#layer-border-divisions");
     if (!g) return;
     while (g.firstChild) g.removeChild(g.firstChild);
@@ -5958,6 +7772,8 @@
     var b = getCanvasBorderPx();
     var i;
     var y;
+
+    syncBorderSideWhiteCells(false);
 
     lines.push(
       '<g id="layer-border-divisions" fill="none" stroke="' +
@@ -5982,6 +7798,42 @@
         yBottom = yBounds[j + 1];
         h = yBottom - yTop;
         cellType = getBorderSideCellType(j);
+        if (isBorderSideCellWhitened(0, j)) {
+          var whiteFill = getCanvasBackgroundColor();
+          lines.push(
+            '<rect x="0" y="' +
+              yTop +
+              '" width="' +
+              b +
+              '" height="' +
+              h +
+              '" fill="' +
+              whiteFill +
+              '"/>'
+          );
+          lines.push(
+            '<rect x="' +
+              rightX +
+              '" y="' +
+              yTop +
+              '" width="' +
+              b +
+              '" height="' +
+              h +
+              '" fill="' +
+              whiteFill +
+              '"/>'
+          );
+          pushBorderSideWhitenedCellInnerShadowAtXExport(lines, 0, b, yTop, yBottom);
+          pushBorderSideWhitenedCellInnerShadowAtXExport(
+            lines,
+            rightX,
+            b,
+            yTop,
+            yBottom
+          );
+          continue;
+        }
         if (cellType === "outside") {
           if (!outside) continue;
           pushBorderSideBrownCellXPatternExport(lines, 0, b, yTop, yBottom);
@@ -6055,6 +7907,7 @@
       for (j = 0; j < yBounds.length - 1; j++) {
         cellType = getBorderSideCellType(j);
         if (!isBorderSideSolidColorOnlyCell(cellType, home, outside)) continue;
+        if (isBorderSideCellWhitened(0, j)) continue;
         yTop = yBounds[j];
         yBottom = yBounds[j + 1];
         rhombusFill = getBorderSideRhombusFillForCellType(cellType);
@@ -6138,13 +7991,29 @@
     }
 
     var outlineOnly = !home && !outside;
-    if (outlineOnly || outside) {
+    if (outlineOnly || outside || getBorderSideWhiteFillTargetPercent() > 0) {
       for (j = 0; j < yBounds.length - 1; j++) {
         cellType = getBorderSideCellType(j);
-        if (cellType === "grey" || cellType === "beige") continue;
-        if (!outlineOnly && cellType !== "outside") continue;
         yTop = yBounds[j];
         yBottom = yBounds[j + 1];
+
+        if (isBorderSideCellWhitened(0, j)) {
+          pushBorderSideWhitenedCellOutlinesExport(
+            lines,
+            b,
+            rightX,
+            yTop,
+            yBottom,
+            cellType,
+            home,
+            outside,
+            outlineOnly
+          );
+          continue;
+        }
+
+        if (cellType === "grey" || cellType === "beige") continue;
+        if (!outlineOnly && cellType !== "outside") continue;
         lines.push(
           '<line x1="0" y1="' +
             yTop +
@@ -6188,6 +8057,8 @@
       }
     }
 
+    pushLeftRightBorderColumnDividersExport(lines);
+
     lines.push("</g>");
   }
 
@@ -6217,7 +8088,7 @@
     svg.setAttribute("viewBox", "0 0 " + CANVAS_W + " " + CANVAS_H);
     svg.setAttribute("xmlns", NS);
     svg.setAttribute("role", "img");
-    svg.setAttribute("aria-label", "Topkapi geometric grid");
+    svg.setAttribute("aria-label", "Octagon geometric grid");
 
     var defs = elSvg("defs");
     var clip = elSvg("clipPath");
@@ -6231,6 +8102,7 @@
     defs.appendChild(clip);
     appendInnerContentClipPath(defs);
     ensureAutoMergeShadowFilter(defs);
+    ensureBorderSideWhiteInnerShadowDefs(defs);
     svg.appendChild(defs);
 
     var borderFill = elSvg("rect");
@@ -6309,7 +8181,17 @@
     clippedAutoMerge.appendChild(autoMergeLayer);
     innerContent.appendChild(clippedAutoMerge);
 
+    var clippedHalfCircle = createInnerContentClipGroup("inner-clipped-half-circle");
+    var halfCircleLayer = elSvg("g");
+    halfCircleLayer.setAttribute("id", "layer-half-circle");
+    halfCircleLayer.setAttribute("clip-path", "url(#canvas-clip)");
+    clippedHalfCircle.appendChild(halfCircleLayer);
+    innerContent.appendChild(clippedHalfCircle);
+
     svg.appendChild(innerContent);
+
+    // Overlays that cover grid content inward from the border (thickness control).
+    svg.appendChild(createBorderDivisionOverlayGroup());
 
     var edgeBrownBars = elSvg("g");
     edgeBrownBars.setAttribute("id", "layer-edge-brown-bars");
@@ -6322,7 +8204,1947 @@
 
     svg.appendChild(createFrameInsetOverlayLayer());
 
+    bindHopePipetteCanvasListener();
+
     return svg;
+  }
+
+  function getHalfCircleVisible() {
+    var toggle = document.getElementById("half-circle-toggle");
+    return !!(toggle && toggle.checked);
+  }
+
+  function getHalfCircleBottomVisible() {
+    var toggle = document.getElementById("half-circle-bottom-toggle");
+    return !!(toggle && toggle.checked);
+  }
+
+  function getHalfCircleBottomFocalY() {
+    return CANVAS_H - HALF_CIRCLE_FOCAL_Y;
+  }
+
+  function getHalfCircleVerticalMirrorTransform() {
+    var axis = CANVAS_H / 2;
+    return "translate(0 " + axis + ") scale(1 -1) translate(0 " + (-axis) + ")";
+  }
+
+  function getHalfCircleColor() {
+    var input = document.getElementById("half-circle-color");
+    if (input && typeof input.value === "string" && input.value) return input.value;
+    return typeof PATTERN_STROKE_COLOR_DEFAULT !== "undefined"
+      ? PATTERN_STROKE_COLOR_DEFAULT
+      : "#685450";
+  }
+
+  function getHalfCircleRibCount() {
+    var input = document.getElementById("half-circle-ribs");
+    var raw = input ? Number(input.value) : 21;
+    if (!Number.isFinite(raw)) raw = 21;
+    return Math.max(5, Math.min(40, Math.round(raw)));
+  }
+
+  function getHalfCircleInset() {
+    var input = document.getElementById("half-circle-inset");
+    var raw = input ? Number(input.value) : 0.2;
+    if (!Number.isFinite(raw)) raw = 0.2;
+    return Math.max(0.1, Math.min(0.4, Math.round(raw * 100) / 100));
+  }
+
+  function getHalfCircleCuspGapPx() {
+    var input = document.getElementById("half-circle-cusp-gap");
+    var raw = input ? Number(input.value) : 22;
+    if (!Number.isFinite(raw)) raw = 22;
+    return Math.max(0, Math.min(40, Math.round(raw)));
+  }
+
+  function getHalfCircleMaxPetals() {
+    return Math.max(0, getHalfCircleRibCount() - 1);
+  }
+
+  function getHalfCircleVisiblePetalCount() {
+    var input = document.getElementById("half-circle-fan-opening");
+    var maxPetals = getHalfCircleMaxPetals();
+    var raw = input ? Number(input.value) : maxPetals;
+    if (!Number.isFinite(raw)) raw = maxPetals;
+    return Math.max(0, Math.min(maxPetals, Math.round(raw)));
+  }
+
+  function syncHalfCircleFanOpeningSlider() {
+    var slider = document.getElementById("half-circle-fan-opening");
+    var out = document.getElementById("half-circle-fan-opening-out");
+    if (!slider) return;
+    var maxPetals = getHalfCircleMaxPetals();
+    slider.max = String(maxPetals);
+    if (Number(slider.value) > maxPetals) slider.value = String(maxPetals);
+    if (Number(slider.value) < 0) slider.value = "0";
+    if (out) out.textContent = String(getHalfCircleVisiblePetalCount());
+  }
+
+  function getHalfCircleValleyCirclesVisible() {
+    var el = document.getElementById("half-circle-valley-circles");
+    return !el || el.checked;
+  }
+
+  function getHalfCircleInnerArcDiagonalsVisible() {
+    var el = document.getElementById("half-circle-inner-arc-diagonals");
+    return !el || el.checked;
+  }
+
+  function getHalfCircleValleyCircleSizeScale() {
+    var input = document.getElementById("half-circle-valley-circle-size");
+    var raw = input ? Number(input.value) : 100;
+    if (!Number.isFinite(raw)) raw = 100;
+    return Math.max(0, Math.min(100, Math.round(raw))) / 100;
+  }
+
+  function getHalfCircleStarInnerRadiusRatio() {
+    var input = document.getElementById("half-circle-star-inner-radius");
+    var raw = input ? Number(input.value) : 50;
+    if (!Number.isFinite(raw)) raw = 50;
+    return Math.max(50, Math.min(95, Math.round(raw))) / 100;
+  }
+
+  function getHalfCircleInnerArcRadiusRatio() {
+    var input = document.getElementById("half-circle-inner-arc-position");
+    var raw = input ? Number(input.value) : 50;
+    if (!Number.isFinite(raw)) raw = 50;
+    return Math.max(20, Math.min(80, Math.round(raw))) / 100;
+  }
+
+  function halfCircleCuspApexPoint(fx, fy, p0, p1, inward) {
+    var dx = p1.x - p0.x;
+    var dy = p1.y - p0.y;
+    var chord = Math.sqrt(dx * dx + dy * dy);
+    var rs = Math.max(0.01, chord * 0.55);
+    var mx = (p0.x + p1.x) * 0.5;
+    var my = (p0.y + p1.y) * 0.5;
+    var halfChord = chord * 0.5;
+    var sagitta = rs - Math.sqrt(Math.max(0, rs * rs - halfChord * halfChord));
+    var toFocalX = fx - mx;
+    var toFocalY = fy - my;
+    var flen = Math.sqrt(toFocalX * toFocalX + toFocalY * toFocalY);
+    if (flen < 1e-9) {
+      return { x: mx, y: my };
+    }
+    var dirX = toFocalX / flen;
+    var dirY = toFocalY / flen;
+    var sign = inward ? 1 : -1;
+    return {
+      x: mx + sign * sagitta * dirX,
+      y: my + sign * sagitta * dirY,
+    };
+  }
+
+  function halfCircleInnerEndpointRadiusForGap(
+    fx,
+    fy,
+    leftAngle,
+    rightAngle,
+    outerP0,
+    outerP1,
+    gap,
+    maxRadius
+  ) {
+    var outerApex = halfCircleCuspApexPoint(fx, fy, outerP0, outerP1, true);
+
+    function innerApexDistance(endpointRadius) {
+      var pL = halfCirclePolarPoint(fx, fy, endpointRadius, leftAngle);
+      var pR = halfCirclePolarPoint(fx, fy, endpointRadius, rightAngle);
+      var innerApex = halfCircleCuspApexPoint(fx, fy, pL, pR, false);
+      var dx = innerApex.x - outerApex.x;
+      var dy = innerApex.y - outerApex.y;
+      return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    var hiLimit = typeof maxRadius === "number" ? maxRadius : 1;
+    var tLo = 1;
+    var tHi = hiLimit;
+    var ti;
+    for (ti = 0; ti < 48; ti++) {
+      var m1 = tLo + (tHi - tLo) / 3;
+      var m2 = tHi - (tHi - tLo) / 3;
+      if (innerApexDistance(m1) < innerApexDistance(m2)) tHi = m2;
+      else tLo = m1;
+    }
+    var rAtMin = (tLo + tHi) * 0.5;
+    var minDist = innerApexDistance(rAtMin);
+
+    if (gap <= minDist) return rAtMin;
+
+    var lo = rAtMin;
+    var hi = hiLimit;
+    if (innerApexDistance(hi) < gap) return hi;
+
+    var iter;
+    for (iter = 0; iter < 48; iter++) {
+      var mid = (lo + hi) * 0.5;
+      if (innerApexDistance(mid) < gap) lo = mid;
+      else hi = mid;
+    }
+    return hi;
+  }
+
+  function halfCirclePolarPoint(cx, cy, radius, angle) {
+    return {
+      x: cx + radius * Math.cos(angle),
+      y: cy - radius * Math.sin(angle),
+    };
+  }
+
+  function buildHalfCircleFullEndpoints(cx, y, r, ribs) {
+    var deltaTheta = ribs > 1 ? Math.PI / (ribs - 1) : 0;
+    var endpoints = [];
+    var i;
+    for (i = 0; i < ribs; i++) {
+      var a = Math.PI - i * deltaTheta;
+      var pt = halfCirclePolarPoint(cx, y, r, a);
+      endpoints.push({ x: pt.x, y: pt.y, a: a });
+    }
+    return { endpoints: endpoints, deltaTheta: deltaTheta };
+  }
+
+  function buildHalfCircleVisibleFanLayout(cx, y, r, ribs, visiblePetals, anchor) {
+    var full = buildHalfCircleFullEndpoints(cx, y, r, ribs);
+    var maxPetals = ribs - 1;
+    if (visiblePetals <= 0 || maxPetals <= 0) {
+      return {
+        endpoints: [],
+        deltaTheta: full.deltaTheta,
+        startAngle: Math.PI,
+        endAngle: Math.PI,
+        visiblePetals: 0,
+      };
+    }
+
+    var firstRib;
+    var lastRib;
+    if (anchor === "right") {
+      // Right-anchored: keep the right edge fixed; petals fold away from the left.
+      firstRib = maxPetals - visiblePetals;
+      lastRib = maxPetals;
+    } else {
+      // Left-anchored: keep the left edge fixed; petals fold away from the right.
+      firstRib = 0;
+      lastRib = visiblePetals;
+    }
+    var visibleEndpoints = full.endpoints.slice(firstRib, lastRib + 1);
+
+    return {
+      endpoints: visibleEndpoints,
+      deltaTheta: full.deltaTheta,
+      startAngle: visibleEndpoints[0].a,
+      endAngle: visibleEndpoints[visibleEndpoints.length - 1].a,
+      visiblePetals: visiblePetals,
+      firstRib: firstRib,
+    };
+  }
+
+  function halfCircleSectorPath(cx, y, r, startAngle, endAngle) {
+    // Travel from the larger angle to the smaller so sweep=1 follows the upper arc
+    // (same direction as the original semicircle fill: left → right through the top).
+    var arcFrom = startAngle;
+    var arcTo = endAngle;
+    if (arcFrom < arcTo) {
+      var swap = arcFrom;
+      arcFrom = arcTo;
+      arcTo = swap;
+    }
+    var pStart = halfCirclePolarPoint(cx, y, r, arcFrom);
+    var pEnd = halfCirclePolarPoint(cx, y, r, arcTo);
+    var span = arcFrom - arcTo;
+    var largeArc = span > Math.PI ? 1 : 0;
+    return (
+      "M " +
+      cx +
+      " " +
+      y +
+      " L " +
+      pStart.x +
+      " " +
+      pStart.y +
+      " A " +
+      r +
+      " " +
+      r +
+      " 0 " +
+      largeArc +
+      " 1 " +
+      pEnd.x +
+      " " +
+      pEnd.y +
+      " Z"
+    );
+  }
+
+  function halfCircleFocalArcPath(cx, y, radius, startAngle, endAngle) {
+    var arcFrom = startAngle;
+    var arcTo = endAngle;
+    if (arcFrom < arcTo) {
+      var swap = arcFrom;
+      arcFrom = arcTo;
+      arcTo = swap;
+    }
+    var pStart = halfCirclePolarPoint(cx, y, radius, arcFrom);
+    var pEnd = halfCirclePolarPoint(cx, y, radius, arcTo);
+    var span = arcFrom - arcTo;
+    var largeArc = span > Math.PI ? 1 : 0;
+    return (
+      "M " +
+      pStart.x +
+      " " +
+      pStart.y +
+      " A " +
+      radius +
+      " " +
+      radius +
+      " 0 " +
+      largeArc +
+      " 1 " +
+      pEnd.x +
+      " " +
+      pEnd.y
+    );
+  }
+
+  function halfCircleCircleStarTipPoint(circle) {
+    return halfCirclePolarPoint(
+      circle.cx,
+      circle.cy,
+      circle.r,
+      circle.tipAngle
+    );
+  }
+
+  function halfCircleValleyShelfRadius(fx, fy, circles) {
+    if (!circles.length) return 0;
+    var total = 0;
+    var i;
+    for (i = 0; i < circles.length; i++) {
+      var tip = halfCircleCircleStarTipPoint(circles[i]);
+      var dx = tip.x - fx;
+      var dy = tip.y - fy;
+      total += Math.sqrt(dx * dx + dy * dy);
+    }
+    return total / circles.length;
+  }
+
+  function halfCirclePolarFromFocal(fx, fy, px, py) {
+    var dx = px - fx;
+    var dy = py - fy;
+    return {
+      angle: Math.atan2(-dy, dx),
+      dist: Math.sqrt(dx * dx + dy * dy),
+    };
+  }
+
+  function halfCircleValleyShelfArcSpec(fx, fy, circles) {
+    if (!circles.length) return null;
+    var leftCircle = circles[0];
+    var rightCircle = circles[circles.length - 1];
+    var leftTip = halfCircleCircleStarTipPoint(leftCircle);
+    var rightTip = halfCircleCircleStarTipPoint(rightCircle);
+    var leftPolar = halfCirclePolarFromFocal(fx, fy, leftTip.x, leftTip.y);
+    var rightPolar = halfCirclePolarFromFocal(fx, fy, rightTip.x, rightTip.y);
+    return {
+      radius: halfCircleValleyShelfRadius(fx, fy, circles),
+      startAngle: leftPolar.angle,
+      endAngle: rightPolar.angle,
+      startPoint: leftTip,
+      endPoint: rightTip,
+    };
+  }
+
+  function halfCircleValleyShelfArcPath(fx, fy, spec) {
+    var arcFrom = spec.startAngle;
+    var arcTo = spec.endAngle;
+    if (arcFrom < arcTo) {
+      var swap = arcFrom;
+      arcFrom = arcTo;
+      arcTo = swap;
+    }
+    var span = arcFrom - arcTo;
+    var largeArc = span > Math.PI ? 1 : 0;
+    return (
+      "M " +
+      spec.startPoint.x +
+      " " +
+      spec.startPoint.y +
+      " A " +
+      spec.radius +
+      " " +
+      spec.radius +
+      " 0 " +
+      largeArc +
+      " 1 " +
+      spec.endPoint.x +
+      " " +
+      spec.endPoint.y
+    );
+  }
+
+  function halfCircleDistSqFromFocal(fx, fy, px, py) {
+    var dx = px - fx;
+    var dy = py - fy;
+    return dx * dx + dy * dy;
+  }
+
+  function halfCircleAngleOnCircle(cx, cy, px, py) {
+    return Math.atan2(-(py - cy), px - cx);
+  }
+
+  function halfCircleIntersectTwoCircles(c1x, c1y, r1, c2x, c2y, r2) {
+    var dx = c2x - c1x;
+    var dy = c2y - c1y;
+    var dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < 1e-9) return [];
+    if (dist > r1 + r2 + 1e-6 || dist < Math.abs(r1 - r2) - 1e-6) return [];
+    var a = (r1 * r1 - r2 * r2 + dist * dist) / (2 * dist);
+    var h2 = r1 * r1 - a * a;
+    if (h2 < -1e-6) return [];
+    var h = Math.sqrt(Math.max(0, h2));
+    var mx = c1x + (a * dx) / dist;
+    var my = c1y + (a * dy) / dist;
+    var perpX = -dy / dist;
+    var perpY = dx / dist;
+    if (h < 1e-6) return [{ x: mx, y: my }];
+    return [
+      { x: mx + h * perpX, y: my + h * perpY },
+      { x: mx - h * perpX, y: my - h * perpY },
+    ];
+  }
+
+  function halfCircleCirclePairClosestPoints(leftCircle, rightCircle) {
+    var dx = rightCircle.cx - leftCircle.cx;
+    var dy = rightCircle.cy - leftCircle.cy;
+    var dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < 1e-9) {
+      var pt = { x: leftCircle.cx, y: leftCircle.cy };
+      return { left: pt, right: pt };
+    }
+    return {
+      left: {
+        x: leftCircle.cx + (leftCircle.r * dx) / dist,
+        y: leftCircle.cy + (leftCircle.r * dy) / dist,
+      },
+      right: {
+        x: rightCircle.cx - (rightCircle.r * dx) / dist,
+        y: rightCircle.cy - (rightCircle.r * dy) / dist,
+      },
+    };
+  }
+
+  function halfCircleCircleShelfGapCorner(
+    fx,
+    fy,
+    shelfRadius,
+    circle,
+    neighborCx,
+    neighborCy
+  ) {
+    var hits = halfCircleIntersectTwoCircles(
+      fx,
+      fy,
+      shelfRadius,
+      circle.cx,
+      circle.cy,
+      circle.r
+    );
+    var toNx = neighborCx - circle.cx;
+    var toNy = neighborCy - circle.cy;
+    var toLen = Math.sqrt(toNx * toNx + toNy * toNy);
+    if (toLen < 1e-9) return null;
+
+    var shelfDistSq = shelfRadius * shelfRadius;
+    var centerDistSq = halfCircleDistSqFromFocal(fx, fy, circle.cx, circle.cy);
+    var cuspPt = {
+      x: circle.cx + (circle.r * toNx) / toLen,
+      y: circle.cy + (circle.r * toNy) / toLen,
+    };
+    var cuspDistSq = halfCircleDistSqFromFocal(fx, fy, cuspPt.x, cuspPt.y);
+    var aCusp = halfCircleAngleOnCircle(circle.cx, circle.cy, cuspPt.x, cuspPt.y);
+    var aFocal = halfCircleAngleOnCircle(circle.cx, circle.cy, fx, fy);
+
+    var bestHit = null;
+    var bestHitDist = -Infinity;
+    var hi;
+    for (hi = 0; hi < hits.length; hi++) {
+      var hit = hits[hi];
+      var vx = hit.x - circle.cx;
+      var vy = hit.y - circle.cy;
+      if (vx * toNx + vy * toNy <= 1e-6) continue;
+      var hitDist = halfCircleDistSqFromFocal(fx, fy, hit.x, hit.y);
+      if (hitDist <= centerDistSq + 1 || hitDist <= cuspDistSq + 1) continue;
+      if (hitDist > bestHitDist) {
+        bestHitDist = hitDist;
+        bestHit = hit;
+      }
+    }
+    if (bestHit) return bestHit;
+
+    var bestSample = null;
+    var bestSampleDist = -Infinity;
+    var sweep;
+    for (sweep = 0; sweep <= 1; sweep++) {
+      var si;
+      for (si = 0; si <= 96; si++) {
+        var t = si / 96;
+        var delta = aFocal - aCusp;
+        if (sweep === 0) {
+          if (delta > 0) delta -= Math.PI * 2;
+        } else if (delta < 0) {
+          delta += Math.PI * 2;
+        }
+        var angle = aCusp + delta * t;
+        var pt = halfCirclePolarPoint(circle.cx, circle.cy, circle.r, angle);
+        var dot = (pt.x - circle.cx) * toNx + (pt.y - circle.cy) * toNy;
+        if (dot <= 1e-6) continue;
+        var ptDist = halfCircleDistSqFromFocal(fx, fy, pt.x, pt.y);
+        if (ptDist <= centerDistSq + 1 || ptDist <= cuspDistSq + 1) continue;
+        if (ptDist > shelfDistSq + 64) continue;
+        if (ptDist > bestSampleDist) {
+          bestSampleDist = ptDist;
+          bestSample = pt;
+        }
+      }
+    }
+    return bestSample;
+  }
+
+  function halfCircleCircleArcMidAngle(a0, a1, sweep) {
+    var delta = a1 - a0;
+    if (sweep === 0) {
+      if (delta > 0) delta -= Math.PI * 2;
+    } else if (delta < 0) {
+      delta += Math.PI * 2;
+    }
+    return a0 + delta * 0.5;
+  }
+
+  function halfCircleAppendCircleArcBetween(
+    d,
+    cx,
+    cy,
+    r,
+    fromPt,
+    toPt,
+    fx,
+    fy,
+    neighborCx,
+    neighborCy
+  ) {
+    var a0 = halfCircleAngleOnCircle(cx, cy, fromPt.x, fromPt.y);
+    var a1 = halfCircleAngleOnCircle(cx, cy, toPt.x, toPt.y);
+    var centerDist = halfCircleDistSqFromFocal(fx, fy, cx, cy);
+    var toNx = neighborCx - cx;
+    var toNy = neighborCy - cy;
+    var bestSweep = 1;
+    var bestDist = -Infinity;
+    var sweep;
+    for (sweep = 0; sweep <= 1; sweep++) {
+      var midAngle = halfCircleCircleArcMidAngle(a0, a1, sweep);
+      var mid = halfCirclePolarPoint(cx, cy, r, midAngle);
+      var midDist = halfCircleDistSqFromFocal(fx, fy, mid.x, mid.y);
+      if (midDist <= centerDist + 1) continue;
+      var dot = (mid.x - cx) * toNx + (mid.y - cy) * toNy;
+      if (dot <= 1e-6) continue;
+      if (midDist > bestDist) {
+        bestDist = midDist;
+        bestSweep = sweep;
+      }
+    }
+    if (bestDist < 0) return null;
+
+    var delta = a1 - a0;
+    if (bestSweep === 0) {
+      if (delta > 0) delta -= Math.PI * 2;
+    } else if (delta < 0) {
+      delta += Math.PI * 2;
+    }
+    var largeArc = Math.abs(delta) > Math.PI ? 1 : 0;
+    return (
+      d +
+      " A " +
+      r +
+      " " +
+      r +
+      " 0 " +
+      largeArc +
+      " " +
+      bestSweep +
+      " " +
+      toPt.x +
+      " " +
+      toPt.y
+    );
+  }
+
+  function halfCircleAppendFocalArcBetween(d, fx, fy, radius, fromPt, toPt) {
+    var a0 = halfCirclePolarFromFocal(fx, fy, fromPt.x, fromPt.y).angle;
+    var a1 = halfCirclePolarFromFocal(fx, fy, toPt.x, toPt.y).angle;
+    var arcFrom = a0;
+    var arcTo = a1;
+    if (arcFrom < arcTo) {
+      var swap = arcFrom;
+      arcFrom = arcTo;
+      arcTo = swap;
+    }
+    var span = arcFrom - arcTo;
+    var largeArc = span > Math.PI ? 1 : 0;
+    return (
+      d +
+      " A " +
+      radius +
+      " " +
+      radius +
+      " 0 " +
+      largeArc +
+      " 1 " +
+      toPt.x +
+      " " +
+      toPt.y
+    );
+  }
+
+  function halfCircleProjectToFocalArc(fx, fy, radius, px, py) {
+    var polar = halfCirclePolarFromFocal(fx, fy, px, py);
+    return halfCirclePolarPoint(fx, fy, radius, polar.angle);
+  }
+
+  function halfCircleAppendCircleArcGapSide(
+    d,
+    cx,
+    cy,
+    r,
+    fromPt,
+    toPt,
+    fx,
+    fy,
+    neighborCx,
+    neighborCy
+  ) {
+    var a0 = halfCircleAngleOnCircle(cx, cy, fromPt.x, fromPt.y);
+    var a1 = halfCircleAngleOnCircle(cx, cy, toPt.x, toPt.y);
+    var toNx = neighborCx - cx;
+    var toNy = neighborCy - cy;
+    var centerDistSq = halfCircleDistSqFromFocal(fx, fy, cx, cy);
+    var bestSweep = 1;
+    var bestScore = -Infinity;
+    var sweep;
+    for (sweep = 0; sweep <= 1; sweep++) {
+      var delta = a1 - a0;
+      if (sweep === 0) {
+        if (delta > 0) delta -= Math.PI * 2;
+      } else if (delta < 0) {
+        delta += Math.PI * 2;
+      }
+      if (Math.abs(delta) > Math.PI) continue;
+
+      var midAngle = halfCircleCircleArcMidAngle(a0, a1, sweep);
+      var mid = halfCirclePolarPoint(cx, cy, r, midAngle);
+      var dot = (mid.x - cx) * toNx + (mid.y - cy) * toNy;
+      if (dot <= 1e-6) continue;
+      var midDist = halfCircleDistSqFromFocal(fx, fy, mid.x, mid.y);
+      if (midDist <= centerDistSq + 1) continue;
+      if (dot > bestScore) {
+        bestScore = dot;
+        bestSweep = sweep;
+      }
+    }
+    if (bestScore < 0) return null;
+
+    var deltaOut = a1 - a0;
+    if (bestSweep === 0) {
+      if (deltaOut > 0) deltaOut -= Math.PI * 2;
+    } else if (deltaOut < 0) {
+      deltaOut += Math.PI * 2;
+    }
+    var largeArc = Math.abs(deltaOut) > Math.PI ? 1 : 0;
+    return (
+      d +
+      " A " +
+      r +
+      " " +
+      r +
+      " 0 " +
+      largeArc +
+      " " +
+      bestSweep +
+      " " +
+      toPt.x +
+      " " +
+      toPt.y
+    );
+  }
+
+  function halfCircleValleyGapFillPath(fx, fy, shelfRadius, leftCircle, rightCircle) {
+    var cusp = halfCircleCirclePairClosestPoints(leftCircle, rightCircle);
+    var hitL = halfCircleCircleShelfGapCorner(
+      fx,
+      fy,
+      shelfRadius,
+      leftCircle,
+      rightCircle.cx,
+      rightCircle.cy
+    );
+    var hitR = halfCircleCircleShelfGapCorner(
+      fx,
+      fy,
+      shelfRadius,
+      rightCircle,
+      leftCircle.cx,
+      leftCircle.cy
+    );
+    if (!hitL || !hitR) return null;
+
+    var shelfL = halfCircleProjectToFocalArc(fx, fy, shelfRadius, hitL.x, hitL.y);
+    var shelfR = halfCircleProjectToFocalArc(fx, fy, shelfRadius, hitR.x, hitR.y);
+
+    var d = "M " + shelfL.x + " " + shelfL.y;
+    d = halfCircleAppendFocalArcBetween(d, fx, fy, shelfRadius, shelfL, shelfR);
+    if (!d) return null;
+
+    d = halfCircleAppendCircleArcGapSide(
+      d,
+      rightCircle.cx,
+      rightCircle.cy,
+      rightCircle.r,
+      hitR,
+      cusp.right,
+      fx,
+      fy,
+      leftCircle.cx,
+      leftCircle.cy
+    );
+    if (!d) return null;
+
+    var gapDx = cusp.right.x - cusp.left.x;
+    var gapDy = cusp.right.y - cusp.left.y;
+    if (gapDx * gapDx + gapDy * gapDy > 1e-4) {
+      d += " L " + cusp.left.x + " " + cusp.left.y;
+    }
+
+    d = halfCircleAppendCircleArcGapSide(
+      d,
+      leftCircle.cx,
+      leftCircle.cy,
+      leftCircle.r,
+      cusp.left,
+      hitL,
+      fx,
+      fy,
+      rightCircle.cx,
+      rightCircle.cy
+    );
+    if (!d) return null;
+    return d + " Z";
+  }
+
+  function halfCirclePointOnOutwardArc(spec, pt) {
+    var angle = Math.atan2(-(pt.y - spec.cy), pt.x - spec.cx);
+    return halfCircleAngleInOutwardArc(spec, angle);
+  }
+
+  function halfCirclePetalCirclePairClosestPoints(petal, circle, fx, fy) {
+    var spec = halfCircleOutwardCuspArcSpec(fx, fy, petal.inLeft, petal.inRight);
+    var petalPt = halfCircleClosestPointOnArc(spec, circle.cx, circle.cy);
+    var dx = petalPt.x - circle.cx;
+    var dy = petalPt.y - circle.cy;
+    var dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < 1e-9) {
+      return {
+        petal: petalPt,
+        circle: { x: circle.cx, y: circle.cy },
+      };
+    }
+    return {
+      petal: petalPt,
+      circle: {
+        x: circle.cx + (circle.r * dx) / dist,
+        y: circle.cy + (circle.r * dy) / dist,
+      },
+    };
+  }
+
+  function halfCirclePetalOuterCorner(petal, side) {
+    return side === "right" ? petal.inRight : petal.inLeft;
+  }
+
+  function halfCirclePetalOuterShelfPoint(fx, fy, petal, neighborCx, neighborCy) {
+    var spec = halfCircleOutwardCuspArcSpec(fx, fy, petal.inLeft, petal.inRight);
+    var cuspPt = halfCircleClosestPointOnArc(spec, neighborCx, neighborCy);
+    var toNx = neighborCx - cuspPt.x;
+    var toNy = neighborCy - cuspPt.y;
+    var cuspDistSq = halfCircleDistSqFromFocal(fx, fy, cuspPt.x, cuspPt.y);
+
+    var bestSample = null;
+    var bestSampleDist = -Infinity;
+    var sweep;
+    for (sweep = 0; sweep <= 1; sweep++) {
+      var si;
+      for (si = 0; si <= 96; si++) {
+        var t = si / 96;
+        var delta = spec.a1 - spec.a0;
+        if (sweep === 0) {
+          if (delta > 0) delta -= Math.PI * 2;
+        } else if (delta < 0) {
+          delta += Math.PI * 2;
+        }
+        var angle = spec.a0 + delta * t;
+        if (!halfCircleAngleInOutwardArc(spec, angle)) continue;
+        var pt = halfCirclePolarPoint(spec.cx, spec.cy, spec.r, angle);
+        var dot = (pt.x - cuspPt.x) * toNx + (pt.y - cuspPt.y) * toNy;
+        if (dot <= 1e-6) continue;
+        var ptDist = halfCircleDistSqFromFocal(fx, fy, pt.x, pt.y);
+        if (ptDist <= cuspDistSq + 1) continue;
+        if (ptDist > bestSampleDist) {
+          bestSampleDist = ptDist;
+          bestSample = pt;
+        }
+      }
+    }
+    if (bestSample) return bestSample;
+
+    var fallback = null;
+    var fallbackDist = -Infinity;
+    for (sweep = 0; sweep <= 1; sweep++) {
+      var fj;
+      for (fj = 0; fj <= 96; fj++) {
+        var t2 = fj / 96;
+        var delta2 = spec.a1 - spec.a0;
+        if (sweep === 0) {
+          if (delta2 > 0) delta2 -= Math.PI * 2;
+        } else if (delta2 < 0) {
+          delta2 += Math.PI * 2;
+        }
+        var angle2 = spec.a0 + delta2 * t2;
+        if (!halfCircleAngleInOutwardArc(spec, angle2)) continue;
+        var pt2 = halfCirclePolarPoint(spec.cx, spec.cy, spec.r, angle2);
+        var ptDist2 = halfCircleDistSqFromFocal(fx, fy, pt2.x, pt2.y);
+        if (ptDist2 > fallbackDist) {
+          fallbackDist = ptDist2;
+          fallback = pt2;
+        }
+      }
+    }
+    return fallback || cuspPt;
+  }
+
+  function halfCircleCircleOuterShelfPoint(fx, fy, shelfRadius, circle, neighborX, neighborY) {
+    var hit = halfCircleCircleShelfGapCorner(
+      fx,
+      fy,
+      shelfRadius,
+      circle,
+      neighborX,
+      neighborY
+    );
+    if (hit) return hit;
+    var dx = neighborX - circle.cx;
+    var dy = neighborY - circle.cy;
+    var dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < 1e-9) return null;
+    return {
+      x: circle.cx + (circle.r * dx) / dist,
+      y: circle.cy + (circle.r * dy) / dist,
+    };
+  }
+
+  function halfCirclePetalCircleGapFillPath(fx, fy, shelfRadius, petal, circle) {
+    var petalCorner = halfCirclePetalOuterCorner(petal, "right");
+    var cusp = halfCirclePetalCirclePairClosestPoints(petal, circle, fx, fy);
+    var petalTop =
+      halfCirclePetalOuterShelfPoint(fx, fy, petal, circle.cx, circle.cy) ||
+      cusp.petal ||
+      petalCorner;
+    var circleOuter = halfCircleCircleOuterShelfPoint(
+      fx,
+      fy,
+      shelfRadius,
+      circle,
+      petalCorner.x,
+      petalCorner.y
+    );
+    if (!circleOuter) return null;
+
+    var shelfL = halfCircleProjectToFocalArc(fx, fy, shelfRadius, petalTop.x, petalTop.y);
+    var shelfR = halfCircleProjectToFocalArc(
+      fx,
+      fy,
+      shelfRadius,
+      circleOuter.x,
+      circleOuter.y
+    );
+    var innerTop = halfCircleProjectToFocalArc(fx, fy, petal.rInner, petalTop.x, petalTop.y);
+
+    var d = "M " + shelfL.x + " " + shelfL.y;
+    d = halfCircleAppendFocalArcBetween(d, fx, fy, shelfRadius, shelfL, shelfR);
+    if (!d) {
+      d = "M " + shelfL.x + " " + shelfL.y + " L " + shelfR.x + " " + shelfR.y;
+    }
+
+    var circleArc = halfCircleAppendCircleArcGapSide(
+      d,
+      circle.cx,
+      circle.cy,
+      circle.r,
+      circleOuter,
+      cusp.circle,
+      fx,
+      fy,
+      petalCorner.x,
+      petalCorner.y
+    );
+    d = circleArc || d + " L " + cusp.circle.x + " " + cusp.circle.y;
+
+    d += " L " + petalCorner.x + " " + petalCorner.y;
+
+    var innerArc = halfCircleAppendFocalArcBetween(
+      d,
+      fx,
+      fy,
+      petal.rInner,
+      petalCorner,
+      innerTop
+    );
+    d = innerArc || d + " L " + innerTop.x + " " + innerTop.y;
+    d += " L " + petalTop.x + " " + petalTop.y;
+    return d + " Z";
+  }
+
+  function halfCircleCirclePetalGapFillPath(fx, fy, shelfRadius, circle, petal) {
+    var petalCorner = halfCirclePetalOuterCorner(petal, "left");
+    var cusp = halfCirclePetalCirclePairClosestPoints(petal, circle, fx, fy);
+    var petalTop =
+      halfCirclePetalOuterShelfPoint(fx, fy, petal, circle.cx, circle.cy) ||
+      cusp.petal ||
+      petalCorner;
+    var circleOuter = halfCircleCircleOuterShelfPoint(
+      fx,
+      fy,
+      shelfRadius,
+      circle,
+      petalCorner.x,
+      petalCorner.y
+    );
+    if (!circleOuter) return null;
+
+    var shelfL = halfCircleProjectToFocalArc(
+      fx,
+      fy,
+      shelfRadius,
+      circleOuter.x,
+      circleOuter.y
+    );
+    var shelfR = halfCircleProjectToFocalArc(fx, fy, shelfRadius, petalTop.x, petalTop.y);
+    var innerTop = halfCircleProjectToFocalArc(fx, fy, petal.rInner, petalTop.x, petalTop.y);
+
+    var d = "M " + shelfL.x + " " + shelfL.y;
+    d = halfCircleAppendFocalArcBetween(d, fx, fy, shelfRadius, shelfL, shelfR);
+    if (!d) {
+      d = "M " + shelfL.x + " " + shelfL.y + " L " + shelfR.x + " " + shelfR.y;
+    }
+
+    d += " L " + petalTop.x + " " + petalTop.y;
+
+    var innerArc = halfCircleAppendFocalArcBetween(
+      d,
+      fx,
+      fy,
+      petal.rInner,
+      innerTop,
+      petalCorner
+    );
+    d = innerArc || d + " L " + petalCorner.x + " " + petalCorner.y;
+
+    d += " L " + cusp.circle.x + " " + cusp.circle.y;
+
+    var circleArc = halfCircleAppendCircleArcGapSide(
+      d,
+      circle.cx,
+      circle.cy,
+      circle.r,
+      cusp.circle,
+      circleOuter,
+      fx,
+      fy,
+      petalCorner.x,
+      petalCorner.y
+    );
+    d = circleArc || d + " L " + circleOuter.x + " " + circleOuter.y;
+    return d + " Z";
+  }
+
+  function halfCirclePetalShelfCuspCapPath(fx, fy, shelfRadius, petal) {
+    var shelfL = halfCircleProjectToFocalArc(
+      fx,
+      fy,
+      shelfRadius,
+      petal.inLeft.x,
+      petal.inLeft.y
+    );
+    var shelfR = halfCircleProjectToFocalArc(
+      fx,
+      fy,
+      shelfRadius,
+      petal.inRight.x,
+      petal.inRight.y
+    );
+    var d = "M " + shelfL.x + " " + shelfL.y;
+    d = halfCircleAppendFocalArcBetween(d, fx, fy, shelfRadius, shelfL, shelfR);
+    if (!d) return null;
+    d += " L " + petal.inRight.x + " " + petal.inRight.y;
+
+    var dx = petal.inLeft.x - petal.inRight.x;
+    var dy = petal.inLeft.y - petal.inRight.y;
+    var chord = Math.sqrt(dx * dx + dy * dy);
+    var rs = Math.max(0.01, chord * 0.55);
+    var mx = (petal.inLeft.x + petal.inRight.x) * 0.5;
+    var my = (petal.inLeft.y + petal.inRight.y) * 0.5;
+    var cross =
+      (petal.inLeft.x - petal.inRight.x) * (fy - my) -
+      (petal.inLeft.y - petal.inRight.y) * (fx - mx);
+    var sweep = cross > 0 ? 0 : 1;
+    d +=
+      " A " +
+      rs +
+      " " +
+      rs +
+      " 0 0 " +
+      sweep +
+      " " +
+      petal.inLeft.x +
+      " " +
+      petal.inLeft.y;
+    return d + " Z";
+  }
+
+  function halfCircleValleyGapClipPathD(sectorPath, circles) {
+    var d = sectorPath + " Z";
+    var ci;
+    for (ci = 0; ci < circles.length; ci++) {
+      var c = circles[ci];
+      var left = c.cx - c.r;
+      var right = c.cx + c.r;
+      d +=
+        " M " +
+        left +
+        " " +
+        c.cy +
+        " A " +
+        c.r +
+        " " +
+        c.r +
+        " 0 1 0 " +
+        right +
+        " " +
+        c.cy +
+        " A " +
+        c.r +
+        " " +
+        c.r +
+        " 0 1 0 " +
+        left +
+        " " +
+        c.cy +
+        " Z";
+    }
+    return d;
+  }
+
+  function halfCircleRibStripFillPath(fx, fy, outerAngle, innerCorner, rInner, side) {
+    var outerPt = halfCirclePolarPoint(fx, fy, rInner, outerAngle);
+    var d = "M " + fx + " " + fy;
+    if (side === "left") {
+      d += " L " + outerPt.x + " " + outerPt.y;
+      d = halfCircleAppendFocalArcBetween(d, fx, fy, rInner, outerPt, innerCorner);
+    } else {
+      d += " L " + innerCorner.x + " " + innerCorner.y;
+      d = halfCircleAppendFocalArcBetween(d, fx, fy, rInner, innerCorner, outerPt);
+    }
+    return d + " Z";
+  }
+
+  function appendHalfCircleInwardCuspArc(d, p0, p1) {
+    var dx = p1.x - p0.x;
+    var dy = p1.y - p0.y;
+    var chord = Math.sqrt(dx * dx + dy * dy);
+    var rs = Math.max(0.01, chord * 0.55);
+    return d + " A " + rs + " " + rs + " 0 0 1 " + p1.x + " " + p1.y;
+  }
+
+  function appendHalfCircleOutwardCuspArc(d, p0, p1, fx, fy) {
+    var dx = p1.x - p0.x;
+    var dy = p1.y - p0.y;
+    var chord = Math.sqrt(dx * dx + dy * dy);
+    var rs = Math.max(0.01, chord * 0.55);
+    var sweep = 0;
+    if (typeof fx === "number" && typeof fy === "number") {
+      var mx = (p0.x + p1.x) * 0.5;
+      var my = (p0.y + p1.y) * 0.5;
+      var cross = (p1.x - p0.x) * (fy - my) - (p1.y - p0.y) * (fx - mx);
+      // Bulge away from focal (convex petal cap), regardless of p0→p1 direction.
+      sweep = cross > 0 ? 1 : 0;
+    }
+    return d + " A " + rs + " " + rs + " 0 0 " + sweep + " " + p1.x + " " + p1.y;
+  }
+
+  function halfCircleOutwardCuspArcSpec(fx, fy, p0, p1) {
+    var dx = p1.x - p0.x;
+    var dy = p1.y - p0.y;
+    var chord = Math.sqrt(dx * dx + dy * dy);
+    var rs = Math.max(0.01, chord * 0.55);
+    var mx = (p0.x + p1.x) * 0.5;
+    var my = (p0.y + p1.y) * 0.5;
+    var halfChord = chord * 0.5;
+    var apothem = Math.sqrt(Math.max(0, rs * rs - halfChord * halfChord));
+    var toFocalX = fx - mx;
+    var toFocalY = fy - my;
+    var flen = Math.sqrt(toFocalX * toFocalX + toFocalY * toFocalY);
+    var ccx = mx;
+    var ccy = my;
+    if (flen >= 1e-9) {
+      ccx = mx - (apothem * toFocalX) / flen;
+      ccy = my - (apothem * toFocalY) / flen;
+    }
+    return {
+      cx: ccx,
+      cy: ccy,
+      r: rs,
+      a0: Math.atan2(-(p0.y - ccy), p0.x - ccx),
+      a1: Math.atan2(-(p1.y - ccy), p1.x - ccx),
+      p0: p0,
+      p1: p1,
+    };
+  }
+
+  function halfCircleAngleInOutwardArc(spec, angle) {
+    var eps = 1e-9;
+    if (spec.a0 <= spec.a1) {
+      return angle >= spec.a0 - eps && angle <= spec.a1 + eps;
+    }
+    return angle >= spec.a0 - eps || angle <= spec.a1 + eps;
+  }
+
+  function halfCircleClosestPointOnArc(spec, tx, ty) {
+    var dx = tx - spec.cx;
+    var dy = ty - spec.cy;
+    var dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist >= 1e-9) {
+      var angle = Math.atan2(-dy, dx);
+      if (halfCircleAngleInOutwardArc(spec, angle)) {
+        return {
+          x: spec.cx + spec.r * Math.cos(angle),
+          y: spec.cy - spec.r * Math.sin(angle),
+        };
+      }
+    }
+    var d0x = tx - spec.p0.x;
+    var d0y = ty - spec.p0.y;
+    var d1x = tx - spec.p1.x;
+    var d1y = ty - spec.p1.y;
+    var d0 = d0x * d0x + d0y * d0y;
+    var d1 = d1x * d1x + d1y * d1y;
+    return d0 <= d1 ? spec.p0 : spec.p1;
+  }
+
+  function halfCircleValleyCircleCenter(fx, fy, leftPetal, rightPetal, ribAngle, radius) {
+    var avgRadius = (leftPetal.rInner + rightPetal.rInner) * 0.5;
+    var valleyRef = halfCirclePolarPoint(fx, fy, avgRadius, ribAngle);
+    var leftArc = halfCircleOutwardCuspArcSpec(
+      fx,
+      fy,
+      leftPetal.inLeft,
+      leftPetal.inRight
+    );
+    var rightArc = halfCircleOutwardCuspArcSpec(
+      fx,
+      fy,
+      rightPetal.inLeft,
+      rightPetal.inRight
+    );
+    var pLeft = halfCircleClosestPointOnArc(leftArc, valleyRef.x, valleyRef.y);
+    var pRight = halfCircleClosestPointOnArc(rightArc, valleyRef.x, valleyRef.y);
+    var b0x = (pLeft.x + pRight.x) * 0.5;
+    var b0y = (pLeft.y + pRight.y) * 0.5;
+    var toFocalX = b0x - fx;
+    var toFocalY = b0y - fy;
+    var flen = Math.sqrt(toFocalX * toFocalX + toFocalY * toFocalY);
+    if (flen < 1e-9) {
+      return { cx: b0x, cy: b0y };
+    }
+    var ux = toFocalX / flen;
+    var uy = toFocalY / flen;
+    return {
+      cx: b0x + radius * ux,
+      cy: b0y + radius * uy,
+    };
+  }
+
+  function halfCircleStarSilhouettePath(cx, cy, outerRadius, tipAngle, innerRadius) {
+    var n = 5;
+    var innerR =
+      typeof innerRadius === "number" && Number.isFinite(innerRadius)
+        ? innerRadius
+        : outerRadius * getHalfCircleStarInnerRadiusRatio();
+    var d = "";
+    var k;
+    for (k = 0; k < n; k++) {
+      var tip = halfCirclePolarPoint(
+        cx,
+        cy,
+        outerRadius,
+        tipAngle - k * 2 * Math.PI / n
+      );
+      var innerPt = halfCirclePolarPoint(
+        cx,
+        cy,
+        innerR,
+        tipAngle - ((2 * k + 1) * Math.PI) / n
+      );
+      if (k === 0) d = "M " + tip.x + " " + tip.y;
+      else d += " L " + tip.x + " " + tip.y;
+      d += " L " + innerPt.x + " " + innerPt.y;
+    }
+    return d + " Z";
+  }
+
+  function halfCircleStarInnerPentagonPath(cx, cy, innerConcaveRadius, tipAngle) {
+    var n = 5;
+    var d = "";
+    var k;
+    for (k = 0; k < n; k++) {
+      var pt = halfCirclePolarPoint(
+        cx,
+        cy,
+        innerConcaveRadius,
+        tipAngle - ((2 * k + 1) * Math.PI) / n
+      );
+      if (k === 0) d = "M " + pt.x + " " + pt.y;
+      else d += " L " + pt.x + " " + pt.y;
+    }
+    return d + " Z";
+  }
+
+  function halfCircleStarArmTrianglesPath(cx, cy, outerRadius, innerConcaveRadius, tipAngle) {
+    var n = 5;
+    var d = "";
+    var k;
+    for (k = 0; k < n; k++) {
+      var tip = halfCirclePolarPoint(
+        cx,
+        cy,
+        outerRadius,
+        tipAngle - k * 2 * Math.PI / n
+      );
+      var rightBase = halfCirclePolarPoint(
+        cx,
+        cy,
+        innerConcaveRadius,
+        tipAngle - ((2 * k + 1) * Math.PI) / n
+      );
+      var leftK = (k - 1 + n) % n;
+      var leftBase = halfCirclePolarPoint(
+        cx,
+        cy,
+        innerConcaveRadius,
+        tipAngle - ((2 * leftK + 1) * Math.PI) / n
+      );
+      d +=
+        "M " +
+        tip.x +
+        " " +
+        tip.y +
+        " L " +
+        rightBase.x +
+        " " +
+        rightBase.y +
+        " L " +
+        leftBase.x +
+        " " +
+        leftBase.y +
+        " Z ";
+    }
+    return d.trim();
+  }
+
+  function computeHalfCircleValleyCircles(fx, fy, ribs, endpoints, petals) {
+    var valleyCount = ribs - 2;
+    if (valleyCount <= 0) return [];
+
+    var valleys = [];
+    var vi;
+    for (vi = 1; vi < ribs - 1; vi++) {
+      var leftPetal = petals[vi - 1];
+      var rightPetal = petals[vi];
+      if (!leftPetal || !rightPetal) continue;
+      valleys.push({
+        leftPetal: leftPetal,
+        rightPetal: rightPetal,
+        ribAngle: endpoints[vi].a,
+        ribIndex: vi,
+      });
+    }
+    if (!valleys.length) return [];
+
+    function centersForRadius(radius) {
+      var centers = [];
+      var i;
+      for (i = 0; i < valleys.length; i++) {
+        centers.push(
+          halfCircleValleyCircleCenter(
+            fx,
+            fy,
+            valleys[i].leftPetal,
+            valleys[i].rightPetal,
+            valleys[i].ribAngle,
+            radius
+          )
+        );
+      }
+      return centers;
+    }
+
+    function minNeighborHalfDist(centers) {
+      var minHalf = Infinity;
+      var i;
+      for (i = 0; i < centers.length - 1; i++) {
+        var dx = centers[i + 1].cx - centers[i].cx;
+        var dy = centers[i + 1].cy - centers[i].cy;
+        var halfDist = Math.sqrt(dx * dx + dy * dy) * 0.5;
+        if (halfDist < minHalf) minHalf = halfDist;
+      }
+      return minHalf;
+    }
+
+    var lo = 0.5;
+    var hi = 200;
+    for (vi = 0; vi < 56; vi++) {
+      var trial = (lo + hi) * 0.5;
+      var trialCenters = centersForRadius(trial);
+      if (minNeighborHalfDist(trialCenters) >= trial - 1e-4) lo = trial;
+      else hi = trial;
+    }
+
+    var maxTangentRadius = lo;
+    if (maxTangentRadius < 0.5) return [];
+
+    var sizeScale = getHalfCircleValleyCircleSizeScale();
+    var radius = maxTangentRadius * sizeScale;
+    if (radius < 0.5) return [];
+
+    var finalCenters = centersForRadius(radius);
+    var circles = [];
+    for (vi = 0; vi < valleys.length; vi++) {
+      circles.push({
+        cx: finalCenters[vi].cx,
+        cy: finalCenters[vi].cy,
+        r: radius,
+        tipAngle: valleys[vi].ribAngle,
+        ribIndex: valleys[vi].ribIndex,
+        leftPetal: valleys[vi].leftPetal,
+        rightPetal: valleys[vi].rightPetal,
+      });
+    }
+    return circles;
+  }
+
+  function buildHalfCirclePetals(cx, y, ribs, inset, cuspGap, r, endpoints, deltaTheta) {
+    var petals = [];
+    var pj;
+    for (pj = 0; pj < ribs - 1; pj++) {
+      var tLeft = endpoints[pj].a;
+      var tRight = endpoints[pj + 1].a;
+      var leftInsetAngle;
+      var rightInsetAngle;
+      if (tLeft < tRight) {
+        leftInsetAngle = tLeft + inset * deltaTheta;
+        rightInsetAngle = tRight - inset * deltaTheta;
+        if (leftInsetAngle >= rightInsetAngle) {
+          petals.push(null);
+          continue;
+        }
+      } else {
+        leftInsetAngle = tLeft - inset * deltaTheta;
+        rightInsetAngle = tRight + inset * deltaTheta;
+        if (leftInsetAngle <= rightInsetAngle) {
+          petals.push(null);
+          continue;
+        }
+      }
+
+      var rInner = halfCircleInnerEndpointRadiusForGap(
+        cx,
+        y,
+        Math.min(leftInsetAngle, rightInsetAngle),
+        Math.max(leftInsetAngle, rightInsetAngle),
+        endpoints[pj],
+        endpoints[pj + 1],
+        cuspGap,
+        r
+      );
+
+      var inLeft = halfCirclePolarPoint(cx, y, rInner, leftInsetAngle);
+      var inRight = halfCirclePolarPoint(cx, y, rInner, rightInsetAngle);
+
+      petals.push({
+        inLeft: inLeft,
+        inRight: inRight,
+        rInner: rInner,
+        inLeftAngle: leftInsetAngle,
+        inRightAngle: rightInsetAngle,
+      });
+    }
+    return petals;
+  }
+
+  function appendHalfCircleFan(
+    parentGroup,
+    idPrefix,
+    cx,
+    focalY,
+    r,
+    ribs,
+    visiblePetals,
+    strokeColor,
+    anchor
+  ) {
+    var layout = buildHalfCircleVisibleFanLayout(
+      cx,
+      focalY,
+      r,
+      ribs,
+      visiblePetals,
+      anchor || "left"
+    );
+    var endpoints = layout.endpoints;
+    var visibleRibs = endpoints.length;
+    var deltaTheta = layout.deltaTheta;
+    var sectorPath = halfCircleSectorPath(
+      cx,
+      focalY,
+      r,
+      layout.startAngle,
+      layout.endAngle
+    );
+
+    if (idPrefix === "top" && designSvg) {
+      var defs = designSvg.querySelector("defs");
+      if (defs) {
+        var existingClip = defs.querySelector("#half-circle-clip");
+        if (existingClip && existingClip.parentNode) {
+          existingClip.parentNode.removeChild(existingClip);
+        }
+
+        var halfCircleClip = elSvg("clipPath");
+        halfCircleClip.setAttribute("id", "half-circle-clip");
+        var clipPath = elSvg("path");
+        clipPath.setAttribute("d", sectorPath);
+        halfCircleClip.appendChild(clipPath);
+        defs.appendChild(halfCircleClip);
+      }
+    }
+
+    var inset = getHalfCircleInset();
+    var cuspGap = getHalfCircleCuspGapPx() * HALF_CIRCLE_RADIUS_SCALE;
+    var firstRib = layout.firstRib;
+    var valleyCircles = [];
+    if (getHalfCircleValleyCirclesVisible()) {
+      var fullFan = buildHalfCircleFullEndpoints(cx, focalY, r, ribs);
+      var fullPetals = buildHalfCirclePetals(
+        cx,
+        focalY,
+        ribs,
+        inset,
+        cuspGap,
+        r,
+        fullFan.endpoints,
+        fullFan.deltaTheta
+      );
+      var allValleyCircles = computeHalfCircleValleyCircles(
+        cx,
+        focalY,
+        ribs,
+        fullFan.endpoints,
+        fullPetals
+      );
+      var vci;
+      for (vci = 0; vci < allValleyCircles.length; vci++) {
+        var vcCandidate = allValleyCircles[vci];
+        if (
+          vcCandidate.ribIndex > firstRib &&
+          vcCandidate.ribIndex < firstRib + visiblePetals
+        ) {
+          valleyCircles.push(vcCandidate);
+        }
+      }
+    }
+
+    var bgFill = elSvg("path");
+    bgFill.setAttribute("id", "half-circle-background-" + idPrefix);
+    bgFill.setAttribute("d", sectorPath);
+    bgFill.setAttribute("fill", "white");
+    bgFill.setAttribute("stroke", "none");
+    parentGroup.appendChild(bgFill);
+
+    var outer = elSvg("path");
+    var pts = endpoints;
+    var dOuter = "M " + pts[0].x + " " + pts[0].y;
+    var k;
+    for (k = 0; k < pts.length - 1; k++) {
+      dOuter = appendHalfCircleInwardCuspArc(dOuter, pts[k], pts[k + 1]);
+    }
+    outer.setAttribute("d", dOuter);
+    outer.setAttribute("fill", "none");
+    outer.setAttribute("stroke", strokeColor);
+    outer.setAttribute("stroke-width", String(HALF_CIRCLE_FAN_STROKE_WIDTH));
+    parentGroup.appendChild(outer);
+
+    var leftBoundary = elSvg("line");
+    leftBoundary.setAttribute("x1", String(cx));
+    leftBoundary.setAttribute("y1", String(focalY));
+    leftBoundary.setAttribute("x2", String(endpoints[0].x));
+    leftBoundary.setAttribute("y2", String(endpoints[0].y));
+    leftBoundary.setAttribute("stroke", strokeColor);
+    leftBoundary.setAttribute("stroke-width", String(HALF_CIRCLE_FAN_STROKE_WIDTH));
+    parentGroup.appendChild(leftBoundary);
+
+    var rightBoundary = elSvg("line");
+    rightBoundary.setAttribute("x1", String(cx));
+    rightBoundary.setAttribute("y1", String(focalY));
+    rightBoundary.setAttribute("x2", String(endpoints[visibleRibs - 1].x));
+    rightBoundary.setAttribute("y2", String(endpoints[visibleRibs - 1].y));
+    rightBoundary.setAttribute("stroke", strokeColor);
+    rightBoundary.setAttribute("stroke-width", String(HALF_CIRCLE_FAN_STROKE_WIDTH));
+    parentGroup.appendChild(rightBoundary);
+
+    var innerArcRadius = r * getHalfCircleInnerArcRadiusRatio();
+    var innerArcGap = HALF_CIRCLE_INNER_ARC_PAIR_GAP_PX * HALF_CIRCLE_RADIUS_SCALE;
+    var outerArcRadius =
+      innerArcRadius + innerArcGap + HALF_CIRCLE_FAN_STROKE_WIDTH;
+    var innerArcPair = elSvg("g");
+    innerArcPair.setAttribute("id", "half-circle-inner-arc-pair-" + idPrefix);
+
+    var innerArc = elSvg("path");
+    innerArc.setAttribute("id", "half-circle-inner-arc-" + idPrefix);
+    innerArc.setAttribute(
+      "d",
+      halfCircleFocalArcPath(
+        cx,
+        focalY,
+        innerArcRadius,
+        layout.startAngle,
+        layout.endAngle
+      )
+    );
+    innerArc.setAttribute("fill", "none");
+    innerArc.setAttribute("stroke", strokeColor);
+    innerArc.setAttribute("stroke-width", String(HALF_CIRCLE_FAN_STROKE_WIDTH));
+    innerArcPair.appendChild(innerArc);
+
+    var outerInnerArc = elSvg("path");
+    outerInnerArc.setAttribute("id", "half-circle-inner-arc-outer-" + idPrefix);
+    outerInnerArc.setAttribute(
+      "d",
+      halfCircleFocalArcPath(
+        cx,
+        focalY,
+        outerArcRadius,
+        layout.startAngle,
+        layout.endAngle
+      )
+    );
+    outerInnerArc.setAttribute("fill", "none");
+    outerInnerArc.setAttribute("stroke", strokeColor);
+    outerInnerArc.setAttribute("stroke-width", String(HALF_CIRCLE_FAN_STROKE_WIDTH));
+    innerArcPair.appendChild(outerInnerArc);
+
+    parentGroup.appendChild(innerArcPair);
+
+    var petals = buildHalfCirclePetals(
+      cx,
+      focalY,
+      visibleRibs,
+      inset,
+      cuspGap,
+      r,
+      endpoints,
+      deltaTheta
+    );
+
+    if (getHalfCircleInnerArcDiagonalsVisible()) {
+      var diagonalGroup = elSvg("g");
+      diagonalGroup.setAttribute("id", "half-circle-inner-arc-diagonals-" + idPrefix);
+      var cellIndex = 0;
+      var pi;
+      for (pi = 0; pi < petals.length; pi++) {
+        var diagonalPetal = petals[pi];
+        if (!diagonalPetal) continue;
+
+        var pointA = halfCirclePolarPoint(
+          cx,
+          focalY,
+          innerArcRadius,
+          diagonalPetal.inLeftAngle
+        );
+        var pointB = halfCirclePolarPoint(
+          cx,
+          focalY,
+          innerArcRadius,
+          diagonalPetal.inRightAngle
+        );
+        var pointC = halfCirclePolarPoint(
+          cx,
+          focalY,
+          outerArcRadius,
+          diagonalPetal.inLeftAngle
+        );
+        var pointD = halfCirclePolarPoint(
+          cx,
+          focalY,
+          outerArcRadius,
+          diagonalPetal.inRightAngle
+        );
+
+        var diagonal = elSvg("line");
+        if (cellIndex % 2 === 0) {
+          diagonal.setAttribute("x1", String(pointA.x));
+          diagonal.setAttribute("y1", String(pointA.y));
+          diagonal.setAttribute("x2", String(pointD.x));
+          diagonal.setAttribute("y2", String(pointD.y));
+        } else {
+          diagonal.setAttribute("x1", String(pointB.x));
+          diagonal.setAttribute("y1", String(pointB.y));
+          diagonal.setAttribute("x2", String(pointC.x));
+          diagonal.setAttribute("y2", String(pointC.y));
+        }
+        diagonal.setAttribute("fill", "none");
+        diagonal.setAttribute("stroke", strokeColor);
+        diagonal.setAttribute("stroke-width", String(HALF_CIRCLE_FAN_STROKE_WIDTH));
+        diagonalGroup.appendChild(diagonal);
+        cellIndex++;
+      }
+      parentGroup.appendChild(diagonalGroup);
+    }
+
+    var innerGroup = elSvg("g");
+    innerGroup.setAttribute("id", "half-circle-inner-petals-" + idPrefix);
+    var ribStripFillColor = getLabelBarBackgroundColor();
+    var pj;
+    for (pj = 0; pj < petals.length; pj++) {
+      var petal = petals[pj];
+      if (!petal) continue;
+
+      var inLeft = petal.inLeft;
+      var inRight = petal.inRight;
+
+      var leftStripFill = elSvg("path");
+      leftStripFill.setAttribute(
+        "d",
+        halfCircleRibStripFillPath(
+          cx,
+          focalY,
+          endpoints[pj].a,
+          inLeft,
+          petal.rInner,
+          "left"
+        )
+      );
+      leftStripFill.setAttribute("fill", ribStripFillColor);
+      leftStripFill.setAttribute("stroke", "none");
+      innerGroup.appendChild(leftStripFill);
+
+      var rightStripFill = elSvg("path");
+      rightStripFill.setAttribute(
+        "d",
+        halfCircleRibStripFillPath(
+          cx,
+          focalY,
+          endpoints[pj + 1].a,
+          inRight,
+          petal.rInner,
+          "right"
+        )
+      );
+      rightStripFill.setAttribute("fill", ribStripFillColor);
+      rightStripFill.setAttribute("stroke", "none");
+      innerGroup.appendChild(rightStripFill);
+
+      if (getHalfCircleValleyCirclesVisible() && valleyCircles.length > 0) {
+        var capShelfRadius = halfCircleValleyShelfRadius(cx, focalY, valleyCircles);
+        if (capShelfRadius > 0) {
+          var petalCapPath = halfCirclePetalShelfCuspCapPath(
+            cx,
+            focalY,
+            capShelfRadius,
+            petal
+          );
+          if (petalCapPath) {
+            var petalCapFill = elSvg("path");
+            petalCapFill.setAttribute("d", petalCapPath);
+            petalCapFill.setAttribute("fill", ribStripFillColor);
+            petalCapFill.setAttribute("stroke", "none");
+            innerGroup.appendChild(petalCapFill);
+          }
+        }
+      }
+
+      var innerLeftRib = elSvg("line");
+      innerLeftRib.setAttribute("x1", String(cx));
+      innerLeftRib.setAttribute("y1", String(focalY));
+      innerLeftRib.setAttribute("x2", String(inLeft.x));
+      innerLeftRib.setAttribute("y2", String(inLeft.y));
+      innerLeftRib.setAttribute("stroke", strokeColor);
+      innerLeftRib.setAttribute("stroke-width", String(HALF_CIRCLE_FAN_STROKE_WIDTH));
+      innerGroup.appendChild(innerLeftRib);
+
+      var innerRightRib = elSvg("line");
+      innerRightRib.setAttribute("x1", String(cx));
+      innerRightRib.setAttribute("y1", String(focalY));
+      innerRightRib.setAttribute("x2", String(inRight.x));
+      innerRightRib.setAttribute("y2", String(inRight.y));
+      innerRightRib.setAttribute("stroke", strokeColor);
+      innerRightRib.setAttribute("stroke-width", String(HALF_CIRCLE_FAN_STROKE_WIDTH));
+      innerGroup.appendChild(innerRightRib);
+
+      var dInnerCusp = "M " + inLeft.x + " " + inLeft.y;
+      dInnerCusp = appendHalfCircleOutwardCuspArc(
+        dInnerCusp,
+        inLeft,
+        inRight,
+        cx,
+        focalY
+      );
+      var innerCusp = elSvg("path");
+      innerCusp.setAttribute("d", dInnerCusp);
+      innerCusp.setAttribute("fill", "none");
+      innerCusp.setAttribute("stroke", strokeColor);
+      innerCusp.setAttribute("stroke-width", String(HALF_CIRCLE_FAN_STROKE_WIDTH));
+      innerGroup.appendChild(innerCusp);
+    }
+    parentGroup.appendChild(innerGroup);
+
+    if (valleyCircles.length > 0) {
+      var shelfRadius = halfCircleValleyShelfRadius(cx, focalY, valleyCircles);
+      var valleyGapGroup = null;
+      if (shelfRadius > 0) {
+        valleyGapGroup = elSvg("g");
+        valleyGapGroup.setAttribute("id", "half-circle-valley-gaps-" + idPrefix);
+        var gi;
+        for (gi = 0; gi < valleyCircles.length - 1; gi++) {
+          var gapPathD = halfCircleValleyGapFillPath(
+            cx,
+            focalY,
+            shelfRadius,
+            valleyCircles[gi],
+            valleyCircles[gi + 1]
+          );
+          if (!gapPathD) continue;
+          var gapFill = elSvg("path");
+          gapFill.setAttribute("d", gapPathD);
+          gapFill.setAttribute("fill", getLabelBarBackgroundColor());
+          gapFill.setAttribute("stroke", "none");
+          valleyGapGroup.appendChild(gapFill);
+        }
+
+        for (gi = 0; gi < valleyCircles.length; gi++) {
+          var vcGap = valleyCircles[gi];
+          if (vcGap.leftPetal) {
+            var petalCircleGap = halfCirclePetalCircleGapFillPath(
+              cx,
+              focalY,
+              shelfRadius,
+              vcGap.leftPetal,
+              vcGap
+            );
+            if (petalCircleGap) {
+              var petalCircleFill = elSvg("path");
+              petalCircleFill.setAttribute("d", petalCircleGap);
+              petalCircleFill.setAttribute("fill", getLabelBarBackgroundColor());
+              petalCircleFill.setAttribute("stroke", "none");
+              valleyGapGroup.appendChild(petalCircleFill);
+            }
+          }
+          if (vcGap.rightPetal) {
+            var circlePetalGap = halfCircleCirclePetalGapFillPath(
+              cx,
+              focalY,
+              shelfRadius,
+              vcGap,
+              vcGap.rightPetal
+            );
+            if (circlePetalGap) {
+              var circlePetalFill = elSvg("path");
+              circlePetalFill.setAttribute("d", circlePetalGap);
+              circlePetalFill.setAttribute("fill", getLabelBarBackgroundColor());
+              circlePetalFill.setAttribute("stroke", "none");
+              valleyGapGroup.appendChild(circlePetalFill);
+            }
+          }
+        }
+        parentGroup.appendChild(valleyGapGroup);
+      }
+
+      var valleyGroup = elSvg("g");
+      valleyGroup.setAttribute("id", "half-circle-valley-circles-" + idPrefix);
+      var vc;
+      for (vc = 0; vc < valleyCircles.length; vc++) {
+        var valleyCircle = valleyCircles[vc];
+        var circle = elSvg("circle");
+        circle.setAttribute("cx", String(valleyCircle.cx));
+        circle.setAttribute("cy", String(valleyCircle.cy));
+        circle.setAttribute("r", String(valleyCircle.r));
+        circle.setAttribute("fill", getLabelBarBackgroundColor());
+        circle.setAttribute("stroke", strokeColor);
+        circle.setAttribute("stroke-width", String(HALF_CIRCLE_FAN_STROKE_WIDTH));
+        valleyGroup.appendChild(circle);
+
+        var starRatio = getHalfCircleStarInnerRadiusRatio();
+        var outerStarInnerR = valleyCircle.r * starRatio;
+        var innerStarTipAngle = valleyCircle.tipAngle - Math.PI / 5;
+
+        var star = elSvg("path");
+        star.setAttribute(
+          "d",
+          halfCircleStarSilhouettePath(
+            valleyCircle.cx,
+            valleyCircle.cy,
+            valleyCircle.r,
+            valleyCircle.tipAngle
+          )
+        );
+        star.setAttribute("fill", "white");
+        star.setAttribute("stroke", strokeColor);
+        star.setAttribute("stroke-width", String(HALF_CIRCLE_FAN_STROKE_WIDTH));
+        star.setAttribute("stroke-linejoin", "round");
+        valleyGroup.appendChild(star);
+
+        var innerStar = elSvg("path");
+        innerStar.setAttribute(
+          "d",
+          halfCircleStarSilhouettePath(
+            valleyCircle.cx,
+            valleyCircle.cy,
+            outerStarInnerR,
+            innerStarTipAngle,
+            outerStarInnerR * starRatio
+          )
+        );
+        innerStar.setAttribute("fill", "white");
+        innerStar.setAttribute("stroke", strokeColor);
+        innerStar.setAttribute("stroke-width", String(HALF_CIRCLE_FAN_STROKE_WIDTH));
+        innerStar.setAttribute("stroke-linejoin", "round");
+        valleyGroup.appendChild(innerStar);
+
+        var innerStarInnerR = outerStarInnerR * starRatio;
+        var starArms = elSvg("path");
+        starArms.setAttribute(
+          "d",
+          halfCircleStarArmTrianglesPath(
+            valleyCircle.cx,
+            valleyCircle.cy,
+            outerStarInnerR,
+            innerStarInnerR,
+            innerStarTipAngle
+          )
+        );
+        starArms.setAttribute("fill", getLabelBarBackgroundColor());
+        starArms.setAttribute("stroke", strokeColor);
+        starArms.setAttribute("stroke-width", String(HALF_CIRCLE_FAN_STROKE_WIDTH));
+        starArms.setAttribute("stroke-linejoin", "round");
+        valleyGroup.appendChild(starArms);
+
+        var pentagon = elSvg("path");
+        pentagon.setAttribute(
+          "d",
+          halfCircleStarInnerPentagonPath(
+            valleyCircle.cx,
+            valleyCircle.cy,
+            innerStarInnerR,
+            innerStarTipAngle
+          )
+        );
+        pentagon.setAttribute("fill", "white");
+        pentagon.setAttribute("stroke", strokeColor);
+        pentagon.setAttribute("stroke-width", String(HALF_CIRCLE_FAN_STROKE_WIDTH));
+        pentagon.setAttribute("stroke-linejoin", "round");
+        valleyGroup.appendChild(pentagon);
+      }
+
+      parentGroup.appendChild(valleyGroup);
+
+      if (valleyCircles.length > 0) {
+        var shelfSpec = halfCircleValleyShelfArcSpec(cx, focalY, valleyCircles);
+        if (shelfSpec && shelfSpec.radius > 0) {
+          var shelfArc = elSvg("path");
+          shelfArc.setAttribute("id", "half-circle-circle-shelf-arc-" + idPrefix);
+          shelfArc.setAttribute(
+            "d",
+            halfCircleValleyShelfArcPath(cx, focalY, shelfSpec)
+          );
+          shelfArc.setAttribute("fill", "none");
+          shelfArc.setAttribute("stroke", strokeColor);
+          shelfArc.setAttribute("stroke-width", String(HALF_CIRCLE_FAN_STROKE_WIDTH));
+          parentGroup.appendChild(shelfArc);
+        }
+      }
+    }
+  }
+
+  function renderHalfCircleLayer() {
+    if (!designSvg) return;
+    var layer = designSvg.querySelector("#layer-half-circle");
+    if (!layer) return;
+
+    while (layer.firstChild) layer.removeChild(layer.firstChild);
+
+    var showTop = getHalfCircleVisible();
+    var showBottom = getHalfCircleBottomVisible();
+    if (!showTop && !showBottom) return;
+
+    var diameter = Math.max(0, CANVAS_W - 100);
+    var r = (diameter / 2) * HALF_CIRCLE_RADIUS_SCALE;
+    var cx = CANVAS_W / 2;
+    var ribs = getHalfCircleRibCount();
+    var visiblePetals = getHalfCircleVisiblePetalCount();
+    var strokeColor = getHalfCircleColor();
+
+    if (visiblePetals <= 0) {
+      return;
+    }
+
+    if (showTop) {
+      var topG = elSvg("g");
+      topG.setAttribute("id", "half-circle-top");
+      appendHalfCircleFan(
+        topG,
+        "top",
+        cx,
+        HALF_CIRCLE_FOCAL_Y,
+        r,
+        ribs,
+        visiblePetals,
+        strokeColor
+      );
+      layer.appendChild(topG);
+    }
+
+    if (showBottom) {
+      var bottomG = elSvg("g");
+      bottomG.setAttribute("id", "half-circle-bottom");
+      bottomG.setAttribute("transform", getHalfCircleVerticalMirrorTransform());
+      appendHalfCircleFan(
+        bottomG,
+        "bottom",
+        cx,
+        HALF_CIRCLE_FOCAL_Y,
+        r,
+        ribs,
+        visiblePetals,
+        strokeColor,
+        "right"
+      );
+      layer.appendChild(bottomG);
+    }
   }
 
   function renderDiamondFillsLayer() {
@@ -6349,7 +10171,13 @@
       if (cachedStarFills.length) {
         patternLayer.appendChild(starFillsToGroup(cachedStarFills));
       }
-      patternLayer.appendChild(segmentsToGroup(cachedAllSegments));
+      patternLayer.appendChild(
+        segmentsToGroup(getVisibleSegments(getAllSegmentsForTracing()))
+      );
+      var starCircles = getActiveCircles();
+      if (starCircles.length) {
+        patternLayer.appendChild(circlesToGroup(starCircles));
+      }
       return;
     }
 
@@ -6365,8 +10193,7 @@
   }
 
   /**
-   * Star grid: pattern, border frame, label bars, Anger vertical lines.
-   * (Other emotion layers remain deferred until later steps.)
+   * Star grid: pattern, Hope stipple, merge mask, border, Anger lines, Pride auto-merge.
    */
   function renderStarGrid() {
     applyStarGridLayerVisibility();
@@ -6401,12 +10228,21 @@
 
     var borderSideOut = document.getElementById("border-side-segments-out");
     if (borderSideOut) {
-      borderSideOut.textContent = String(getBorderLeftRightSegments());
+      borderSideOut.textContent = borderSideThicknessLabel(
+        getBorderSideThicknessColumns()
+      );
     }
+    syncBorderSideWhiteFillOutput();
 
     var angerLengthOut = document.getElementById("anger-vertical-length-out");
     if (angerLengthOut) {
       angerLengthOut.textContent = String(getAngerVerticalLengthPercent()) + "%";
+    }
+
+    var circleSig = buildCircleLayoutSignature();
+    if (circleSig !== lastCircleLayoutSignature) {
+      lastCircleLayoutSignature = circleSig;
+      syncCircleSelection(true);
     }
 
     var diamondSig = buildDiamondLayoutSignature();
@@ -6414,6 +10250,9 @@
       lastDiamondLayoutSignature = diamondSig;
       syncDiamondFill(false);
     }
+
+    var densityOut = document.getElementById("circle-density-out");
+    if (densityOut) densityOut.textContent = String(getCircleDensity()) + "%";
 
     var prideFillOut = document.getElementById("pride-fill-percent-out");
     if (prideFillOut) {
@@ -6423,10 +10262,18 @@
     var fill = designSvg.querySelector("#canvas-background-fill");
     if (fill) fill.setAttribute("fill", getCanvasBackgroundColor());
 
+    updateAutoMergeIntensityOutput();
+
     refreshBorderFrameAndLabelBars();
     syncVerticalGridLines(false);
     renderVerticalGridLayer();
+    renderBackgroundLayer();
     renderPatternLayer();
+    renderHalfCircleLayer();
+    renderGridMaskLayer("render");
+    renderStippleDotsLayer();
+    applyMergeReveal();
+    renderAutoMergeFillsLayer();
     layoutStage();
     updateResetButton();
   }
@@ -6475,7 +10322,7 @@
         " down (symmetric clip)";
     }
 
-    var layoutSig = buildLayoutSignature();
+    var layoutSig = buildCircleLayoutSignature();
     if (layoutSig !== lastCircleLayoutSignature) {
       lastCircleLayoutSignature = layoutSig;
       syncCircleSelection(true);
@@ -6507,8 +10354,11 @@
 
     var borderSideOut = document.getElementById("border-side-segments-out");
     if (borderSideOut) {
-      borderSideOut.textContent = String(getBorderLeftRightSegments());
+      borderSideOut.textContent = borderSideThicknessLabel(
+        getBorderSideThicknessColumns()
+      );
     }
+    syncBorderSideWhiteFillOutput();
 
     renderBackgroundLayer();
     renderGridMaskLayer("render");
@@ -6519,8 +10369,10 @@
     renderAutoMergeFillsLayer();
     updateGridBoundaryRect();
     updateBorderDivisionLines();
+    updateBorderDivisionOverlay();
     updateCanvasEdgeBrownBars();
     renderPatternLayer();
+    renderHalfCircleLayer();
     updateFrameInsetOverlayLayer();
     layoutStage();
     updateResetButton();
@@ -6531,7 +10383,7 @@
     clearMergeState();
     clearAutoMergeState();
     render();
-    if (hadAutoMerge && isOctagonGrid()) {
+    if (hadAutoMerge) {
       runAutoMerge();
     }
   }
@@ -6559,7 +10411,35 @@
     slider.value = String(value);
   }
 
+  function applyRandomPaletteColors() {
+    if (!window.ColorPalette) return;
+    window.ColorPalette.randomizeCanvasColors();
+  }
+
+  function refreshAfterPaletteColorsApplied() {
+    invalidateLabelBarSvgTintCache();
+    setHopeDotsColor(getHopeDotsColor());
+    syncMagnifierBorderColor();
+  }
+
+  function applyRandomPaletteColorsAndRender() {
+    applyRandomPaletteColors();
+    render();
+  }
+
+  function initColorPaletteControls() {
+    if (!window.ColorPalette) return;
+
+    window.ColorPalette.onApplied = refreshAfterPaletteColorsApplied;
+
+    var randomizeColorsBtn = document.getElementById("randomize-colors-btn");
+    if (randomizeColorsBtn) {
+      randomizeColorsBtn.addEventListener("click", applyRandomPaletteColorsAndRender);
+    }
+  }
+
   function randomizeAllDesignControls() {
+    applyRandomPaletteColors();
     setSliderValue("octagons-n", randomIntInRange(OCTAGONS_N_MIN, OCTAGONS_N_MAX));
     setSliderValue(
       "inner-scale",
@@ -6571,9 +10451,13 @@
     );
     setSliderValue(
       "border-side-segments",
+      randomIntInRange(1, 3)
+    );
+    setSliderValue(
+      "border-side-white-fill",
       randomIntInRange(
-        BORDER_LEFT_RIGHT_SEGMENTS_MIN,
-        BORDER_LEFT_RIGHT_SEGMENTS_MAX
+        BORDER_SIDE_WHITE_FILL_MIN,
+        BORDER_SIDE_WHITE_FILL_MAX
       )
     );
     setSliderValue(
@@ -6589,12 +10473,8 @@
       randomIntInRange(PRIDE_FILL_PERCENT_MIN, PRIDE_FILL_PERCENT_MAX)
     );
 
-    var homeCb = document.getElementById("body-autonomy-home");
-    var outsideCb = document.getElementById("body-autonomy-outside");
-    if (homeCb) homeCb.checked = Math.random() < 0.5;
-    if (outsideCb) outsideCb.checked = Math.random() < 0.5;
-
     regenerateBorderSideSegmentRatios();
+    syncBorderSideWhiteCells(true);
     clearMergeState();
     syncCircleSelection(true);
     syncPrideShapes();
@@ -6733,9 +10613,15 @@
    * @param {string|null} fontDataUri
    * @returns {string}
    */
-  function buildExportSvgString(segments, circles, diamonds, fontDataUri) {
+  function buildExportSvgString(
+    segments,
+    circles,
+    diamonds,
+    fontDataUri,
+    hopeDotsVectorLines
+  ) {
     var lines = [];
-    var gridBounds = getGridContentBounds();
+    var gridBounds = getGridBoundaryDisplayBounds();
     lines.push('<?xml version="1.0" encoding="UTF-8"?>');
     lines.push(
       '<svg xmlns="' +
@@ -6762,6 +10648,7 @@
     if (autoMergeFillRegions && autoMergeFillRegions.length) {
       pushAutoMergeShadowFilterDefLines(lines);
     }
+    pushBorderSideWhiteInnerShadowDefLines(lines);
     lines.push("</defs>");
     lines.push(
       '<rect x="0" y="0" width="' +
@@ -6779,7 +10666,13 @@
     lines.push("</g>");
 
     pushGridMaskExportLines(lines);
-    pushStippleDotsExportLines(lines);
+    if (hopeDotsVectorLines && hopeDotsVectorLines.length) {
+      for (var hd = 0; hd < hopeDotsVectorLines.length; hd++) {
+        lines.push(hopeDotsVectorLines[hd]);
+      }
+    } else {
+      pushStippleDotsExportLines(lines);
+    }
 
     pushVerticalGridExportLines(lines);
 
@@ -6896,21 +10789,28 @@
         ? document.fonts.ready
         : Promise.resolve();
 
-    Promise.all([fontReady, loadExportFontDataUri(), preloadLabelBarSvgAssetsForExport()])
+    Promise.all([
+      fontReady,
+      loadExportFontDataUri(),
+      preloadLabelBarSvgAssetsForExport(),
+      buildHopeDotsCirclesExportLines(),
+    ])
       .then(function (results) {
         var fontDataUri = results[1];
+        var hopeDotsVectorLines = results[3];
         try {
           syncVerticalGridLines(false);
           var markup = buildExportSvgString(
             getVisibleSegments(cachedAllSegments),
             getActiveCircles(),
             getFilledDiamonds(),
-            fontDataUri
+            fontDataUri,
+            hopeDotsVectorLines
           );
           var blob = new Blob([markup], {
             type: "image/svg+xml;charset=utf-8",
           });
-          downloadBlob(blob, "topkapi-export-70x180cm.svg");
+          downloadBlob(blob, "octagon-export-70x180cm.svg");
         } catch (e) {
           console.error(e);
           alert("SVG export failed.");
@@ -6926,12 +10826,13 @@
             getVisibleSegments(cachedAllSegments),
             getActiveCircles(),
             getFilledDiamonds(),
+            null,
             null
           );
           var blob = new Blob([markup], {
             type: "image/svg+xml;charset=utf-8",
           });
-          downloadBlob(blob, "topkapi-export-70x180cm.svg");
+          downloadBlob(blob, "octagon-export-70x180cm.svg");
         } catch (e) {
           console.error(e);
           alert("SVG export failed.");
@@ -6992,9 +10893,10 @@
   }
 
   function applyDanglingPrune() {
+    if (isStarGrid()) return false;
     var changed = false;
     var pruneKeys = TopkapiGeometry.findDanglingPruneKeys(
-      cachedAllSegments,
+      getSegmentsForMergeRegionDetection(),
       removedEdges
     );
     for (var j = 0; j < pruneKeys.length; j++) {
@@ -7025,7 +10927,7 @@
 
   function restoreEdgesByKeys(keys) {
     var validKeys = TopkapiGeometry.filterValidRestoreKeys(
-      cachedAllSegments,
+      getAllSegmentsForTracing(),
       removedEdges,
       keys
     );
@@ -7049,7 +10951,8 @@
     var threshold = getHitThreshold(designSvg);
 
     if (interactionMode === "merge") {
-      var visible = getVisibleSegments(cachedAllSegments);
+      var allSegments = getAllSegmentsForTracing();
+      var visible = getVisibleSegments(allSegments);
       var keys = TopkapiGeometry.findSegmentsNearPolyline(
         visible,
         dragPath,
@@ -7059,9 +10962,10 @@
       removeEdgesByKeys(keys);
     } else if (interactionMode === "restore") {
       if (!removedEdges.size) return;
-      var visible = getVisibleSegments(cachedAllSegments);
+      var allSegments = getAllSegmentsForTracing();
+      var visible = getVisibleSegments(allSegments);
       var restoreKeys = TopkapiGeometry.findRestoreCandidateKeys(
-        cachedAllSegments,
+        allSegments,
         visible,
         removedEdges,
         dragPath,
@@ -7169,7 +11073,6 @@
 
   function setMode(mode) {
     if (mode !== "view" && mode !== "merge" && mode !== "restore") return;
-    if (isStarGrid() && mode !== "view") return;
     interactionMode = mode;
     updateModeUi();
     if (isDragInteractionMode()) {
@@ -7253,8 +11156,10 @@
     }
 
     function onLabelBarColorChange() {
+      invalidateLabelBarSvgTintCache();
       if (isStarGrid()) render();
       else updateCanvasEdgeBrownBars();
+      renderHalfCircleLayer();
     }
 
     var labelBarBackgroundColorInput = document.getElementById(
@@ -7279,32 +11184,202 @@
 
     var borderSideSegmentsSlider = document.getElementById("border-side-segments");
     if (borderSideSegmentsSlider) {
-      borderSideSegmentsSlider.min = String(BORDER_LEFT_RIGHT_SEGMENTS_MIN);
-      borderSideSegmentsSlider.max = String(BORDER_LEFT_RIGHT_SEGMENTS_MAX);
-      borderSideSegmentsSlider.value = String(BORDER_LEFT_RIGHT_SEGMENTS_DEFAULT);
+      borderSideSegmentsSlider.min = "1";
+      borderSideSegmentsSlider.max = "3";
+      borderSideSegmentsSlider.value = "1";
       borderSideSegmentsSlider.addEventListener("input", function () {
-        regenerateBorderSideSegmentRatios();
         var borderSideOut = document.getElementById("border-side-segments-out");
         if (borderSideOut) {
-          borderSideOut.textContent = String(getBorderLeftRightSegments());
+          borderSideOut.textContent = borderSideThicknessLabel(
+            getBorderSideThicknessColumns()
+          );
         }
-        if (isStarGrid()) {
-          render();
-        } else {
-          updateBorderDivisionLines();
-        }
+        // Thickness affects both the border divisions layer AND the inner content bounds,
+        // so we re-render to update transforms + dependent layers.
+        render();
       });
     }
 
-    ["body-autonomy-home", "body-autonomy-outside"].forEach(function (id) {
-      var cb = document.getElementById(id);
-      if (cb) {
-        cb.addEventListener("change", function () {
-          if (isStarGrid()) render();
-          else updateBorderDivisionLines();
-        });
+    var borderSideWhiteFillSlider = document.getElementById("border-side-white-fill");
+    if (borderSideWhiteFillSlider) {
+      borderSideWhiteFillSlider.min = String(
+        typeof BORDER_SIDE_WHITE_FILL_MIN !== "undefined"
+          ? BORDER_SIDE_WHITE_FILL_MIN
+          : 0
+      );
+      borderSideWhiteFillSlider.max = String(
+        typeof BORDER_SIDE_WHITE_FILL_MAX !== "undefined"
+          ? BORDER_SIDE_WHITE_FILL_MAX
+          : 100
+      );
+      borderSideWhiteFillSlider.value = String(
+        typeof BORDER_SIDE_WHITE_FILL_DEFAULT !== "undefined"
+          ? BORDER_SIDE_WHITE_FILL_DEFAULT
+          : 0
+      );
+      syncBorderSideWhiteFillOutput();
+      borderSideWhiteFillSlider.addEventListener("input", function () {
+        syncBorderSideWhiteFillOutput();
+        updateBorderDivisionLines();
+        updateBorderDivisionOverlay();
+      });
+    }
+
+    var halfCircleToggle = document.getElementById("half-circle-toggle");
+    var halfCircleColor = document.getElementById("half-circle-color");
+    var halfCircleRibs = document.getElementById("half-circle-ribs");
+    if (halfCircleColor) halfCircleColor.value = PATTERN_STROKE_COLOR_DEFAULT;
+    if (halfCircleToggle) {
+      halfCircleToggle.checked = true;
+      halfCircleToggle.addEventListener("change", function () {
+        renderHalfCircleLayer();
+      });
+    }
+    var halfCircleBottomToggle = document.getElementById("half-circle-bottom-toggle");
+    if (halfCircleBottomToggle) {
+      halfCircleBottomToggle.checked = true;
+      halfCircleBottomToggle.addEventListener("change", function () {
+        renderHalfCircleLayer();
+      });
+    }
+    if (halfCircleColor) {
+      halfCircleColor.addEventListener("input", function () {
+        renderHalfCircleLayer();
+      });
+    }
+    if (halfCircleRibs) {
+      halfCircleRibs.min = "5";
+      halfCircleRibs.max = "40";
+      halfCircleRibs.value = "21";
+      var ribsOut = document.getElementById("half-circle-ribs-out");
+      if (ribsOut) ribsOut.textContent = String(getHalfCircleRibCount());
+      halfCircleRibs.addEventListener("input", function () {
+        var out = document.getElementById("half-circle-ribs-out");
+        if (out) out.textContent = String(getHalfCircleRibCount());
+        syncHalfCircleFanOpeningSlider();
+        renderHalfCircleLayer();
+      });
+    }
+
+    syncHalfCircleFanOpeningSlider();
+
+    var halfCircleFanOpening = document.getElementById("half-circle-fan-opening");
+    if (halfCircleFanOpening) {
+      halfCircleFanOpening.min = "0";
+      halfCircleFanOpening.addEventListener("input", function () {
+        syncHalfCircleFanOpeningSlider();
+        renderHalfCircleLayer();
+      });
+    }
+
+    var halfCircleInnerArcPosition = document.getElementById(
+      "half-circle-inner-arc-position"
+    );
+    if (halfCircleInnerArcPosition) {
+      halfCircleInnerArcPosition.min = "20";
+      halfCircleInnerArcPosition.max = "80";
+      halfCircleInnerArcPosition.value = "50";
+      var innerArcOut = document.getElementById("half-circle-inner-arc-position-out");
+      if (innerArcOut) {
+        innerArcOut.textContent =
+          String(Math.round(getHalfCircleInnerArcRadiusRatio() * 100)) + "%";
       }
-    });
+      halfCircleInnerArcPosition.addEventListener("input", function () {
+        var out = document.getElementById("half-circle-inner-arc-position-out");
+        if (out) {
+          out.textContent =
+            String(Math.round(getHalfCircleInnerArcRadiusRatio() * 100)) + "%";
+        }
+        renderHalfCircleLayer();
+      });
+    }
+
+    var halfCircleInset = document.getElementById("half-circle-inset");
+    if (halfCircleInset) {
+      halfCircleInset.min = "0.1";
+      halfCircleInset.max = "0.4";
+      halfCircleInset.value = "0.2";
+      halfCircleInset.step = "0.01";
+      var insetOut = document.getElementById("half-circle-inset-out");
+      if (insetOut) insetOut.textContent = String(getHalfCircleInset());
+      halfCircleInset.addEventListener("input", function () {
+        var out = document.getElementById("half-circle-inset-out");
+        if (out) out.textContent = String(getHalfCircleInset());
+        renderHalfCircleLayer();
+      });
+    }
+
+    var halfCircleCuspGap = document.getElementById("half-circle-cusp-gap");
+    if (halfCircleCuspGap) {
+      halfCircleCuspGap.min = "0";
+      halfCircleCuspGap.max = "40";
+      halfCircleCuspGap.value = "22";
+      var cuspGapOut = document.getElementById("half-circle-cusp-gap-out");
+      if (cuspGapOut) {
+        cuspGapOut.textContent = String(getHalfCircleCuspGapPx()) + "px";
+      }
+      halfCircleCuspGap.addEventListener("input", function () {
+        var out = document.getElementById("half-circle-cusp-gap-out");
+        if (out) out.textContent = String(getHalfCircleCuspGapPx()) + "px";
+        renderHalfCircleLayer();
+      });
+    }
+
+    var halfCircleInnerArcDiagonals = document.getElementById(
+      "half-circle-inner-arc-diagonals"
+    );
+    if (halfCircleInnerArcDiagonals) {
+      halfCircleInnerArcDiagonals.checked = true;
+      halfCircleInnerArcDiagonals.addEventListener("change", function () {
+        renderHalfCircleLayer();
+      });
+    }
+
+    var halfCircleValleyCircles = document.getElementById("half-circle-valley-circles");
+    if (halfCircleValleyCircles) {
+      halfCircleValleyCircles.checked = true;
+      halfCircleValleyCircles.addEventListener("change", function () {
+        renderHalfCircleLayer();
+      });
+    }
+
+    var halfCircleValleyCircleSize = document.getElementById("half-circle-valley-circle-size");
+    if (halfCircleValleyCircleSize) {
+      halfCircleValleyCircleSize.min = "0";
+      halfCircleValleyCircleSize.max = "100";
+      halfCircleValleyCircleSize.value = "100";
+      var valleySizeOut = document.getElementById("half-circle-valley-circle-size-out");
+      if (valleySizeOut) {
+        valleySizeOut.textContent = String(Math.round(getHalfCircleValleyCircleSizeScale() * 100)) + "%";
+      }
+      halfCircleValleyCircleSize.addEventListener("input", function () {
+        var out = document.getElementById("half-circle-valley-circle-size-out");
+        if (out) {
+          out.textContent = String(Math.round(getHalfCircleValleyCircleSizeScale() * 100)) + "%";
+        }
+        renderHalfCircleLayer();
+      });
+    }
+
+    var halfCircleStarInnerRadius = document.getElementById("half-circle-star-inner-radius");
+    if (halfCircleStarInnerRadius) {
+      halfCircleStarInnerRadius.min = "50";
+      halfCircleStarInnerRadius.max = "95";
+      halfCircleStarInnerRadius.value = "50";
+      var starInnerOut = document.getElementById("half-circle-star-inner-radius-out");
+      if (starInnerOut) {
+        starInnerOut.textContent =
+          String(Math.round(getHalfCircleStarInnerRadiusRatio() * 100)) + "%";
+      }
+      halfCircleStarInnerRadius.addEventListener("input", function () {
+        var out = document.getElementById("half-circle-star-inner-radius-out");
+        if (out) {
+          out.textContent =
+            String(Math.round(getHalfCircleStarInnerRadiusRatio() * 100)) + "%";
+        }
+        renderHalfCircleLayer();
+      });
+    }
 
     var gridStrokeSlider = document.getElementById("grid-stroke-width");
     if (gridStrokeSlider) {
@@ -7317,9 +11392,7 @@
         updateGridBoundaryRect();
         renderPatternLayer();
         renderVerticalGridLayer();
-        if (!isStarGrid()) {
-          renderAutoMergeFillsLayer();
-        }
+        renderAutoMergeFillsLayer();
       });
     }
 
@@ -7442,186 +11515,10 @@
     }
     updateAutoMergeIntensityOutput();
 
-    var dotsFileInput = document.getElementById("bg-dots-file-input");
-    var dotsFileMeta = document.getElementById("bg-dots-file-meta");
-    var dotsResolution = document.getElementById("bg-dots-resolution");
-    var dotsResolutionOut = document.getElementById("bg-dots-resolution-out");
-    var dotsDotSize = document.getElementById("bg-dots-dot-size");
-    var dotsDotSizeOut = document.getElementById("bg-dots-dot-size-out");
-    var dotsDotSpacing = document.getElementById("bg-dots-dot-spacing");
-    var dotsDotSpacingOut = document.getElementById("bg-dots-dot-spacing-out");
-    var dotsModeBw = document.getElementById("bg-dots-mode-bw-btn");
-    var dotsModeColor = document.getElementById("bg-dots-mode-color-btn");
-    var dotsGenerateBtn = document.getElementById("bg-dots-generate-btn");
-    var dotsProgressLabel = document.getElementById("bg-dots-progress-label");
-
-    function updateStippleSliderOutputs() {
-      if (dotsResolutionOut && dotsResolution) {
-        dotsResolutionOut.textContent = dotsResolution.value + "%";
-      }
-      if (dotsDotSizeOut && dotsDotSize) {
-        dotsDotSizeOut.textContent = dotsDotSize.value + "px";
-      }
-      if (dotsDotSpacingOut && dotsDotSpacing) {
-        dotsDotSpacingOut.textContent = dotsDotSpacing.value + "px";
-      }
-    }
-
-    function updateStippleFileMeta() {
-      if (!dotsFileMeta) return;
-      if (!stippleSourceImage) {
-        dotsFileMeta.textContent = "No image loaded";
-        return;
-      }
-      var size = getStippleOutputSize(
-        dotsResolution ? Number(dotsResolution.value) : 100
-      );
-      dotsFileMeta.textContent =
-        stippleSrcW +
-        "×" +
-        stippleSrcH +
-        " → " +
-        size.outW +
-        "×" +
-        size.outH +
-        " at current resolution";
-    }
-
-    function loadStippleImageFromFile(file) {
-      if (!file) return;
-      var reader = new FileReader();
-      reader.onload = function () {
-        var img = new Image();
-        img.onload = function () {
-          stippleSourceImage = img;
-          stippleSrcW = img.naturalWidth;
-          stippleSrcH = img.naturalHeight;
-          updateStippleFileMeta();
-          if (dotsGenerateBtn) dotsGenerateBtn.disabled = false;
-        };
-        img.onerror = function () {
-          alert("Could not load this image. Try another JPG or PNG.");
-        };
-        img.src = reader.result;
-      };
-      reader.readAsDataURL(file);
-    }
-
-    function runStippleGeneration() {
-      if (!stippleSourceImage || typeof StippleEngine === "undefined") return;
-
-      var size = getStippleOutputSize(
-        dotsResolution ? Number(dotsResolution.value) : 100
-      );
-      var jobId = ++stippleGenerationId;
-
-      if (dotsGenerateBtn) dotsGenerateBtn.disabled = true;
-      if (dotsProgressLabel) {
-        dotsProgressLabel.hidden = false;
-        dotsProgressLabel.textContent = "Processing… 0%";
-      }
-
-      StippleEngine.generate(
-        {
-          sourceImage: stippleSourceImage,
-          outW: size.outW,
-          outH: size.outH,
-          dotSize: dotsDotSize ? Number(dotsDotSize.value) : 2,
-          dotSpacing: dotsDotSpacing ? Number(dotsDotSpacing.value) : 1,
-          colorMode: stippleColorMode,
-          jobId: jobId,
-          getJobId: function () {
-            return stippleGenerationId;
-          },
-        },
-        {
-          onProgress: function (done, total) {
-            if (dotsProgressLabel) {
-              var pct = total > 0 ? Math.round((done / total) * 100) : 0;
-              dotsProgressLabel.textContent = "Processing… " + pct + "%";
-            }
-          },
-          onComplete: function (result) {
-            if (result.jobId !== stippleGenerationId) return;
-            stippleDotsCache = {
-              dots: result.dots,
-              outW: result.outW,
-              outH: result.outH,
-            };
-            renderStippleDotsLayer();
-            applyMergeReveal();
-            if (dotsProgressLabel) dotsProgressLabel.hidden = true;
-            if (dotsGenerateBtn) dotsGenerateBtn.disabled = !stippleSourceImage;
-            updateStippleFileMeta();
-          },
-          onError: function (msg) {
-            alert(msg);
-            if (dotsProgressLabel) dotsProgressLabel.hidden = true;
-            if (dotsGenerateBtn) dotsGenerateBtn.disabled = !stippleSourceImage;
-          },
-          onCancel: function () {
-            if (dotsProgressLabel) dotsProgressLabel.hidden = true;
-            if (dotsGenerateBtn) dotsGenerateBtn.disabled = !stippleSourceImage;
-          },
-        }
-      );
-    }
-
-    if (dotsFileInput) {
-      dotsFileInput.addEventListener("change", function () {
-        var file = dotsFileInput.files && dotsFileInput.files[0];
-        if (file) loadStippleImageFromFile(file);
-      });
-    }
-
-    if (dotsResolution) {
-      dotsResolution.addEventListener("input", function () {
-        updateStippleSliderOutputs();
-        updateStippleFileMeta();
-      });
-    }
-    if (dotsDotSize) {
-      dotsDotSize.addEventListener("input", updateStippleSliderOutputs);
-    }
-    if (dotsDotSpacing) {
-      dotsDotSpacing.addEventListener("input", updateStippleSliderOutputs);
-    }
-
-    if (dotsModeBw) {
-      dotsModeBw.addEventListener("click", function () {
-        stippleColorMode = "bw";
-        dotsModeBw.classList.add("is-active");
-        dotsModeBw.setAttribute("aria-pressed", "true");
-        if (dotsModeColor) {
-          dotsModeColor.classList.remove("is-active");
-          dotsModeColor.setAttribute("aria-pressed", "false");
-        }
-      });
-    }
-    if (dotsModeColor) {
-      dotsModeColor.addEventListener("click", function () {
-        stippleColorMode = "color";
-        dotsModeColor.classList.add("is-active");
-        dotsModeColor.setAttribute("aria-pressed", "true");
-        if (dotsModeBw) {
-          dotsModeBw.classList.remove("is-active");
-          dotsModeBw.setAttribute("aria-pressed", "false");
-        }
-      });
-    }
-
-    if (dotsGenerateBtn) {
-      dotsGenerateBtn.addEventListener("click", function () {
-        stippleGenerationId++;
-        runStippleGeneration();
-      });
-    }
-
-    updateStippleSliderOutputs();
-
-    if (window.LabelBarControls && window.LabelBarControls.init) {
-      window.LabelBarControls.init(refreshLabelBarContent);
-    }
+    loadHopeStippleImage();
+    initHopeDotsColorControls();
+    initColorPaletteControls();
+    applyRandomPaletteColors();
 
     if (window.IdentityControls && window.IdentityControls.setOnLivingInIranChange) {
       window.IdentityControls.setOnLivingInIranChange(refreshLabelBarContent);

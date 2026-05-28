@@ -1,5 +1,5 @@
 /**
- * 8-fold Topkapi tessellation: octagon + square + kite per unit cell.
+ * Octagon grid tessellation (8-fold): octagon + square + kite per unit cell.
  * Octagon from square side T with corner cuts t = T / (2 + sqrt(2)).
  */
 (function (global) {

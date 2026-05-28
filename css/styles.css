@@ -102,10 +102,43 @@ body {
   gap: 0.75rem;
 }
 
-.sidebar__bg-dots-controls {
+.sidebar__hope-color-field {
+  margin: 0;
+}
+
+.sidebar__hope-color-row {
   display: flex;
-  flex-direction: column;
-  gap: 0.65rem;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.sidebar__hope-color-row input[type="color"] {
+  width: 2.5rem;
+  height: 1.75rem;
+  padding: 0;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  cursor: pointer;
+  background: none;
+}
+
+.sidebar__pipette-btn {
+  flex: 1;
+  font-size: 0.8125rem;
+  padding: 0.35rem 0.65rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.sidebar__pipette-btn.is-active {
+  border-color: #333;
+  background: #f0f0f0;
+}
+
+body.hope-pipette-active .stage-wrap {
+  cursor: crosshair;
 }
 
 .sidebar__btn--file {
@@ -391,64 +424,6 @@ body {
   cursor: not-allowed;
 }
 
-.sidebar__section--label-bar {
-  display: flex;
-  flex-direction: column;
-  gap: 0.65rem;
-}
-
-.sidebar__label-bar-items {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.sidebar__label-bar-item {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  padding: 0.5rem;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  background: #fafafa;
-}
-
-.sidebar__label-bar-item-head {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-}
-
-.sidebar__label-bar-type,
-.sidebar__label-bar-svg-select,
-.sidebar__label-bar-text-input {
-  width: 100%;
-  padding: 0.35rem 0.5rem;
-  font-size: 0.875rem;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  background: #fff;
-}
-
-.sidebar__label-bar-delete-btn {
-  margin-left: auto;
-  flex-shrink: 0;
-  font-size: 0.75rem;
-  padding: 0.25rem 0.5rem;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  background: #fff;
-  cursor: pointer;
-}
-
-.sidebar__label-bar-delete-btn:hover {
-  background: #f0f0f0;
-}
-
-.sidebar__label-bar-add-btn {
-  margin-top: 0.15rem;
-}
-
 .sidebar__section--no-name {
   display: flex;
   flex-direction: column;
@@ -471,6 +446,22 @@ body {
 
 .sidebar__section--colors-export .sidebar__item {
   grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.sidebar__palette-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: flex-end;
+}
+
+.sidebar__palette-swatch {
+  display: block;
+  width: 22px;
+  height: 22px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 2px;
+  flex: 0 0 auto;
 }
 
 .sidebar__feelings-control {
@@ -648,7 +639,7 @@ button.sidebar__grid-btn {
   min-width: 3.5rem;
 }
 
-.app-shell--swastika .magnifier-dock {
+.app-shell--standalone .magnifier-dock {
   display: none;
 }
 
@@ -945,11 +936,11 @@ button.sidebar__grid-btn {
   background: #444;
 }
 
-.app-shell--swastika {
+.app-shell--standalone {
   width: 100%;
 }
 
-.app-shell--swastika .main {
+.app-shell--standalone .main {
   flex: 1;
   width: 100%;
 }

@@ -262,10 +262,24 @@ var BORDER_LEFT_RIGHT_SEGMENTS_MIN = 12;
 var BORDER_LEFT_RIGHT_SEGMENTS_MAX = 24;
 var BORDER_LEFT_RIGHT_SEGMENTS_DEFAULT = 12;
 /** Random height weights per margin row (normalized to fill strip) */
-var BORDER_SIDE_SEGMENT_HEIGHT_MIN_RATIO = 0.05;
+var BORDER_SIDE_SEGMENT_HEIGHT_MIN_RATIO = 0.18;
 var BORDER_SIDE_SEGMENT_HEIGHT_MAX_RATIO = 1.4;
 /** >1 skews weights toward extremes (thinner + taller rows) */
 var BORDER_SIDE_SEGMENT_HEIGHT_RANDOM_POWER = 2.2;
+
+/** Family and friends in Iran: white-out slider (0 = all color, 100 = cap % white) */
+var BORDER_SIDE_WHITE_FILL_MIN = 0;
+var BORDER_SIDE_WHITE_FILL_MAX = 100;
+var BORDER_SIDE_WHITE_FILL_DEFAULT = 0;
+/** At slider maximum, this fraction of margin division cells are painted white */
+var BORDER_SIDE_WHITE_CAP_PERCENT = 60;
+/** Inset shadow on whitened cells: depth as fraction of cell size */
+var BORDER_SIDE_WHITE_INNER_SHADOW_DEPTH_RATIO = 0.34;
+var BORDER_SIDE_WHITE_INNER_SHADOW_DEPTH_MAX_PX = 16;
+/** feGaussianBlur stdDeviation on shadow gradients */
+var BORDER_SIDE_WHITE_INNER_SHADOW_BLUR = 2.8;
+/** Peak opacity of the inner shadow (pattern stroke color) */
+var BORDER_SIDE_WHITE_INNER_SHADOW_OPACITY = 0.36;
 
 /** Alternating fills in left/right margin cells (top cell = brown) */
 var BORDER_SIDE_CELL_COLOR_BROWN = "#685450";
@@ -304,13 +318,13 @@ var ANGER_VERTICAL_LENGTH_DEFAULT = 40;
 /** At slider 0%, line span = this × the previous minimum (0.5 = 2× shorter than before) */
 var ANGER_VERTICAL_LENGTH_MIN_SPAN_RATIO = 0.5;
 
-/** Rotated-square swastika grid (swastika.html): repeat unit side length in px */
-var SWASTIKA_UNIT_MIN = 40;
-var SWASTIKA_UNIT_MAX = 280;
-var SWASTIKA_UNIT_DEFAULT = 100;
-var SWASTIKA_STROKE_WIDTH = 1;
+/** 6-fold rotated-square grid (six-fold.html): repeat unit side length in px */
+var SIX_FOLD_UNIT_MIN = 40;
+var SIX_FOLD_UNIT_MAX = 280;
+var SIX_FOLD_UNIT_DEFAULT = 100;
+var SIX_FOLD_STROKE_WIDTH = 1;
 
-/** Nested star octagons grid (nested-star-octagons.html): minimum tile size in px */
+/** Star grid (nested-star-octagons.html): minimum tile size in px */
 var NESTED_STAR_TILE_MIN = 40;
 var NESTED_STAR_CUT_RATIO = 1 / (2 + Math.SQRT2);
 var NESTED_STAR_INNER_STAR_MIN_T = 6;
@@ -322,3 +336,29 @@ var GRID_TYPE_STAR = "star";
 
 /** Star grid only: max value on “Iranian community” density slider (octagons-n) */
 var STAR_GRID_OCTAGONS_N_MAX = 11;
+/** Hope merge cutouts: ignore micro-faces smaller than this × tileSize² */
+var STAR_GRID_HOPE_MERGE_MIN_AREA_TILE_FRACTION = 0.45;
+/** Default stipple dot fill (Hope layer) */
+var HOPE_DOTS_COLOR_DEFAULT = "#000000";
+
+/**
+ * Full project palette (14 colors). Each session picks COLOR_PALETTE_PICK_COUNT
+ * at random; canvas items are tinted from that active subset only.
+ */
+var COLOR_PALETTE = [
+  "#26CCB9",
+  "#FFEFF7",
+  "#264D3A",
+  "#FFC9E2",
+  "#4D37E3",
+  "#000000",
+  "#FF80FF",
+  "#B2FF00",
+  "#FF0004",
+  "#5C26D9",
+  "#685450",
+  "#FFFF00",
+  "#FFFFFF",
+  "#FFFCE8",
+];
+var COLOR_PALETTE_PICK_COUNT = 5;

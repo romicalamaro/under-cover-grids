@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Topkapi Grid — 70×180cm @ 300 DPI</title>
+    <title>Octagon Grid — 70×180cm @ 300 DPI</title>
     <link rel="stylesheet" href="css/styles.css" />
   </head>
   <body>
@@ -321,11 +321,11 @@
           </section>
 
           <section class="sidebar__section sidebar__section--grid-choose">
-            <h2 class="sidebar__title">Identity</h2>
+            <h2 class="sidebar__title">Grid</h2>
             <div
               class="sidebar__grid-choose-btns"
               role="group"
-              aria-label="Identity grid type"
+              aria-label="Grid type"
             >
               <button
                 type="button"
@@ -336,7 +336,7 @@
                 Octagon
               </button>
               <a
-                href="swastika.html"
+                href="six-fold.html"
                 id="grid-choose-sixfold-btn"
                 class="sidebar__grid-btn"
                 >6-fold</a
@@ -439,36 +439,46 @@
                 <input
                   id="border-side-segments"
                   type="range"
-                  min="12"
-                  max="24"
-                  value="12"
+                  min="1"
+                  max="3"
+                  value="1"
                   step="1"
                   aria-label="Family and friends in Iran. None to a lot."
                 />
                 <output id="border-side-segments-out" for="border-side-segments"
-                  >12</output
+                  >Thin</output
                 >
               </div>
             </div>
-            <div
-              class="sidebar__body-autonomy-checkboxes"
-              role="group"
-              aria-label="Family and friends in Iran"
-            >
-              <label class="sidebar__body-autonomy-check">
-                <input
-                  id="body-autonomy-home"
-                  type="checkbox"
-                />
-                <span>Family</span>
-              </label>
-              <label class="sidebar__body-autonomy-check">
-                <input
-                  id="body-autonomy-outside"
-                  type="checkbox"
-                />
-                <span>Friends</span>
-              </label>
+            <div class="sidebar__grid-density">
+              <span class="sidebar__grid-density-label">Color fade</span>
+              <div class="sidebar__grid-density-slider-wrap">
+                <div
+                  class="sidebar__grid-density-range-labels"
+                  aria-hidden="true"
+                >
+                  <span class="sidebar__grid-density-range-label"
+                    >Full color</span
+                  >
+                  <span class="sidebar__grid-density-range-label"
+                    >60% white</span
+                  >
+                </div>
+                <div class="sidebar__body-autonomy-control sidebar__item-control">
+                  <input
+                    id="border-side-white-fill"
+                    type="range"
+                    min="0"
+                    max="100"
+                    value="0"
+                    step="1"
+                    aria-label="Family and friends in Iran color fade. Full color to 60 percent white."
+                  />
+                  <output id="border-side-white-fill-out" for="border-side-white-fill"
+                    >0%</output
+                  >
+                </div>
+              </div>
             </div>
           </section>
 
@@ -515,6 +525,170 @@
                 </div>
               </div>
             </div>
+            <div class="sidebar__grid-density">
+              <span class="sidebar__grid-density-label">Half circle</span>
+              <div class="sidebar__grid-density-control sidebar__item-control">
+                <input
+                  id="half-circle-toggle"
+                  type="checkbox"
+                  checked
+                  aria-label="Show half circle"
+                />
+                <input
+                  id="half-circle-color"
+                  type="color"
+                  value="#685450"
+                  title="Half circle stroke color"
+                  aria-label="Half circle stroke color"
+                />
+              </div>
+            </div>
+            <div class="sidebar__grid-density">
+              <span class="sidebar__grid-density-label">Bottom fan</span>
+              <div class="sidebar__grid-density-control sidebar__item-control">
+                <input
+                  id="half-circle-bottom-toggle"
+                  type="checkbox"
+                  checked
+                  aria-label="Show bottom mirrored fan"
+                />
+              </div>
+            </div>
+            <div class="sidebar__grid-density">
+              <span class="sidebar__grid-density-label">Rib count</span>
+              <div class="sidebar__grid-density-control sidebar__item-control">
+                <input
+                  id="half-circle-ribs"
+                  type="range"
+                  min="5"
+                  max="40"
+                  value="21"
+                  step="1"
+                  aria-label="Half circle rib count"
+                />
+                <output id="half-circle-ribs-out" for="half-circle-ribs">21</output>
+              </div>
+            </div>
+            <div class="sidebar__grid-density">
+              <span class="sidebar__grid-density-label">Fan opening</span>
+              <div class="sidebar__grid-density-control sidebar__item-control">
+                <input
+                  id="half-circle-fan-opening"
+                  type="range"
+                  min="0"
+                  max="20"
+                  value="20"
+                  step="1"
+                  aria-label="Number of visible fan petals"
+                />
+                <output id="half-circle-fan-opening-out" for="half-circle-fan-opening"
+                  >20</output
+                >
+              </div>
+            </div>
+            <div class="sidebar__grid-density">
+              <span class="sidebar__grid-density-label">Inner arc position</span>
+              <div class="sidebar__grid-density-control sidebar__item-control">
+                <input
+                  id="half-circle-inner-arc-position"
+                  type="range"
+                  min="20"
+                  max="80"
+                  value="50"
+                  step="1"
+                  aria-label="Inner arc radius as percent of outer fan radius"
+                />
+                <output id="half-circle-inner-arc-position-out" for="half-circle-inner-arc-position"
+                  >50%</output
+                >
+              </div>
+            </div>
+            <div class="sidebar__grid-density">
+              <span class="sidebar__grid-density-label">Petal inset</span>
+              <div class="sidebar__grid-density-control sidebar__item-control">
+                <input
+                  id="half-circle-inset"
+                  type="range"
+                  min="0.1"
+                  max="0.4"
+                  value="0.2"
+                  step="0.01"
+                  aria-label="Inner petal angular inset"
+                />
+                <output id="half-circle-inset-out" for="half-circle-inset">0.2</output>
+              </div>
+            </div>
+            <div class="sidebar__grid-density">
+              <span class="sidebar__grid-density-label">Cusp gap</span>
+              <div class="sidebar__grid-density-control sidebar__item-control">
+                <input
+                  id="half-circle-cusp-gap"
+                  type="range"
+                  min="0"
+                  max="40"
+                  value="22"
+                  step="1"
+                  aria-label="Gap between outer and inner cusp tops in pixels"
+                />
+                <output id="half-circle-cusp-gap-out" for="half-circle-cusp-gap">22px</output>
+              </div>
+            </div>
+            <div class="sidebar__grid-density">
+              <span class="sidebar__grid-density-label">Inner arc diagonals</span>
+              <div class="sidebar__grid-density-control sidebar__item-control">
+                <input
+                  id="half-circle-inner-arc-diagonals"
+                  type="checkbox"
+                  checked
+                  aria-label="Show alternating diagonals in inner arc cells"
+                />
+              </div>
+            </div>
+            <div class="sidebar__grid-density">
+              <span class="sidebar__grid-density-label">Valley circles</span>
+              <div class="sidebar__grid-density-control sidebar__item-control">
+                <input
+                  id="half-circle-valley-circles"
+                  type="checkbox"
+                  checked
+                  aria-label="Show valley circles between inner petals"
+                />
+              </div>
+            </div>
+            <div class="sidebar__grid-density">
+              <span class="sidebar__grid-density-label">Circle size</span>
+              <div class="sidebar__grid-density-control sidebar__item-control">
+                <input
+                  id="half-circle-valley-circle-size"
+                  type="range"
+                  min="0"
+                  max="100"
+                  value="100"
+                  step="1"
+                  aria-label="Valley circle size"
+                />
+                <output id="half-circle-valley-circle-size-out" for="half-circle-valley-circle-size"
+                  >100%</output
+                >
+              </div>
+            </div>
+            <div class="sidebar__grid-density">
+              <span class="sidebar__grid-density-label">Star inner radius</span>
+              <div class="sidebar__grid-density-control sidebar__item-control">
+                <input
+                  id="half-circle-star-inner-radius"
+                  type="range"
+                  min="50"
+                  max="95"
+                  value="50"
+                  step="1"
+                  aria-label="Star inner radius as percent of circle radius"
+                />
+                <output id="half-circle-star-inner-radius-out" for="half-circle-star-inner-radius"
+                  >50%</output
+                >
+              </div>
+            </div>
           </section>
 
           <section class="sidebar__section sidebar__section--broken-system">
@@ -555,104 +729,53 @@
           </section>
 
           <section class="sidebar__section sidebar__section--bg">
-            <h2 class="sidebar__title">Hope</h2>
-            <p class="sidebar__hint sidebar__hint--compact">
-              Dots appear in merged areas after you connect cells in Merge mode.
-            </p>
-            <div id="bg-dots-controls" class="sidebar__bg-dots-controls">
-              <div class="sidebar__field">
-                <span class="sidebar__label">Image</span>
-                <label for="bg-dots-file-input" class="sidebar__btn sidebar__btn--file">
-                  Upload JPG or PNG
-                </label>
-                <input
-                  id="bg-dots-file-input"
-                  type="file"
-                  accept="image/jpeg,image/png,.jpg,.jpeg,.png"
-                  hidden
-                />
-                <p class="sidebar__hint sidebar__hint--compact" id="bg-dots-file-meta">
-                  No image loaded
-                </p>
-              </div>
-              <label class="sidebar__field">
-                <span class="sidebar__label">
-                  Resolution
-                  <output id="bg-dots-resolution-out" for="bg-dots-resolution">100%</output>
-                </span>
-                <input
-                  id="bg-dots-resolution"
-                  type="range"
-                  min="50"
-                  max="300"
-                  value="100"
-                  step="1"
-                />
-              </label>
-              <label class="sidebar__field">
-                <span class="sidebar__label">
-                  Dot size
-                  <output id="bg-dots-dot-size-out" for="bg-dots-dot-size">2px</output>
-                </span>
-                <input
-                  id="bg-dots-dot-size"
-                  type="range"
-                  min="1"
-                  max="6"
-                  value="2"
-                  step="1"
-                />
-              </label>
-              <label class="sidebar__field">
-                <span class="sidebar__label">
-                  Dot spacing
-                  <output id="bg-dots-dot-spacing-out" for="bg-dots-dot-spacing">1px</output>
-                </span>
-                <input
-                  id="bg-dots-dot-spacing"
-                  type="range"
-                  min="0"
-                  max="4"
-                  value="1"
-                  step="1"
-                />
-              </label>
-              <div class="sidebar__field">
-                <span class="sidebar__label">Color mode</span>
-                <div class="sidebar__toggle" role="group" aria-label="Stipple color mode">
-                  <button
-                    type="button"
-                    id="bg-dots-mode-bw-btn"
-                    class="sidebar__toggle-btn is-active"
-                    aria-pressed="true"
-                  >
-                    B&amp;W
-                  </button>
-                  <button
-                    type="button"
-                    id="bg-dots-mode-color-btn"
-                    class="sidebar__toggle-btn"
-                    aria-pressed="false"
-                  >
-                    Color
-                  </button>
-                </div>
-              </div>
-              <button
-                type="button"
-                id="bg-dots-generate-btn"
-                class="sidebar__btn"
-                disabled
+            <div class="sidebar__feelings-emotion-header">
+              <h2 class="sidebar__title">Hope</h2>
+              <div
+                class="sidebar__toggle"
+                role="group"
+                aria-label="Show Hope layer"
               >
-                Generate
-              </button>
-              <p
-                class="sidebar__hint sidebar__hint--compact"
-                id="bg-dots-progress-label"
-                hidden
-                aria-live="polite"
-              ></p>
+                <button
+                  type="button"
+                  id="hope-layer-on"
+                  class="sidebar__toggle-btn is-active"
+                  aria-pressed="true"
+                >
+                  On
+                </button>
+                <button
+                  type="button"
+                  id="hope-layer-off"
+                  class="sidebar__toggle-btn"
+                  aria-pressed="false"
+                >
+                  Off
+                </button>
+              </div>
             </div>
+            <label class="sidebar__field sidebar__hope-color-field">
+              <span class="sidebar__label">צבע נקודות</span>
+              <div class="sidebar__hope-color-row">
+                <input
+                  id="hope-dots-color"
+                  type="color"
+                  value="#000000"
+                  title="צבע נקודות Hope"
+                  aria-label="צבע נקודות Hope"
+                />
+                <button
+                  type="button"
+                  id="hope-dots-pipette-btn"
+                  class="sidebar__pipette-btn"
+                  aria-pressed="false"
+                  title="דגימת צבע מהמסך או מהקנבס"
+                  aria-label="פיפטה — דגימת צבע"
+                >
+                  פיפטה
+                </button>
+              </div>
+            </label>
           </section>
 
           <section class="sidebar__section sidebar__section--feelings">
@@ -660,11 +783,11 @@
             <div class="sidebar__feelings-emotions">
               <div class="sidebar__feelings-emotion">
                 <div class="sidebar__feelings-emotion-header">
-                  <span class="sidebar__feelings-heading">Anger</span>
+                  <span class="sidebar__feelings-heading">Fear</span>
                   <div
                     class="sidebar__toggle sidebar__feelings-canvas-toggle"
                     role="group"
-                    aria-label="Show Anger on canvas"
+                    aria-label="Show Fear on canvas"
                   >
                     <button
                       type="button"
@@ -703,11 +826,11 @@
               </div>
               <div class="sidebar__feelings-emotion">
                 <div class="sidebar__feelings-emotion-header">
-                  <span class="sidebar__feelings-heading">Fear</span>
+                  <span class="sidebar__feelings-heading">Anger</span>
                   <div
                     class="sidebar__toggle sidebar__feelings-canvas-toggle"
                     role="group"
-                    aria-label="Show Fear on canvas"
+                    aria-label="Show Anger on canvas"
                   >
                     <button
                       type="button"
@@ -940,18 +1063,6 @@
             </button>
           </section>
 
-          <section class="sidebar__section sidebar__section--label-bar">
-            <h2 class="sidebar__title">Label bar</h2>
-            <div id="label-bar-items" class="sidebar__label-bar-items"></div>
-            <button
-              type="button"
-              id="label-bar-add-item-btn"
-              class="sidebar__btn sidebar__label-bar-add-btn"
-            >
-              Add item
-            </button>
-          </section>
-
           <section class="sidebar__section sidebar__section--no-name">
             <h2 class="sidebar__title">NO NAME</h2>
             <button
@@ -970,6 +1081,24 @@
               class="sidebar__numbered sidebar__controls--octagon"
               aria-label="Colors and export"
             >
+            <li class="sidebar__item sidebar__item--palette">
+              <span class="sidebar__item-label">Active palette</span>
+              <div class="sidebar__item-control">
+                <div
+                  id="active-palette-swatches"
+                  class="sidebar__palette-swatches"
+                  aria-label="5 active colors from the full palette"
+                ></div>
+              </div>
+            </li>
+            <li class="sidebar__item sidebar__item--action">
+              <span class="sidebar__item-label">Randomize colors</span>
+              <div class="sidebar__item-control">
+                <button type="button" id="randomize-colors-btn">
+                  New 5 colors
+                </button>
+              </div>
+            </li>
             <li class="sidebar__item">
               <span class="sidebar__item-label">Canvas background</span>
               <div class="sidebar__item-control">
@@ -1081,12 +1210,11 @@
       </div>
     </div>
     <script defer src="js/constants.js"></script>
+    <script defer src="js/colorPalette.js"></script>
     <script defer src="js/labelBarSvgAssets.js"></script>
     <script defer src="js/topkapiGeometry.js"></script>
     <script defer src="js/nestedStarOctagonsGeometry.js"></script>
     <script defer src="js/identityControls.js"></script>
-    <script defer src="js/labelBarControls.js"></script>
-    <script defer src="js/stippleEngine.js"></script>
-    <script defer src="js/app.js"></script>
+    <script defer src="js/app.js?v=20260528-1835"></script>
   </body>
 </html>

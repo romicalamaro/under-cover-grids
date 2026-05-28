@@ -926,6 +926,49 @@ function roundCoord(v) {
           return catalog;
         }
 
+        /**
+         * Sadness circles: center of each junction diamond, inscribed radius
+         * matches octagon-grid upright-square catalog (cut·√2 / 2).
+         * @param {{ tileSize: number, cols: number, rows: number, offsetY: number }} layout
+         * @param {number} canvasW
+         * @param {number} canvasH
+         * @returns {{ id: string, cx: number, cy: number, r: number }[]}
+         */
+        function buildJunctionCircleCatalog(layout, canvasW, canvasH) {
+          var T = layout.tileSize;
+          var cut = T * CUT_RATIO;
+          var h = cut;
+          var r = (cut * Math.SQRT2) / 2;
+          var catalog = [];
+          var row;
+          var col;
+          var cx;
+          var cy;
+
+          for (row = 0; row <= layout.rows; row++) {
+            for (col = 0; col <= layout.cols; col++) {
+              cx = col * T;
+              cy = layout.offsetY + row * T;
+              if (
+                cx + h <= 0 ||
+                cx - h >= canvasW ||
+                cy + h <= 0 ||
+                cy - h >= canvasH
+              ) {
+                continue;
+              }
+              catalog.push({
+                id: "star-sq-" + col + "-" + row,
+                cx: cx,
+                cy: cy,
+                r: r,
+              });
+            }
+          }
+
+          return catalog;
+        }
+
   global.NestedStarOctagonsGeometry = {
     computeLayoutFromN: computeLayoutFromN,
     buildValidLayouts: buildValidLayouts,
@@ -937,5 +980,6 @@ function roundCoord(v) {
     collectInnerStarCenterXCoords: collectInnerStarCenterXCoords,
     collectStarGridVerticalAnchorXCoords: collectStarGridVerticalAnchorXCoords,
     buildJunctionDiamondCatalog: buildJunctionDiamondCatalog,
+    buildJunctionCircleCatalog: buildJunctionCircleCatalog,
   };
 })(typeof window !== "undefined" ? window : this);
