@@ -30,40 +30,23 @@
 
   var circleSelectedIds = new Set();
   var lastCircleLayoutSignature = "";
+  var longingCircleSelectedIds = new Set();
+  var lastLongingCircleLayoutSignature = "";
+  var griefCircleSelectedIds = new Set();
+  var lastGriefCircleLayoutSignature = "";
+  var helplessnessSelectedIds = new Set();
+  var lastHelplessnessLayoutSignature = "";
+  var GRIEF_INNER_CIRCLE_DIAMETER_GAP_PX = 18;
   var diamondFilledIds = new Set();
   var lastDiamondLayoutSignature = "";
+  var guiltShameFilledIds = new Set();
   var HOPE_STIPPLE_IMAGE = "stipple-1779907006832.png";
   var HOPE_DOTS_MASK_ID = "hope-dots-mask";
   var HOPE_DOTS_MASK_INVERT_FILTER_ID = "hope-dots-mask-invert-filter";
   var hopeStippleImageReady = false;
+  var hopeStippleImageElement = null;
   var hopeStippleExportDataUri = null;
   var hopeStippleRawExportDataUri = null;
-  var HOPE_DOTS_EXPORT_SAMPLE_STEP_PX =
-    typeof window !== "undefined" &&
-    typeof HOPE_DOTS_EXPORT_SAMPLE_STEP_PX !== "undefined"
-      ? HOPE_DOTS_EXPORT_SAMPLE_STEP_PX
-      : 6;
-  var HOPE_DOTS_EXPORT_ALPHA_THRESHOLD =
-    typeof window !== "undefined" &&
-    typeof HOPE_DOTS_EXPORT_ALPHA_THRESHOLD !== "undefined"
-      ? HOPE_DOTS_EXPORT_ALPHA_THRESHOLD
-      : 10;
-  var HOPE_DOTS_EXPORT_RADIUS_MIN_PX =
-    typeof window !== "undefined" &&
-    typeof HOPE_DOTS_EXPORT_RADIUS_MIN_PX !== "undefined"
-      ? HOPE_DOTS_EXPORT_RADIUS_MIN_PX
-      : 0.45;
-  var HOPE_DOTS_EXPORT_RADIUS_MAX_PX =
-    typeof window !== "undefined" &&
-    typeof HOPE_DOTS_EXPORT_RADIUS_MAX_PX !== "undefined"
-      ? HOPE_DOTS_EXPORT_RADIUS_MAX_PX
-      : 1.15;
-  var hopeDotsColor =
-    typeof HOPE_DOTS_COLOR_DEFAULT !== "undefined"
-      ? HOPE_DOTS_COLOR_DEFAULT
-      : "#000000";
-  var hopePipetteActive = false;
-  var hopePipetteListenerBound = false;
   /** Frame inset overlay (lines, caps, ellipses, diagonals); default hidden */
   var frameInsetOverlayVisible = false;
 
@@ -73,9 +56,12 @@
     fear: true,
     hope: true,
     sadness: true,
+    longing: true,
+    grief: true,
     pride: true,
     happiness: true,
     pain: true,
+    guiltShame: true,
   };
 
   var FEELINGS_CANVAS_KEYS = [
@@ -83,13 +69,17 @@
     "fear",
     "hope",
     "sadness",
+    "longing",
+    "grief",
     "pride",
     "happiness",
     "pain",
+    "guiltShame",
   ];
 
   /** Persist mask holes so continued merging cannot drop earlier cutouts. */
   var stickyMergedCutoutFaces = null;
+
   /** Random column edges for brown-bar outer-third grid (regenerated on layout change). */
   var cachedBrownBarGridXBounds = null;
   var lastBrownBarGridLayoutSignature = "";
@@ -101,6 +91,13 @@
   var borderSideWhiteCellIds = new Set();
   /** One random 8-digit serial per page load (top + bottom white strips). */
   var canvasEdgeSerial = null;
+  /** Five random rects tiling the grid frame (normalized 0–1 within layout bounds). */
+  var cachedColorDivisionNormalizedRects = null;
+  /** Maps area slot (0–3) → index in cachedColorDivisionNormalizedRects (shuffled). */
+  var cachedColorDivisionRectOrder = null;
+  var lastColorDivisionLayoutSignature = "";
+  /** Incremented by Shuffle layout to force a new Mondrian-style split. */
+  var colorDivisionShuffleSeed = 0;
   /** Cached inline SVG assets for the dynamic label bar. */
   var labelBarSvgCache = {};
   var labelBarSvgLoadPromises = {};
@@ -174,9 +171,6 @@
       "feelings-" + key + "-canvas-off",
       visible
     );
-    if (key === "hope") {
-      syncVisibilityTogglePair("hope-layer-on", "hope-layer-off", visible);
-    }
   }
 
   function setEmotionCanvasVisible(key, visible) {
@@ -189,6 +183,7 @@
   function refreshEmotionCanvasLayers() {
     renderVerticalGridLayer();
     renderDiamondFillsLayer();
+    renderHollowDiamondFillsLayer();
     renderPatternLayer();
     if (isStarGrid()) {
       renderBackgroundLayer();
@@ -223,19 +218,6 @@
           });
         }
       })(key);
-    }
-
-    var hopeOnBtn = document.getElementById("hope-layer-on");
-    var hopeOffBtn = document.getElementById("hope-layer-off");
-    if (hopeOnBtn) {
-      hopeOnBtn.addEventListener("click", function () {
-        setEmotionCanvasVisible("hope", true);
-      });
-    }
-    if (hopeOffBtn) {
-      hopeOffBtn.addEventListener("click", function () {
-        setEmotionCanvasVisible("hope", false);
-      });
     }
   }
 
@@ -297,18 +279,36 @@
     );
   }
 
-  function getHopeDotsColor() {
-    var input = document.getElementById("hope-dots-color");
-    return input ? input.value : hopeDotsColor;
+  function sheetColor(slotId) {
+    if (window.SheetPalettes && window.SheetPalettes.getColor) {
+      return window.SheetPalettes.getColor(slotId);
+    }
+    if (typeof getColor === "function") return getColor(slotId);
+    return "#000000";
   }
 
-  function setHopeDotsColor(hex) {
-    if (!hex) return;
-    hopeDotsColor = hex;
-    var input = document.getElementById("hope-dots-color");
-    if (input) input.value = hex;
-    refreshHopeColoredExportDataUri();
-    renderStippleDotsLayer();
+  function getGridBoundaryStrokeColor() {
+    return sheetColor("B2");
+  }
+
+  function getBorderDivisionStrokeColor() {
+    return sheetColor("C10");
+  }
+
+  function getAutoMergeFillColor() {
+    return sheetColor("F5");
+  }
+
+  function getCheckerboardDarkColor() {
+    return sheetColor("G2");
+  }
+
+  function getCheckerboardLightColor() {
+    return sheetColor("G3");
+  }
+
+  function getHopeDotsColor() {
+    return sheetColor("F7");
   }
 
   function bakeHopeColoredStippleDataUri(img, colorHex) {
@@ -383,35 +383,100 @@
       });
   }
 
-  function hash01FromInts(a, b, salt) {
-    var x = (a | 0) * 374761393 + (b | 0) * 668265263 + (salt | 0) * 362437;
-    x = (x ^ (x >> 13)) | 0;
-    x = (x * 1274126177) | 0;
-    x = (x ^ (x >> 16)) | 0;
-    return ((x >>> 0) % 100000) / 100000;
+  function markHopeStipplePixelVisited(visited, width, height, cx, cy, radius) {
+    var x0 = Math.max(0, cx - radius);
+    var x1 = Math.min(width - 1, cx + radius);
+    var y0 = Math.max(0, cy - radius);
+    var y1 = Math.min(height - 1, cy + radius);
+    var x;
+    var y;
+    var rowBase;
+    for (y = y0; y <= y1; y++) {
+      rowBase = y * width;
+      for (x = x0; x <= x1; x++) {
+        visited[rowBase + x] = 1;
+      }
+    }
   }
 
   function buildHopeDotsCirclesExportLines() {
     if (
       !isEmotionCanvasVisible("hope") ||
       !hasActiveMergeCutouts() ||
-      !hopeStippleImageReady
+      !hopeStippleImageReady ||
+      !hopeStippleImageElement
     ) {
       return Promise.resolve(null);
     }
 
-    var dotColor = getHopeDotsColor();
-
-    // Procedural circles (no image sampling). Stable under file:// export.
     return new Promise(function (resolve) {
       try {
-        var step = Math.max(3, Math.round(Number(HOPE_DOTS_EXPORT_SAMPLE_STEP_PX) || 7));
-        var jitter = step * 0.42;
-        var rMin = Math.max(0.05, Number(HOPE_DOTS_EXPORT_RADIUS_MIN_PX) || 0.5);
-        var rMax = Math.max(rMin, Number(HOPE_DOTS_EXPORT_RADIUS_MAX_PX) || 1.25);
-
         var mergedRegions = getMergedRegionsForMask();
         if (!mergedRegions || !mergedRegions.length) return resolve(null);
+
+        var canvas = document.createElement("canvas");
+        canvas.width = CANVAS_W;
+        canvas.height = CANVAS_H;
+        var ctx = canvas.getContext("2d");
+        if (!ctx) return resolve(null);
+
+        ctx.drawImage(hopeStippleImageElement, 0, 0, CANVAS_W, CANVAS_H);
+        var imageData = ctx.getImageData(0, 0, CANVAS_W, CANVAS_H);
+        var data = imageData.data;
+        var visited = new Uint8Array(CANVAS_W * CANVAS_H);
+        var dotColor = getHopeDotsColor();
+        var dedupeRadius = 3;
+        var luminanceThreshold = 128;
+        var circleR = 2;
+        var circles = [];
+        var x;
+        var y;
+        var idx;
+        var di;
+        var r;
+        var g;
+        var b;
+        var a;
+        var lum;
+
+        for (y = 0; y < CANVAS_H; y++) {
+          for (x = 0; x < CANVAS_W; x++) {
+            idx = y * CANVAS_W + x;
+            if (visited[idx]) continue;
+
+            di = idx * 4;
+            r = data[di];
+            g = data[di + 1];
+            b = data[di + 2];
+            a = data[di + 3];
+            if (a === 0) continue;
+
+            lum = (r + g + b) / 3;
+            if (lum >= luminanceThreshold) continue;
+
+            circles.push(
+              '<circle cx="' +
+                x +
+                '" cy="' +
+                y +
+                '" r="' +
+                circleR +
+                '" fill="' +
+                dotColor +
+                '"/>'
+            );
+            markHopeStipplePixelVisited(
+              visited,
+              CANVAS_W,
+              CANVAS_H,
+              x,
+              y,
+              dedupeRadius
+            );
+          }
+        }
+
+        if (!circles.length) return resolve(null);
 
         var lines = [];
         lines.push("<defs>");
@@ -431,54 +496,13 @@
 
         lines.push('<g clip-path="url(#inner-content-clip)">');
         lines.push(
-          '<g id="layer-stipple-dots" clip-path="url(#' +
+          '<g id="layer-stipple-svg" clip-path="url(#' +
             MERGE_REGIONS_CLIP_ID +
-            ')" fill="' +
-            dotColor +
-            '" stroke="none">'
+            ')">'
         );
-
-        var circleCount = 0;
-        var tested = 0;
-        for (var y = 0; y < CANVAS_H; y += step) {
-          for (var x = 0; x < CANVAS_W; x += step) {
-            var cx =
-              x +
-              step * 0.5 +
-              (hash01FromInts(x, y, 11) - 0.5) * 2 * jitter;
-            var cy =
-              y +
-              step * 0.5 +
-              (hash01FromInts(x, y, 23) - 0.5) * 2 * jitter;
-            tested++;
-
-            var inside = false;
-            for (var ri = 0; ri < mergedRegions.length; ri++) {
-              var rpts = mergedRegions[ri].points;
-              if (rpts && rpts.length && hopePointInPolygon(cx, cy, rpts)) {
-                inside = true;
-                break;
-              }
-            }
-            if (!inside) continue;
-
-            var t = hash01FromInts(x, y, 37);
-            if (t < 0.25) continue; // thin out a bit
-
-            var r = rMin + (rMax - rMin) * t;
-            lines.push(
-              '<circle cx="' +
-                cx.toFixed(2) +
-                '" cy="' +
-                cy.toFixed(2) +
-                '" r="' +
-                r.toFixed(2) +
-                '"/>'
-            );
-            circleCount++;
-          }
+        for (var c = 0; c < circles.length; c++) {
+          lines.push(circles[c]);
         }
-
         lines.push("</g>");
         lines.push("</g>");
         resolve(lines);
@@ -541,92 +565,10 @@
     mask.appendChild(maskImg);
   }
 
-  function setHopePipetteActive(active) {
-    hopePipetteActive = !!active;
-    document.body.classList.toggle("hope-pipette-active", hopePipetteActive);
-    var btn = document.getElementById("hope-dots-pipette-btn");
-    if (btn) {
-      btn.classList.toggle("is-active", hopePipetteActive);
-      btn.setAttribute("aria-pressed", String(hopePipetteActive));
-    }
-  }
-
-  function sampleColorAtClientPoint(clientX, clientY) {
-    var el = document.elementFromPoint(clientX, clientY);
-    while (el && el !== document.documentElement) {
-      if (el.id === "hope-dots-pipette-btn" || el.closest(".sidebar")) {
-        return null;
-      }
-      var cs = window.getComputedStyle(el);
-      var candidates = [cs.fill, cs.stroke, cs.color];
-      var i;
-      var hex;
-      for (i = 0; i < candidates.length; i++) {
-        hex = parseCssColorToHex(candidates[i]);
-        if (hex) return hex;
-      }
-      el = el.parentElement;
-    }
-    return null;
-  }
-
-  function runHopeEyeDropper() {
-    if (!window.EyeDropper) return false;
-    var dropper = new window.EyeDropper();
-    dropper
-      .open()
-      .then(function (result) {
-        setHopeDotsColor(result.sRGBHex);
-        setHopePipetteActive(false);
-      })
-      .catch(function () {
-        setHopePipetteActive(false);
-      });
-    return true;
-  }
-
-  function onHopePipettePointerDown(e) {
-    if (!hopePipetteActive || interactionMode !== "view" || !designSvg) return;
-    if (!designSvg.contains(e.target)) return;
-    var hex = sampleColorAtClientPoint(e.clientX, e.clientY);
-    if (hex) setHopeDotsColor(hex);
-    setHopePipetteActive(false);
-    e.preventDefault();
-    e.stopPropagation();
-  }
-
-  function bindHopePipetteCanvasListener() {
-    if (hopePipetteListenerBound || !designSvg) return;
-    designSvg.addEventListener("pointerdown", onHopePipettePointerDown, true);
-    hopePipetteListenerBound = true;
-  }
-
-  function initHopeDotsColorControls() {
-    var colorInput = document.getElementById("hope-dots-color");
-    var pipetteBtn = document.getElementById("hope-dots-pipette-btn");
-    if (colorInput) {
-      colorInput.value = hopeDotsColor;
-      colorInput.addEventListener("input", function () {
-        setHopeDotsColor(colorInput.value);
-      });
-    }
-    if (pipetteBtn) {
-      pipetteBtn.addEventListener("click", function () {
-        if (hopePipetteActive) {
-          setHopePipetteActive(false);
-          return;
-        }
-        if (!runHopeEyeDropper()) {
-          setHopePipetteActive(true);
-        }
-      });
-    }
-    bindHopePipetteCanvasListener();
-  }
-
   function loadHopeStippleImage() {
     var img = new Image();
     img.onload = function () {
+      hopeStippleImageElement = img;
       hopeStippleImageReady = true;
       hopeStippleExportDataUri = bakeHopeColoredStippleDataUri(
         img,
@@ -637,6 +579,7 @@
       applyMergeReveal();
     };
     img.onerror = function () {
+      hopeStippleImageElement = null;
       hopeStippleImageReady = false;
       hopeStippleExportDataUri = null;
       hopeStippleRawExportDataUri = null;
@@ -858,6 +801,47 @@
     );
   }
 
+  function getLongingCircleDensity() {
+    var slider = document.getElementById("longing-circle-density");
+    var v = slider ? Number(slider.value) : CIRCLE_DENSITY_DEFAULT;
+    return Math.min(
+      CIRCLE_DENSITY_MAX,
+      Math.max(CIRCLE_DENSITY_MIN, Math.round(v))
+    );
+  }
+
+  function getGriefCircleDensity() {
+    var slider = document.getElementById("grief-circle-density");
+    var v = slider ? Number(slider.value) : CIRCLE_DENSITY_DEFAULT;
+    return Math.min(
+      CIRCLE_DENSITY_MAX,
+      Math.max(CIRCLE_DENSITY_MIN, Math.round(v))
+    );
+  }
+
+  function getHelplessnessPercent() {
+    var slider = document.getElementById("helplessness-percent");
+    var def =
+      typeof HELPLESSNESS_PERCENT_DEFAULT !== "undefined"
+        ? HELPLESSNESS_PERCENT_DEFAULT
+        : 10;
+    var min =
+      typeof HELPLESSNESS_PERCENT_MIN !== "undefined"
+        ? HELPLESSNESS_PERCENT_MIN
+        : 10;
+    var max =
+      typeof HELPLESSNESS_PERCENT_MAX !== "undefined"
+        ? HELPLESSNESS_PERCENT_MAX
+        : 40;
+    var v = slider ? Number(slider.value) : def;
+    return Math.min(max, Math.max(min, Math.round(v)));
+  }
+
+  function isHelplessnessLayerVisible() {
+    var toggle = document.getElementById("helplessness-layer-toggle");
+    return !toggle || toggle.checked;
+  }
+
   function getAngerVerticalLengthPercent() {
     var slider = document.getElementById("anger-vertical-length");
     var v = slider ? Number(slider.value) : ANGER_VERTICAL_LENGTH_DEFAULT;
@@ -867,6 +851,24 @@
     );
   }
 
+  function getAnxietyVerticalStrokePercent() {
+    var slider = document.getElementById("anxiety-vertical-stroke");
+    var def =
+      typeof ANXIETY_VERTICAL_STROKE_DEFAULT !== "undefined"
+        ? ANXIETY_VERTICAL_STROKE_DEFAULT
+        : 17;
+    var min =
+      typeof ANXIETY_VERTICAL_STROKE_MIN !== "undefined"
+        ? ANXIETY_VERTICAL_STROKE_MIN
+        : 0;
+    var max =
+      typeof ANXIETY_VERTICAL_STROKE_MAX !== "undefined"
+        ? ANXIETY_VERTICAL_STROKE_MAX
+        : 100;
+    var v = slider ? Number(slider.value) : def;
+    return Math.min(max, Math.max(min, Math.round(v)));
+  }
+
   function getPrideFillPercent() {
     var slider = document.getElementById("pride-fill-percent");
     var v = slider ? Number(slider.value) : PRIDE_FILL_PERCENT_DEFAULT;
@@ -874,6 +876,24 @@
       PRIDE_FILL_PERCENT_MAX,
       Math.max(PRIDE_FILL_PERCENT_MIN, Math.round(v))
     );
+  }
+
+  function getGuiltShameFillPercent() {
+    var slider = document.getElementById("guilt-shame-fill-percent");
+    var def =
+      typeof GUILT_SHAME_FILL_PERCENT_DEFAULT !== "undefined"
+        ? GUILT_SHAME_FILL_PERCENT_DEFAULT
+        : 25;
+    var min =
+      typeof GUILT_SHAME_FILL_PERCENT_MIN !== "undefined"
+        ? GUILT_SHAME_FILL_PERCENT_MIN
+        : 10;
+    var max =
+      typeof GUILT_SHAME_FILL_PERCENT_MAX !== "undefined"
+        ? GUILT_SHAME_FILL_PERCENT_MAX
+        : 40;
+    var v = slider ? Number(slider.value) : def;
+    return Math.min(max, Math.max(min, Math.round(v)));
   }
 
   function getAutoMergeIntensity() {
@@ -963,12 +983,7 @@
   }
 
   function getGridStrokeWidth() {
-    var slider = document.getElementById("grid-stroke-width");
-    var v = slider ? Number(slider.value) : GRID_STROKE_WIDTH_DEFAULT;
-    return Math.min(
-      GRID_STROKE_WIDTH_MAX,
-      Math.max(GRID_STROKE_WIDTH_MIN, Math.round(v))
-    );
+    return GRID_STROKE_WIDTH_DEFAULT;
   }
 
   function getBorderLeftRightSegments() {
@@ -1119,63 +1134,105 @@
   }
 
   function getCircleStrokeWidth() {
-    return getGridStrokeWidth() * 2;
+    return getGridStrokeWidth() * 3;
+  }
+
+  function getLongingCircleStrokeWidth() {
+    return getGridStrokeWidth() * 3;
+  }
+
+  function getGriefCircleStrokeWidth() {
+    return getGridStrokeWidth() * 3;
+  }
+
+  function isCanvasBackgroundColor(hex) {
+    var normalized = normalizeHexColor(hex, "");
+    if (!normalized) return false;
+    var allowed = getCanvasBackgroundColors();
+    var i;
+    for (i = 0; i < allowed.length; i++) {
+      if (normalizeHexColor(allowed[i], "") === normalized) return true;
+    }
+    return false;
+  }
+
+  function snapPatternStrokeColor(value) {
+    var normalized = normalizeHexColor(value, PATTERN_STROKE_COLOR_DEFAULT);
+    if (!isCanvasBackgroundColor(normalized)) return normalized;
+    return sheetColor("B1");
   }
 
   function getPatternStrokeColor() {
-    var input = document.getElementById("pattern-stroke-color");
+    return sheetColor("B1");
+  }
+
+  function getCanvasBackgroundColors() {
+    if (
+      typeof CANVAS_BACKGROUND_COLORS !== "undefined" &&
+      CANVAS_BACKGROUND_COLORS.length
+    ) {
+      return CANVAS_BACKGROUND_COLORS.slice();
+    }
+    return [CANVAS_BACKGROUND_COLOR_DEFAULT || BG_COLOR];
+  }
+
+  function snapCanvasBackgroundColor(value) {
+    var allowed = getCanvasBackgroundColors();
+    var normalized = normalizeHexColor(value, "");
+    var i;
+    if (normalized) {
+      for (i = 0; i < allowed.length; i++) {
+        if (normalizeHexColor(allowed[i], "") === normalized) return normalized;
+      }
+    }
     return normalizeHexColor(
-      input ? input.value : null,
-      PATTERN_STROKE_COLOR_DEFAULT
+      allowed[0],
+      CANVAS_BACKGROUND_COLOR_DEFAULT || BG_COLOR
     );
   }
 
   function getCanvasBackgroundColor() {
-    var input = document.getElementById("canvas-background-color");
-    return normalizeHexColor(
-      input ? input.value : null,
-      typeof CANVAS_BACKGROUND_COLOR_DEFAULT !== "undefined"
-        ? CANVAS_BACKGROUND_COLOR_DEFAULT
-        : BG_COLOR
-    );
+    return sheetColor("A1");
   }
 
   function getCircleFillColor() {
-    var input = document.getElementById("circle-fill-color");
-    return normalizeHexColor(
-      input ? input.value : null,
-      typeof CIRCLE_FILL_COLOR_DEFAULT !== "undefined"
-        ? CIRCLE_FILL_COLOR_DEFAULT
-        : "#ffffff"
-    );
+    return sheetColor("F3");
+  }
+
+  function getCircleStrokeColor() {
+    return sheetColor("F4");
   }
 
   function getDiamondFillColor() {
-    var input = document.getElementById("diamond-fill-color");
-    return normalizeHexColor(
-      input ? input.value : null,
-      DIAMOND_FILL_COLOR_DEFAULT
-    );
+    return sheetColor("F2");
+  }
+
+  function getGuiltShameDiamondFillColor() {
+    return sheetColor("F8");
   }
 
   function getLabelBarBackgroundColor() {
-    var input = document.getElementById("label-bar-background-color");
-    return normalizeHexColor(
-      input ? input.value : null,
-      typeof LABEL_BAR_BACKGROUND_COLOR_DEFAULT !== "undefined"
-        ? LABEL_BAR_BACKGROUND_COLOR_DEFAULT
-        : CANVAS_EDGE_BROWN_BAR_COLOR
-    );
+    return sheetColor("G1");
   }
 
   function getLabelBarContentColor() {
-    var input = document.getElementById("label-bar-content-color");
-    return normalizeHexColor(
-      input ? input.value : null,
-      typeof LABEL_BAR_CONTENT_COLOR_DEFAULT !== "undefined"
-        ? LABEL_BAR_CONTENT_COLOR_DEFAULT
-        : "#ffffff"
-    );
+    return sheetColor("G4");
+  }
+
+  function ensureLabelBarBackgroundDiffersFromCanvas() {
+    return false;
+  }
+
+  function getHalfCircleFaceFillColor() {
+    return sheetColor("D6");
+  }
+
+  function getHalfCircleStarFillColor() {
+    return sheetColor("E3");
+  }
+
+  function getHalfCircleInnerStarFillColor() {
+    return sheetColor("E5");
   }
 
   function normalizeHexColor(value, fallback) {
@@ -1225,11 +1282,13 @@
       renderBackgroundLayer();
       updateBorderDivisionLines();
       renderGridMaskLayer("canvas-background-color");
+      renderPatternLayer();
       applyMergeReveal();
       return;
     }
     renderBackgroundLayer();
     renderGridMaskLayer("canvas-background-color");
+    renderHalfCircleLayer();
   }
 
   var GRID_WHITE_MASK_ID = "grid-white-mask";
@@ -1307,51 +1366,86 @@
   }
 
   /**
-   * @param {{ points: { x: number, y: number }[] }} face
-   * @returns {string}
+   * @param {{ x: number, y: number }[]} points
+   * @returns {{ x: number, y: number }}
    */
-  function cutoutFaceKey(face) {
-    var pts = face.points;
-    if (!pts.length) return "";
-    var area = 0;
-    for (var i = 0; i < pts.length; i++) {
-      var j = (i + 1) % pts.length;
-      area += pts[i].x * pts[j].y - pts[j].x * pts[i].y;
+  function getMergeRegionCentroid(points) {
+    var x = 0;
+    var y = 0;
+    var i;
+    for (i = 0; i < points.length; i++) {
+      x += points[i].x;
+      y += points[i].y;
     }
-    return (
-      pts.length +
-      "|" +
-      Math.round(pts[0].x * 100) +
-      "," +
-      Math.round(pts[0].y * 100) +
-      "|" +
-      Math.round(Math.abs(area / 2))
-    );
+    return { x: x / points.length, y: y / points.length };
   }
 
   /**
-   * Keep prior holes and add newly detected regions (never shrink on merge).
-   * @param {{ points: { x: number, y: number }[] }[]} sticky
-   * @param {{ points: { x: number, y: number }[] }[]} fresh
+   * True when inner lies inside outer (all vertices + smaller area).
+   * @param {{ points: { x: number, y: number }[] }} inner
+   * @param {{ points: { x: number, y: number }[] }} outer
+   * @returns {boolean}
+   */
+  function isMergeRegionContainedIn(inner, outer) {
+    var innerPts = inner.points;
+    var outerPts = outer.points;
+    if (!innerPts || !innerPts.length || !outerPts || !outerPts.length) {
+      return false;
+    }
+    var innerArea = polygonAreaAbs(innerPts);
+    var outerArea = polygonAreaAbs(outerPts);
+    if (innerArea >= outerArea - 1e-3) return false;
+    var i;
+    for (i = 0; i < innerPts.length; i++) {
+      if (
+        !hopePointInPolygon(innerPts[i].x, innerPts[i].y, outerPts)
+      ) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * True when a smaller region is redundant inside a larger one (full enclosure
+   * or centroid falls inside the larger polygon).
+   * @param {{ points: { x: number, y: number }[] }} inner
+   * @param {{ points: { x: number, y: number }[] }} outer
+   * @returns {boolean}
+   */
+  function isMergeRegionRedundantIn(inner, outer) {
+    if (isMergeRegionContainedIn(inner, outer)) return true;
+    var innerArea = polygonAreaAbs(inner.points);
+    var outerArea = polygonAreaAbs(outer.points);
+    if (innerArea >= outerArea - 1e-3) return false;
+    var c = getMergeRegionCentroid(inner.points);
+    return hopePointInPolygon(c.x, c.y, outer.points);
+  }
+
+  /**
+   * Drop redundant holes enclosed by or overlapping a larger merged region.
+   * @param {{ points: { x: number, y: number }[] }[]} regions
    * @returns {{ points: { x: number, y: number }[] }[]}
    */
-  function mergeStickyCutouts(sticky, fresh) {
-    var keys = {};
-    var out = [];
+  function dedupeContainedMergeRegions(regions) {
+    if (!regions || regions.length <= 1) return regions || [];
+    var sorted = regions.slice().sort(function (a, b) {
+      return polygonAreaAbs(b.points) - polygonAreaAbs(a.points);
+    });
+    var kept = [];
     var i;
-    for (i = 0; i < sticky.length; i++) {
-      var k = cutoutFaceKey(sticky[i]);
-      if (!k || keys[k]) continue;
-      keys[k] = true;
-      out.push(sticky[i]);
+    var j;
+    for (i = 0; i < sorted.length; i++) {
+      var contained = false;
+      for (j = 0; j < kept.length; j++) {
+        if (isMergeRegionRedundantIn(sorted[i], kept[j])) {
+          contained = true;
+          break;
+        }
+      }
+      if (!contained) kept.push(sorted[i]);
     }
-    for (i = 0; i < fresh.length; i++) {
-      var fk = cutoutFaceKey(fresh[i]);
-      if (!fk || keys[fk]) continue;
-      keys[fk] = true;
-      out.push(fresh[i]);
-    }
-    return out;
+    return kept;
   }
 
   function renderGridMaskLayer(trigger) {
@@ -1377,15 +1471,17 @@
     } else if (trigger === "restore" || interactionMode === "restore") {
       stickyMergedCutoutFaces = freshRegions;
       mergedRegions = freshRegions;
-    } else if (!stickyMergedCutoutFaces) {
-      stickyMergedCutoutFaces = freshRegions;
-      mergedRegions = freshRegions;
-    } else {
-      stickyMergedCutoutFaces = mergeStickyCutouts(
-        stickyMergedCutoutFaces,
-        freshRegions
-      );
+    } else if (freshRegions.length) {
+      stickyMergedCutoutFaces = dedupeContainedMergeRegions(freshRegions);
       mergedRegions = stickyMergedCutoutFaces;
+    } else if (
+      rawMergedRegions.length &&
+      stickyMergedCutoutFaces &&
+      stickyMergedCutoutFaces.length
+    ) {
+      mergedRegions = stickyMergedCutoutFaces;
+    } else {
+      mergedRegions = stickyMergedCutoutFaces || [];
     }
 
     updateGridWhiteMaskDef(defs, mergedRegions, bounds);
@@ -1456,9 +1552,7 @@
    * @param {string[]} lines
    */
   function getAutoMergeOutlineColor() {
-    return typeof AUTO_MERGE_OUTLINE_COLOR !== "undefined"
-      ? AUTO_MERGE_OUTLINE_COLOR
-      : "#B2FF00";
+    return sheetColor("F6");
   }
 
   function getAutoMergeOutlineWidth() {
@@ -1471,10 +1565,7 @@
 
   function getAutoMergeShadowFilterParams() {
     return {
-      shadowColor:
-        typeof AUTO_MERGE_SHADOW_COLOR !== "undefined"
-          ? AUTO_MERGE_SHADOW_COLOR
-          : "#685450",
+      shadowColor: sheetColor("D6"),
       blur:
         typeof AUTO_MERGE_SHADOW_BLUR_PX !== "undefined"
           ? AUTO_MERGE_SHADOW_BLUR_PX
@@ -1633,7 +1724,7 @@
       return;
     }
 
-    var fillColor = getPatternStrokeColor();
+    var fillColor = getAutoMergeFillColor();
     lines.push('<g clip-path="url(#inner-content-clip)">');
     lines.push('<g id="layer-auto-merge-fills">');
     var i;
@@ -1863,6 +1954,49 @@
     );
   }
 
+  function getHelplessnessJunctionCatalog() {
+    if (isStarGrid()) {
+      if (
+        typeof NestedStarOctagonsGeometry === "undefined" ||
+        !NestedStarOctagonsGeometry.buildHelplessnessJunctionCatalog
+      ) {
+        return [];
+      }
+      return NestedStarOctagonsGeometry.buildHelplessnessJunctionCatalog(
+        getStarLayout(),
+        CANVAS_W,
+        CANVAS_H
+      );
+    }
+    return TopkapiGeometry.buildHelplessnessJunctionCatalog(
+      lastOctagonsN,
+      CANVAS_W,
+      CANVAS_H,
+      getInnerScale()
+    );
+  }
+
+  function buildHelplessnessLayoutSignature() {
+    if (isStarGrid()) {
+      var layout = getStarLayout();
+      return (
+        "star-hp|" +
+        layout.n +
+        "|" +
+        layout.rows +
+        "|" +
+        layout.cols +
+        "|" +
+        layout.offsetY +
+        "|" +
+        CANVAS_W +
+        "|" +
+        CANVAS_H
+      );
+    }
+    return buildDiamondLayoutSignature() + "|" + getInnerScale();
+  }
+
   function buildCircleLayoutSignature() {
     return buildDiamondLayoutSignature();
   }
@@ -1929,6 +2063,78 @@
   }
 
   /**
+   * @param {number} seed
+   * @returns {function(): number}
+   */
+  function createSeededRandom(seed) {
+    var state = seed >>> 0;
+    return function () {
+      state = (state + 0x6d2b79f5) >>> 0;
+      var t = state;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  /**
+   * @param {{ id: string }[]} catalog
+   * @param {number} count
+   * @param {number} seed
+   * @returns {string[]}
+   */
+  function seededShufflePickIds(catalog, count, seed) {
+    var rng = createSeededRandom(seed);
+    var ids = catalog.map(function (item) {
+      return item.id;
+    });
+    for (var i = ids.length - 1; i > 0; i--) {
+      var j = Math.floor(rng() * (i + 1));
+      var tmp = ids[i];
+      ids[i] = ids[j];
+      ids[j] = tmp;
+    }
+    return ids.slice(0, count);
+  }
+
+  function getHelplessnessShuffleSeed() {
+    return HELPLESSNESS_SHUFFLE_SEED + getHelplessnessPercent() * 1000;
+  }
+
+  /**
+   * @param {boolean} forceReshuffle
+   */
+  function syncHelplessnessSelection(forceReshuffle) {
+    var catalog = getHelplessnessJunctionCatalog();
+    var validIds = new Set();
+    for (var i = 0; i < catalog.length; i++) {
+      validIds.add(catalog[i].id);
+    }
+
+    if (!forceReshuffle) {
+      helplessnessSelectedIds.forEach(function (id) {
+        if (!validIds.has(id)) helplessnessSelectedIds.delete(id);
+      });
+    }
+
+    var target = Math.round((catalog.length * getHelplessnessPercent()) / 100);
+    if (target < 0) target = 0;
+    if (target > catalog.length) target = catalog.length;
+
+    if (forceReshuffle || helplessnessSelectedIds.size !== target) {
+      helplessnessSelectedIds.clear();
+      var picked = seededShufflePickIds(
+        catalog,
+        target,
+        getHelplessnessShuffleSeed()
+      );
+      for (var p = 0; p < picked.length; p++) {
+        helplessnessSelectedIds.add(picked[p]);
+      }
+    }
+  }
+
+  /**
    * @param {boolean} forceReshuffle
    */
   function syncCircleSelection(forceReshuffle) {
@@ -1954,6 +2160,66 @@
       var picked = shufflePickIds(catalog, target);
       for (var p = 0; p < picked.length; p++) {
         circleSelectedIds.add(picked[p]);
+      }
+    }
+  }
+
+  /**
+   * @param {boolean} forceReshuffle
+   */
+  function syncLongingCircleSelection(forceReshuffle) {
+    var catalog = getUprightSquareCatalog();
+    var validIds = new Set();
+    for (var i = 0; i < catalog.length; i++) {
+      validIds.add(catalog[i].id);
+    }
+
+    if (!forceReshuffle) {
+      longingCircleSelectedIds.forEach(function (id) {
+        if (!validIds.has(id)) longingCircleSelectedIds.delete(id);
+      });
+    }
+
+    var density = getLongingCircleDensity();
+    var target = Math.round((catalog.length * density) / 100);
+    if (target < 0) target = 0;
+    if (target > catalog.length) target = catalog.length;
+
+    if (forceReshuffle || longingCircleSelectedIds.size !== target) {
+      longingCircleSelectedIds.clear();
+      var picked = shufflePickIds(catalog, target);
+      for (var p = 0; p < picked.length; p++) {
+        longingCircleSelectedIds.add(picked[p]);
+      }
+    }
+  }
+
+  /**
+   * @param {boolean} forceReshuffle
+   */
+  function syncGriefCircleSelection(forceReshuffle) {
+    var catalog = getUprightSquareCatalog();
+    var validIds = new Set();
+    for (var i = 0; i < catalog.length; i++) {
+      validIds.add(catalog[i].id);
+    }
+
+    if (!forceReshuffle) {
+      griefCircleSelectedIds.forEach(function (id) {
+        if (!validIds.has(id)) griefCircleSelectedIds.delete(id);
+      });
+    }
+
+    var density = getGriefCircleDensity();
+    var target = Math.round((catalog.length * density) / 100);
+    if (target < 0) target = 0;
+    if (target > catalog.length) target = catalog.length;
+
+    if (forceReshuffle || griefCircleSelectedIds.size !== target) {
+      griefCircleSelectedIds.clear();
+      var picked = shufflePickIds(catalog, target);
+      for (var p = 0; p < picked.length; p++) {
+        griefCircleSelectedIds.add(picked[p]);
       }
     }
   }
@@ -1989,6 +2255,119 @@
   /** Random-fill inner diamonds (Pride slider / button). */
   function syncPrideShapes() {
     syncDiamondFill(true);
+  }
+
+  function syncGuiltShameDiamondFill(forceReshuffle) {
+    var catalog = getDiamondCatalog();
+    var validIds = new Set();
+    for (var i = 0; i < catalog.length; i++) {
+      validIds.add(catalog[i].id);
+    }
+
+    if (!forceReshuffle) {
+      guiltShameFilledIds.forEach(function (id) {
+        if (!validIds.has(id)) guiltShameFilledIds.delete(id);
+      });
+      return;
+    }
+
+    var target = Math.round((catalog.length * getGuiltShameFillPercent()) / 100);
+    if (target < 0) target = 0;
+    if (target > catalog.length) target = catalog.length;
+
+    guiltShameFilledIds.clear();
+    var picked = shufflePickIds(catalog, target);
+    for (var p = 0; p < picked.length; p++) {
+      guiltShameFilledIds.add(picked[p]);
+    }
+  }
+
+  function syncGuiltShameShapes() {
+    syncGuiltShameDiamondFill(true);
+  }
+
+  /**
+   * @returns {{ id: string, points: { x: number, y: number }[] }[]}
+   */
+  function getFilledHollowDiamonds() {
+    if (!isEmotionCanvasVisible("guiltShame")) return [];
+    var catalog = getDiamondCatalog();
+    var filled = [];
+    for (var i = 0; i < catalog.length; i++) {
+      var dm = catalog[i];
+      if (guiltShameFilledIds.has(dm.id)) filled.push(dm);
+    }
+    return filled;
+  }
+
+  /**
+   * @param {{ x: number, y: number }[]} points
+   * @param {number} scale
+   * @returns {{ x: number, y: number }[]}
+   */
+  function scaleDiamondPointsTowardCenter(points, scale) {
+    var cx = 0;
+    var cy = 0;
+    var i;
+    for (i = 0; i < points.length; i++) {
+      cx += points[i].x;
+      cy += points[i].y;
+    }
+    cx /= points.length;
+    cy /= points.length;
+    var scaled = [];
+    for (i = 0; i < points.length; i++) {
+      scaled.push({
+        x: cx + (points[i].x - cx) * scale,
+        y: cy + (points[i].y - cy) * scale,
+      });
+    }
+    return scaled;
+  }
+
+  /**
+   * @param {{ x: number, y: number }[]} points
+   * @returns {string}
+   */
+  function pointsToClosedPathD(points) {
+    if (!points.length) return "";
+    var d = "M" + points[0].x + "," + points[0].y;
+    for (var i = 1; i < points.length; i++) {
+      d += "L" + points[i].x + "," + points[i].y;
+    }
+    return d + "Z";
+  }
+
+  /**
+   * @param {{ x: number, y: number }[]} outerPoints
+   * @returns {string}
+   */
+  function hollowDiamondPathD(outerPoints) {
+    var innerScale =
+      typeof GUILT_SHAME_INNER_DIAMOND_SCALE !== "undefined"
+        ? GUILT_SHAME_INNER_DIAMOND_SCALE
+        : 0.5;
+    var innerPoints = scaleDiamondPointsTowardCenter(outerPoints, innerScale);
+    return pointsToClosedPathD(outerPoints) + pointsToClosedPathD(innerPoints);
+  }
+
+  /**
+   * @param {{ id: string, points: { x: number, y: number }[] }[]} diamonds
+   * @returns {SVGElement}
+   */
+  function hollowDiamondsToGroup(diamonds) {
+    var g = elSvg("g");
+    var fillColor = getGuiltShameDiamondFillColor();
+    for (var i = 0; i < diamonds.length; i++) {
+      var dm = diamonds[i];
+      var path = elSvg("path");
+      path.setAttribute("d", hollowDiamondPathD(dm.points));
+      path.setAttribute("fill", fillColor);
+      path.setAttribute("fill-rule", "evenodd");
+      path.setAttribute("stroke", "none");
+      g.appendChild(path);
+    }
+    return g;
   }
 
   /**
@@ -2035,7 +2414,7 @@
    */
   function autoMergeFillsToGroup(regions) {
     var g = elSvg("g");
-    var fillColor = getPatternStrokeColor();
+    var fillColor = getAutoMergeFillColor();
     var i;
     var pts;
 
@@ -2082,6 +2461,105 @@
   }
 
   /**
+   * @returns {{ cx: number, cy: number, r: number }[]}
+   */
+  function getActiveLongingCircles() {
+    if (!isEmotionCanvasVisible("longing")) return [];
+    var catalog = getUprightSquareCatalog();
+    var circles = [];
+    for (var i = 0; i < catalog.length; i++) {
+      var sq = catalog[i];
+      if (longingCircleSelectedIds.has(sq.id)) {
+        circles.push({ cx: sq.cx, cy: sq.cy, r: sq.r });
+      }
+    }
+    return circles;
+  }
+
+  /**
+   * @returns {{ cx: number, cy: number, r: number }[]}
+   */
+  function getActiveGriefCircles() {
+    if (!isEmotionCanvasVisible("grief")) return [];
+    var catalog = getUprightSquareCatalog();
+    var circles = [];
+    for (var i = 0; i < catalog.length; i++) {
+      var sq = catalog[i];
+      if (griefCircleSelectedIds.has(sq.id)) {
+        circles.push({ cx: sq.cx, cy: sq.cy, r: sq.r });
+      }
+    }
+    return circles;
+  }
+
+  /**
+   * @returns {{ cx: number, cy: number, halfW: number, halfH: number }[]}
+   */
+  function getActiveHelplessnessMarks() {
+    if (!isHelplessnessLayerVisible()) return [];
+    var catalog = getHelplessnessJunctionCatalog();
+    var marks = [];
+    for (var i = 0; i < catalog.length; i++) {
+      var entry = catalog[i];
+      if (helplessnessSelectedIds.has(entry.id)) {
+        marks.push({
+          cx: entry.cx,
+          cy: entry.cy,
+          halfW: entry.halfW,
+          halfH: entry.halfH,
+        });
+      }
+    }
+    return marks;
+  }
+
+  /**
+   * @param {{ cx: number, cy: number, halfW: number, halfH: number }[]} marks
+   */
+  function appendHelplessnessMarkLines(group, marks) {
+    for (var i = 0; i < marks.length; i++) {
+      var m = marks[i];
+      var xMin = m.cx - m.halfW;
+      var yMin = m.cy - m.halfH;
+      var xMax = m.cx + m.halfW;
+      var yMax = m.cy + m.halfH;
+      var line1 = elSvg("line");
+      line1.setAttribute("x1", String(xMin));
+      line1.setAttribute("y1", String(yMin));
+      line1.setAttribute("x2", String(xMax));
+      line1.setAttribute("y2", String(yMax));
+      group.appendChild(line1);
+      var line2 = elSvg("line");
+      line2.setAttribute("x1", String(xMax));
+      line2.setAttribute("y1", String(yMin));
+      line2.setAttribute("x2", String(xMin));
+      line2.setAttribute("y2", String(yMax));
+      group.appendChild(line2);
+    }
+  }
+
+  /**
+   * @param {{ cx: number, cy: number, halfW: number, halfH: number }[]} marks
+   * @returns {SVGElement}
+   */
+  function helplessnessToGroup(marks) {
+    var g = elSvg("g");
+    g.setAttribute("id", "layer-helplessness");
+    g.setAttribute("fill", "none");
+    g.setAttribute("stroke", getPatternStrokeColor());
+    g.setAttribute(
+      "stroke-width",
+      String(
+        typeof HELPLESSNESS_STROKE_WIDTH !== "undefined"
+          ? HELPLESSNESS_STROKE_WIDTH
+          : 3
+      )
+    );
+    appendHelplessnessMarkLines(g, marks);
+    return g;
+  }
+
+  /**
    * @param {{ cx: number, cy: number, r: number }[]} circles
    * @returns {SVGElement}
    */
@@ -2090,6 +2568,30 @@
     g.setAttribute("id", "layer-circles");
     g.setAttribute("fill", getCircleFillColor());
     var circleStroke = getCircleStrokeWidth();
+    g.setAttribute("stroke", getCircleStrokeColor());
+    g.setAttribute("stroke-width", String(circleStroke));
+
+    var strokeInset = circleStroke / 2;
+    for (var i = 0; i < circles.length; i++) {
+      var c = circles[i];
+      var circle = elSvg("circle");
+      circle.setAttribute("cx", String(c.cx));
+      circle.setAttribute("cy", String(c.cy));
+      circle.setAttribute("r", String(Math.max(0, c.r - strokeInset)));
+      g.appendChild(circle);
+    }
+    return g;
+  }
+
+  /**
+   * @param {{ cx: number, cy: number, r: number }[]} circles
+   * @returns {SVGElement}
+   */
+  function longingCirclesToGroup(circles) {
+    var g = elSvg("g");
+    g.setAttribute("id", "layer-longing-circles");
+    g.setAttribute("fill", "none");
+    var circleStroke = getLongingCircleStrokeWidth();
     g.setAttribute("stroke", getPatternStrokeColor());
     g.setAttribute("stroke-width", String(circleStroke));
 
@@ -2101,6 +2603,43 @@
       circle.setAttribute("cy", String(c.cy));
       circle.setAttribute("r", String(Math.max(0, c.r - strokeInset)));
       g.appendChild(circle);
+    }
+    return g;
+  }
+
+  /**
+   * Outline-only circles with a nested inner ring (diameter 3px smaller).
+   * @param {{ cx: number, cy: number, r: number }[]} circles
+   * @returns {SVGElement}
+   */
+  function griefCirclesToGroup(circles) {
+    var g = elSvg("g");
+    g.setAttribute("id", "layer-grief-circles");
+    g.setAttribute("fill", "none");
+    var circleStroke = getGriefCircleStrokeWidth();
+    g.setAttribute("stroke", getPatternStrokeColor());
+    g.setAttribute("stroke-width", String(circleStroke));
+
+    var strokeInset = circleStroke / 2;
+    var innerRadiusOffset = GRIEF_INNER_CIRCLE_DIAMETER_GAP_PX / 2;
+    for (var i = 0; i < circles.length; i++) {
+      var c = circles[i];
+      var outerDrawR = Math.max(0, c.r - strokeInset);
+
+      var outerCircle = elSvg("circle");
+      outerCircle.setAttribute("cx", String(c.cx));
+      outerCircle.setAttribute("cy", String(c.cy));
+      outerCircle.setAttribute("r", String(outerDrawR));
+      g.appendChild(outerCircle);
+
+      var innerDrawR = Math.max(0, outerDrawR - innerRadiusOffset);
+      if (innerDrawR > 0) {
+        var innerCircle = elSvg("circle");
+        innerCircle.setAttribute("cx", String(c.cx));
+        innerCircle.setAttribute("cy", String(c.cy));
+        innerCircle.setAttribute("r", String(innerDrawR));
+        g.appendChild(innerCircle);
+      }
     }
     return g;
   }
@@ -2285,16 +2824,28 @@
    * @returns {{ points: { x: number, y: number }[] }[]}
    */
   function filterHopeMergeRegionsForGridType(regions) {
-    if (!isStarGrid() || !regions.length) return regions;
-    var minArea = getStarGridHopeMergeMinAreaPx();
-    var out = [];
-    var i;
-    for (i = 0; i < regions.length; i++) {
-      if (polygonAreaAbs(regions[i].points) < minArea) continue;
-      if (countStarFillsInsideMergeRegion(regions[i]) < 2) continue;
-      out.push(regions[i]);
+    if (!regions.length) return regions;
+    if (isStarGrid()) {
+      var minArea = getStarGridHopeMergeMinAreaPx();
+      var out = [];
+      var i;
+      for (i = 0; i < regions.length; i++) {
+        if (polygonAreaAbs(regions[i].points) < minArea) continue;
+        if (countStarFillsInsideMergeRegion(regions[i]) < 2) continue;
+        out.push(regions[i]);
+      }
+      return out;
     }
-    return out;
+
+    var bounds = getGridContentBounds();
+    var maxHoleArea = bounds.width * bounds.height * 0.4;
+    var octOut = [];
+    var oi;
+    for (oi = 0; oi < regions.length; oi++) {
+      if (polygonAreaAbs(regions[oi].points) > maxHoleArea) continue;
+      octOut.push(regions[oi]);
+    }
+    return octOut;
   }
 
   function isConvexPolygon(points) {
@@ -2424,7 +2975,8 @@
     var combined = getCombinedRemovedEdgeSet();
     var pruneKeys = TopkapiGeometry.findDanglingPruneKeys(
       getAllSegmentsForTracing(),
-      combined
+      combined,
+      { bounds: getGridContentBounds() }
     );
     var j;
     var pk;
@@ -2548,7 +3100,7 @@
       if (!d) continue;
       p = elSvg("path");
       p.setAttribute("d", d);
-      p.setAttribute("fill", BG_COLOR);
+      p.setAttribute("fill", getCanvasBackgroundColor());
       p.setAttribute("fill-rule", "nonzero");
       // Outlines are drawn as line segments (includes star-fill edges for merge).
       p.setAttribute("stroke", "none");
@@ -2604,8 +3156,533 @@
     };
   }
 
+  /**
+   * Color-division tiles use the grid content band only — not the white margin
+   * frame (border-side-segments). The frame overlay is a separate top layer.
+   */
+  function getColorDivisionsCanvasBounds() {
+    var bounds = getGridContentBounds();
+    var off = getInnerContentOffset();
+    var s = getInnerContentScale();
+    return {
+      x: off.x + bounds.x * s,
+      y: off.y + bounds.y * s,
+      width: bounds.width * s,
+      height: bounds.height * s,
+    };
+  }
+
+  function buildColorDivisionLayoutSignature() {
+    return [gridType, colorDivisionShuffleSeed].join("|");
+  }
+
+  function absoluteColorDivisionRectToNormalized(rect, bounds) {
+    var bw = bounds.width || 1;
+    var bh = bounds.height || 1;
+    return {
+      nx: (rect.x - bounds.x) / bw,
+      ny: (rect.y - bounds.y) / bh,
+      nw: rect.width / bw,
+      nh: rect.height / bh,
+    };
+  }
+
+  function normalizedColorDivisionRectToAbsolute(norm, bounds) {
+    return {
+      x: bounds.x + norm.nx * bounds.width,
+      y: bounds.y + norm.ny * bounds.height,
+      width: norm.nw * bounds.width,
+      height: norm.nh * bounds.height,
+    };
+  }
+
+  function getAbsoluteColorDivisionRects() {
+    if (!cachedColorDivisionNormalizedRects) return null;
+    var bounds = getColorDivisionsCanvasBounds();
+    if (bounds.width <= 0 || bounds.height <= 0) return null;
+    var rects = [];
+    var i;
+    for (i = 0; i < cachedColorDivisionNormalizedRects.length; i++) {
+      rects.push(
+        normalizedColorDivisionRectToAbsolute(
+          cachedColorDivisionNormalizedRects[i],
+          bounds
+        )
+      );
+    }
+    return rects;
+  }
+
+  function absoluteColorDivisionRectsToNormalized(rects, bounds) {
+    var normalized = [];
+    var i;
+    for (i = 0; i < rects.length; i++) {
+      normalized.push(absoluteColorDivisionRectToNormalized(rects[i], bounds));
+    }
+    return normalized;
+  }
+
+  function getColorDivisionsSliderValue() {
+    var slider = document.getElementById("color-divisions");
+    var min =
+      typeof COLOR_DIVISIONS_MIN !== "undefined" ? COLOR_DIVISIONS_MIN : 1;
+    var max =
+      typeof COLOR_DIVISIONS_MAX !== "undefined" ? COLOR_DIVISIONS_MAX : 5;
+    var def =
+      typeof COLOR_DIVISIONS_DEFAULT !== "undefined"
+        ? COLOR_DIVISIONS_DEFAULT
+        : 1;
+    if (!slider) return def;
+    var v = parseInt(slider.value, 10);
+    if (!isFinite(v)) return def;
+    return Math.min(max, Math.max(min, v));
+  }
+
+  function getColorDivisionsColoredCount() {
+    return Math.max(0, getColorDivisionsSliderValue() - 1);
+  }
+
+  function getColorDivisionsFillDefault(index) {
+    if (
+      typeof COLOR_DIVISIONS_FILL_DEFAULTS !== "undefined" &&
+      COLOR_DIVISIONS_FILL_DEFAULTS[index]
+    ) {
+      return COLOR_DIVISIONS_FILL_DEFAULTS[index];
+    }
+    return typeof COLOR_DIVISIONS_FILL_DEFAULT !== "undefined"
+      ? COLOR_DIVISIONS_FILL_DEFAULT
+      : "#888888";
+  }
+
+  function getColorDivisionsFillColor(index) {
+    var slots = ["H1", "H2", "H3", "H4", "H5"];
+    return sheetColor(slots[index] || "H5");
+  }
+
+  function syncColorDivisionsOutput() {
+    var out = document.getElementById("color-divisions-out");
+    if (out) out.textContent = String(getColorDivisionsSliderValue());
+  }
+
+  function rectArea(r) {
+    return r.width * r.height;
+  }
+
+  function pickWeightedRectIndex(rects) {
+    var total = 0;
+    var i;
+    for (i = 0; i < rects.length; i++) {
+      total += rectArea(rects[i]);
+    }
+    if (total <= 0) return 0;
+    var pick = Math.random() * total;
+    var acc = 0;
+    for (i = 0; i < rects.length; i++) {
+      acc += rectArea(rects[i]);
+      if (pick <= acc) return i;
+    }
+    return rects.length - 1;
+  }
+
+  var COLOR_DIVISION_MIN_SPLIT_PX = 12;
+
+  /**
+   * @param {{ width: number, height: number }} rect
+   * @returns {"vertical"|"horizontal"|null}
+   */
+  function pickColorDivisionSplitOrientation(rect) {
+    var min = COLOR_DIVISION_MIN_SPLIT_PX;
+    var canVertical = rect.width >= min * 2;
+    var canHorizontal = rect.height >= min * 2;
+    if (!canVertical && !canHorizontal) return null;
+    if (!canVertical) return "horizontal";
+    if (!canHorizontal) return "vertical";
+    var aspect = rect.width / rect.height;
+    if (aspect > 1.35) {
+      return Math.random() < 0.7 ? "vertical" : "horizontal";
+    }
+    if (aspect < 0.75) {
+      return Math.random() < 0.7 ? "horizontal" : "vertical";
+    }
+    return Math.random() < 0.5 ? "vertical" : "horizontal";
+  }
+
+  function splitColorDivisionRect(rect, orientation) {
+    var ratio = 0.2 + Math.random() * 0.6;
+    if (orientation === "vertical") {
+      var w1 = rect.width * ratio;
+      var w2 = rect.width - w1;
+      return [
+        { x: rect.x, y: rect.y, width: w1, height: rect.height },
+        { x: rect.x + w1, y: rect.y, width: w2, height: rect.height },
+      ];
+    }
+    var h1 = rect.height * ratio;
+    var h2 = rect.height - h1;
+    return [
+      { x: rect.x, y: rect.y, width: rect.width, height: h1 },
+      { x: rect.x, y: rect.y + h1, width: rect.width, height: h2 },
+    ];
+  }
+
+  function generateColorDivisionRects(bounds) {
+    var rects = [
+      {
+        x: bounds.x,
+        y: bounds.y,
+        width: bounds.width,
+        height: bounds.height,
+      },
+    ];
+    var safety = 0;
+    while (rects.length < 5 && safety < 32) {
+      safety += 1;
+      var idx = pickWeightedRectIndex(rects);
+      var target = rects[idx];
+      var orientation = pickColorDivisionSplitOrientation(target);
+      if (!orientation) continue;
+      var pair = splitColorDivisionRect(target, orientation);
+      rects.splice(idx, 1, pair[0], pair[1]);
+    }
+    while (rects.length < 5) {
+      var largest = 0;
+      var li;
+      for (li = 1; li < rects.length; li++) {
+        if (rectArea(rects[li]) > rectArea(rects[largest])) largest = li;
+      }
+      var fallback = rects[largest];
+      var forced = pickColorDivisionSplitOrientation(fallback);
+      if (!forced) {
+        forced = fallback.width >= fallback.height ? "vertical" : "horizontal";
+      }
+      var forcedPair = splitColorDivisionRect(fallback, forced);
+      rects.splice(largest, 1, forcedPair[0], forcedPair[1]);
+    }
+    return rects;
+  }
+
+  var COLOR_DIVISION_ADJ_EPS = 0.5;
+
+  function colorDivisionRectsShareEdge(a, b) {
+    var e = COLOR_DIVISION_ADJ_EPS;
+    var aR = a.x + a.width;
+    var aB = a.y + a.height;
+    var bR = b.x + b.width;
+    var bB = b.y + b.height;
+    var overlap;
+
+    if (Math.abs(aR - b.x) <= e || Math.abs(bR - a.x) <= e) {
+      overlap = Math.min(aB, bB) - Math.max(a.y, b.y);
+      if (overlap > e) return true;
+    }
+    if (Math.abs(aB - b.y) <= e || Math.abs(bB - a.y) <= e) {
+      overlap = Math.min(aR, bR) - Math.max(a.x, b.x);
+      if (overlap > e) return true;
+    }
+    return false;
+  }
+
+  function buildColorDivisionAdjacency(rects) {
+    var n = rects.length;
+    var adj = [];
+    var i;
+    for (i = 0; i < n; i++) {
+      adj[i] = [];
+    }
+    for (i = 0; i < n; i++) {
+      var j;
+      for (j = i + 1; j < n; j++) {
+        if (colorDivisionRectsShareEdge(rects[i], rects[j])) {
+          adj[i].push(j);
+          adj[j].push(i);
+        }
+      }
+    }
+    return adj;
+  }
+
+  function maxColorDivisionComponentSize(activeIndices, adj) {
+    if (!activeIndices.length) return 0;
+    var inSet = {};
+    var i;
+    for (i = 0; i < activeIndices.length; i++) {
+      inSet[activeIndices[i]] = true;
+    }
+    var visited = {};
+    var maxSize = 0;
+    for (i = 0; i < activeIndices.length; i++) {
+      var start = activeIndices[i];
+      if (visited[start]) continue;
+      var stack = [start];
+      var size = 0;
+      visited[start] = true;
+      while (stack.length) {
+        var cur = stack.pop();
+        size += 1;
+        var neighbors = adj[cur];
+        var n;
+        for (n = 0; n < neighbors.length; n++) {
+          var nb = neighbors[n];
+          if (inSet[nb] && !visited[nb]) {
+            visited[nb] = true;
+            stack.push(nb);
+          }
+        }
+      }
+      if (size > maxSize) maxSize = size;
+    }
+    return maxSize;
+  }
+
+  function getColorDivisionMaxColoredSlots() {
+    return Math.min(
+      typeof COLOR_DIVISIONS_REGION_COUNT !== "undefined"
+        ? COLOR_DIVISIONS_REGION_COUNT
+        : 4,
+      typeof COLOR_DIVISIONS_MAX !== "undefined" ? COLOR_DIVISIONS_MAX - 1 : 4
+    );
+  }
+
+  function isValidColorDivisionRectOrder(order, adj, maxColored) {
+    var prefix = [];
+    var p;
+    for (p = 1; p <= maxColored; p++) {
+      prefix.push(order[p - 1]);
+      if (maxColorDivisionComponentSize(prefix, adj) >= 3) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  function generateColorDivisionRectOrderGreedy(rects, adj, maxColored) {
+    var n = rects.length;
+    var remaining = [];
+    var i;
+    for (i = 0; i < n; i++) {
+      remaining.push(i);
+    }
+    var order = [];
+    var active = [];
+    var slot;
+    for (slot = 0; slot < n; slot++) {
+      var candidates = [];
+      var c;
+      for (c = 0; c < remaining.length; c++) {
+        var idx = remaining[c];
+        if (slot < maxColored) {
+          var trial = active.concat([idx]);
+          if (maxColorDivisionComponentSize(trial, adj) >= 3) {
+            continue;
+          }
+        }
+        candidates.push(idx);
+      }
+      if (!candidates.length) {
+        candidates = remaining.slice();
+      }
+      var pick = candidates[Math.floor(Math.random() * candidates.length)];
+      order.push(pick);
+      if (slot < maxColored) {
+        active.push(pick);
+      }
+      var nextRemaining = [];
+      for (c = 0; c < remaining.length; c++) {
+        if (remaining[c] !== pick) nextRemaining.push(remaining[c]);
+      }
+      remaining = nextRemaining;
+    }
+    return order;
+  }
+
+  function generateValidColorDivisionRectOrder(rects) {
+    var n = rects.length;
+    var adj = buildColorDivisionAdjacency(rects);
+    var maxColored = Math.min(getColorDivisionMaxColoredSlots(), n);
+    var attempt;
+    for (attempt = 0; attempt < 400; attempt++) {
+      var order = [];
+      var oi;
+      for (oi = 0; oi < n; oi++) {
+        order.push(oi);
+      }
+      for (oi = n - 1; oi > 0; oi--) {
+        var oj = Math.floor(Math.random() * (oi + 1));
+        var tmp = order[oi];
+        order[oi] = order[oj];
+        order[oj] = tmp;
+      }
+      if (isValidColorDivisionRectOrder(order, adj, maxColored)) {
+        return order;
+      }
+    }
+    return generateColorDivisionRectOrderGreedy(rects, adj, maxColored);
+  }
+
+  function reshuffleColorDivisionAreaOrder() {
+    if (!cachedColorDivisionNormalizedRects) {
+      ensureColorDivisionRects(false);
+    }
+    var absoluteRects = getAbsoluteColorDivisionRects();
+    if (!absoluteRects) return;
+    cachedColorDivisionRectOrder = generateValidColorDivisionRectOrder(
+      absoluteRects
+    );
+    updateColorDivisionsLayer();
+  }
+
+  function reshuffleColorDivisionRects() {
+    colorDivisionShuffleSeed += 1;
+    lastColorDivisionLayoutSignature = "";
+    cachedColorDivisionNormalizedRects = null;
+    cachedColorDivisionRectOrder = null;
+    ensureColorDivisionRects(true);
+    updateColorDivisionsLayer();
+  }
+
+  function ensureColorDivisionRects(force) {
+    var sig = buildColorDivisionLayoutSignature();
+    if (
+      !force &&
+      sig === lastColorDivisionLayoutSignature &&
+      cachedColorDivisionNormalizedRects &&
+      cachedColorDivisionRectOrder
+    ) {
+      return;
+    }
+    lastColorDivisionLayoutSignature = sig;
+    var bounds = getColorDivisionsCanvasBounds();
+    var absoluteRects = generateColorDivisionRects(bounds);
+    cachedColorDivisionNormalizedRects = absoluteColorDivisionRectsToNormalized(
+      absoluteRects,
+      bounds
+    );
+    cachedColorDivisionRectOrder = generateValidColorDivisionRectOrder(
+      absoluteRects
+    );
+  }
+
+  function getColorDivisionRectForAreaSlot(slot) {
+    ensureColorDivisionRects(false);
+    var absoluteRects = getAbsoluteColorDivisionRects();
+    if (
+      !absoluteRects ||
+      !cachedColorDivisionRectOrder ||
+      slot < 0 ||
+      slot >= cachedColorDivisionRectOrder.length
+    ) {
+      return null;
+    }
+    return absoluteRects[cachedColorDivisionRectOrder[slot]];
+  }
+
+  function appendColorDivisionRectsToGroup(g, count) {
+    ensureColorDivisionRects(false);
+    if (
+      !cachedColorDivisionNormalizedRects ||
+      !cachedColorDivisionRectOrder ||
+      count <= 0
+    ) {
+      return;
+    }
+    var regionCount =
+      typeof COLOR_DIVISIONS_REGION_COUNT !== "undefined"
+        ? COLOR_DIVISIONS_REGION_COUNT
+        : 4;
+    var n = Math.min(count, regionCount, cachedColorDivisionRectOrder.length);
+    var i;
+    for (i = 0; i < n; i++) {
+      var r = getColorDivisionRectForAreaSlot(i);
+      if (!r) continue;
+      var rect = elSvg("rect");
+      rect.setAttribute("x", String(r.x));
+      rect.setAttribute("y", String(r.y));
+      rect.setAttribute("width", String(r.width));
+      rect.setAttribute("height", String(r.height));
+      rect.setAttribute("fill", getColorDivisionsFillColor(i));
+      rect.setAttribute("opacity", "1");
+      rect.style.mixBlendMode = "exclusion";
+      g.appendChild(rect);
+    }
+  }
+
+  function createColorDivisionsLayer() {
+    var layer = elSvg("g");
+    layer.setAttribute("id", "layer-color-divisions");
+    appendColorDivisionRectsToGroup(layer, getColorDivisionsColoredCount());
+    return layer;
+  }
+
+  function updateColorDivisionsLayer() {
+    if (!designSvg) return;
+    var layer = designSvg.querySelector("#layer-color-divisions");
+    if (!layer) return;
+    while (layer.firstChild) layer.removeChild(layer.firstChild);
+    appendColorDivisionRectsToGroup(layer, getColorDivisionsColoredCount());
+  }
+
+  function pushColorDivisionsExportLines(lines) {
+    var count = getColorDivisionsColoredCount();
+    if (count <= 0) return;
+    ensureColorDivisionRects(false);
+    if (!cachedColorDivisionNormalizedRects || !cachedColorDivisionRectOrder) return;
+    var regionCount =
+      typeof COLOR_DIVISIONS_REGION_COUNT !== "undefined"
+        ? COLOR_DIVISIONS_REGION_COUNT
+        : 4;
+    var n = Math.min(count, regionCount, cachedColorDivisionRectOrder.length);
+    lines.push('<g id="layer-color-divisions">');
+    var i;
+    for (i = 0; i < n; i++) {
+      var r = getColorDivisionRectForAreaSlot(i);
+      if (!r) continue;
+      lines.push(
+        '<rect x="' +
+          r.x +
+          '" y="' +
+          r.y +
+          '" width="' +
+          r.width +
+          '" height="' +
+          r.height +
+          '" fill="' +
+          getColorDivisionsFillColor(i) +
+          '" opacity="1" style="mix-blend-mode:exclusion"/>'
+      );
+    }
+    lines.push("</g>");
+  }
+
+  function getVerticalGridStrokeWidthMin() {
+    var mult =
+      typeof ANXIETY_VERTICAL_STROKE_GRID_MULT_MIN !== "undefined"
+        ? ANXIETY_VERTICAL_STROKE_GRID_MULT_MIN
+        : 2;
+    return getGridStrokeWidth() * mult;
+  }
+
+  function getVerticalGridStrokeWidthMax() {
+    return typeof ANXIETY_VERTICAL_STROKE_MAX_PX !== "undefined"
+      ? ANXIETY_VERTICAL_STROKE_MAX_PX
+      : 8;
+  }
+
   function getVerticalGridStrokeWidth() {
-    return getGridStrokeWidth() * 3;
+    var minW = getVerticalGridStrokeWidthMin();
+    var maxW = getVerticalGridStrokeWidthMax();
+    if (maxW <= minW) return maxW;
+    var t = getAnxietyVerticalStrokePercent() / 100;
+    return minW + (maxW - minW) * t;
+  }
+
+  function syncAnxietyVerticalStrokeOutput() {
+    var out = document.getElementById("anxiety-vertical-stroke-out");
+    if (!out) return;
+    var w = getVerticalGridStrokeWidth();
+    out.textContent =
+      (Math.abs(w - Math.round(w)) < 1e-6
+        ? String(Math.round(w))
+        : String(Math.round(w * 10) / 10)) + " px";
   }
 
   /** Geometry only — merge/erase state must not invalidate vertical lines. */
@@ -2809,7 +3886,7 @@
    */
   function appendVerticalGridLinesToLayer(layer) {
     layer.setAttribute("fill", "none");
-    layer.setAttribute("stroke", getPatternStrokeColor());
+    layer.setAttribute("stroke", sheetColor("F1"));
     layer.setAttribute("stroke-width", String(getVerticalGridStrokeWidth()));
     for (var i = 0; i < cachedVerticalGridLines.length; i++) {
       var draw = resolveVerticalLineDrawCoords(cachedVerticalGridLines[i]);
@@ -2845,7 +3922,7 @@
       '<g id="' +
         (isStarGrid() ? "layer-vertical-grid-overlay" : "layer-vertical-grid") +
         '" fill="none" stroke="' +
-        getPatternStrokeColor() +
+        sheetColor("F1") +
         '" stroke-width="' +
         getVerticalGridStrokeWidth() +
         '">'
@@ -2891,7 +3968,7 @@
 
   function applyGridBoundaryStyle(rect) {
     rect.setAttribute("fill", "none");
-    rect.setAttribute("stroke", getPatternStrokeColor());
+    rect.setAttribute("stroke", getGridBoundaryStrokeColor());
     rect.setAttribute("stroke-width", String(GRID_BOUNDARY_STROKE_WIDTH));
     rect.setAttribute("vector-effect", "non-scaling-stroke");
   }
@@ -2923,7 +4000,7 @@
         '" height="' +
         bounds.height +
         '" fill="none" stroke="' +
-        getPatternStrokeColor() +
+        getGridBoundaryStrokeColor() +
         '" stroke-width="' +
         GRID_BOUNDARY_STROKE_WIDTH +
         '" vector-effect="non-scaling-stroke"/>'
@@ -3524,7 +4601,7 @@
     line.setAttribute("y1", String(y1));
     line.setAttribute("x2", String(x2));
     line.setAttribute("y2", String(y2));
-    line.setAttribute("stroke", getPatternStrokeColor());
+    line.setAttribute("stroke", getBorderDivisionStrokeColor());
     line.setAttribute("stroke-width", String(BORDER_DIVISION_STROKE_WIDTH));
     line.setAttribute("shape-rendering", "crispEdges");
     container.appendChild(line);
@@ -3675,12 +4752,7 @@
    * @returns {string}
    */
   function getBorderSideRhombusFillForCellType(cellType) {
-    if (cellType === "grey") {
-      return typeof BORDER_SIDE_CELL_COLOR_BEIGE !== "undefined"
-        ? BORDER_SIDE_CELL_COLOR_BEIGE
-        : BORDER_SIDE_X_FILL_RIGHT;
-    }
-    return BORDER_SIDE_CELL_COLOR_GREY;
+    return sheetColor("C9");
   }
 
   /**
@@ -3873,6 +4945,74 @@
         BORDER_DIVISION_STROKE_WIDTH +
         '"/>'
     );
+  }
+
+  /**
+   * @param {string[]} lines
+   * @param {{ cx: number, cy: number, halfW: number, halfH: number }[]} marks
+   */
+  function pushHelplessnessMarkExportLines(lines, marks) {
+    var stroke = getPatternStrokeColor();
+    var sw =
+      typeof HELPLESSNESS_STROKE_WIDTH !== "undefined"
+        ? HELPLESSNESS_STROKE_WIDTH
+        : 3;
+    for (var i = 0; i < marks.length; i++) {
+      var m = marks[i];
+      var xMin = m.cx - m.halfW;
+      var yMin = m.cy - m.halfH;
+      var xMax = m.cx + m.halfW;
+      var yMax = m.cy + m.halfH;
+      lines.push(
+        '<line x1="' +
+          xMin +
+          '" y1="' +
+          yMin +
+          '" x2="' +
+          xMax +
+          '" y2="' +
+          yMax +
+          '" stroke="' +
+          stroke +
+          '" stroke-width="' +
+          sw +
+          '"/>'
+      );
+      lines.push(
+        '<line x1="' +
+          xMax +
+          '" y1="' +
+          yMin +
+          '" x2="' +
+          xMin +
+          '" y2="' +
+          yMax +
+          '" stroke="' +
+          stroke +
+          '" stroke-width="' +
+          sw +
+          '"/>'
+      );
+    }
+  }
+
+  function pushHelplessnessExportLines(lines) {
+    var marks = getActiveHelplessnessMarks();
+    if (!marks.length) return;
+    var stroke = getPatternStrokeColor();
+    var sw =
+      typeof HELPLESSNESS_STROKE_WIDTH !== "undefined"
+        ? HELPLESSNESS_STROKE_WIDTH
+        : 3;
+    lines.push(
+      '<g id="layer-helplessness" fill="none" stroke="' +
+        stroke +
+        '" stroke-width="' +
+        sw +
+        '">'
+    );
+    pushHelplessnessMarkExportLines(lines, marks);
+    lines.push("</g>");
   }
 
   /**
@@ -4569,7 +5709,7 @@
     var outlineOnly = !home && !outside;
 
     g.setAttribute("fill", "none");
-    g.setAttribute("stroke", getPatternStrokeColor());
+    g.setAttribute("stroke", getBorderDivisionStrokeColor());
     g.setAttribute("stroke-width", String(BORDER_DIVISION_STROKE_WIDTH));
 
     var __overlayBaseRects = 0;
@@ -4785,6 +5925,369 @@
     appendLeftRightBorderColumnDividers(g);
   }
 
+  /**
+   * Export mirror of appendBorderDivisionOverlayLayersToGroup (Medium/Thick columns).
+   * @param {string[]} lines
+   */
+  function pushBorderDivisionOverlayExportLines(lines) {
+    var cols = getBorderSideThicknessColumns();
+    var extra = Math.max(0, cols - 1);
+    if (!extra) return;
+
+    var b = getCanvasBorderPx();
+    var home = isBodyAutonomyHomeChecked();
+    var outside = isBodyAutonomyOutsideChecked();
+    var outlineOnly = !home && !outside;
+    var whiteFill = getCanvasBackgroundColor();
+    var strokeColor = getBorderDivisionStrokeColor();
+    var strokeWidth = BORDER_DIVISION_STROKE_WIDTH;
+    var yBounds = getLeftRightBorderCellYBounds();
+    var divY = getLeftRightBorderDivisionYBounds();
+    var sideInteriorY = getLeftRightBorderInteriorYPositions();
+    var rightBase = CANVAS_W - b;
+    var c;
+    var j;
+    var i;
+    var t;
+    var xi;
+
+    lines.push(
+      '<g id="layer-border-divisions-overlay" fill="none" stroke="' +
+        strokeColor +
+        '" stroke-width="' +
+        strokeWidth +
+        '">'
+    );
+
+    function pushOverlayCellBase(x, y, w, h) {
+      lines.push(
+        '<rect x="' +
+          x +
+          '" y="' +
+          y +
+          '" width="' +
+          w +
+          '" height="' +
+          h +
+          '" fill="' +
+          whiteFill +
+          '" stroke="none" shape-rendering="crispEdges"/>'
+      );
+    }
+
+    for (c = 1; c <= extra; c++) {
+      var leftX = c * b;
+      var rightX = rightBase - c * b;
+      var isMirrored = c === 1;
+      var rowCount = yBounds.length - 1;
+
+      for (j = 0; j < yBounds.length - 1; j++) {
+        var yTop = yBounds[j];
+        var yBottom = yBounds[j + 1];
+        var h = yBottom - yTop;
+        var cellIndex = isMirrored ? rowCount - 1 - j : j;
+        var cellType = getBorderSideCellType(cellIndex);
+
+        pushOverlayCellBase(leftX, yTop, b, h);
+        pushOverlayCellBase(rightX, yTop, b, h);
+
+        if (isBorderSideCellWhitened(c, j)) {
+          pushBorderSideWhitenedCellInnerShadowAtXExport(
+            lines,
+            leftX,
+            b,
+            yTop,
+            yBottom
+          );
+          pushBorderSideWhitenedCellInnerShadowAtXExport(
+            lines,
+            rightX,
+            b,
+            yTop,
+            yBottom
+          );
+          pushBorderSideWhitenedCellOutlinesAtXExport(
+            lines,
+            leftX,
+            b,
+            yTop,
+            yBottom,
+            cellType,
+            home,
+            outside,
+            outlineOnly
+          );
+          pushBorderSideWhitenedCellOutlinesAtXExport(
+            lines,
+            rightX,
+            b,
+            yTop,
+            yBottom,
+            cellType,
+            home,
+            outside,
+            outlineOnly
+          );
+          continue;
+        }
+
+        if (cellType === "outside") {
+          if (outside) {
+            pushBorderSideBrownCellXPatternExport(
+              lines,
+              leftX,
+              b,
+              yTop,
+              yBottom
+            );
+            pushBorderSideBrownCellXPatternExport(
+              lines,
+              rightX,
+              b,
+              yTop,
+              yBottom
+            );
+          }
+          if (outside || outlineOnly) {
+            pushBorderSideCellDiagonalsAtXExport(lines, leftX, b, yTop, yBottom);
+            pushBorderSideCellDiagonalsAtXExport(
+              lines,
+              rightX,
+              b,
+              yTop,
+              yBottom
+            );
+          }
+        } else if (cellType === "grey") {
+          if (home && outside) {
+            lines.push(
+              '<rect x="' +
+                leftX +
+                '" y="' +
+                yTop +
+                '" width="' +
+                b +
+                '" height="' +
+                h +
+                '" fill="' +
+                BORDER_SIDE_CELL_COLOR_GREY +
+                '"/>'
+            );
+            lines.push(
+              '<rect x="' +
+                rightX +
+                '" y="' +
+                yTop +
+                '" width="' +
+                b +
+                '" height="' +
+                h +
+                '" fill="' +
+                BORDER_SIDE_CELL_COLOR_GREY +
+                '"/>'
+            );
+          }
+        } else if (cellType === "beige") {
+          if (home && outside) {
+            var beigeFill =
+              typeof BORDER_SIDE_CELL_COLOR_BEIGE !== "undefined"
+                ? BORDER_SIDE_CELL_COLOR_BEIGE
+                : BORDER_SIDE_X_FILL_RIGHT;
+            lines.push(
+              '<rect x="' +
+                leftX +
+                '" y="' +
+                yTop +
+                '" width="' +
+                b +
+                '" height="' +
+                h +
+                '" fill="' +
+                beigeFill +
+                '"/>'
+            );
+            lines.push(
+              '<rect x="' +
+                rightX +
+                '" y="' +
+                yTop +
+                '" width="' +
+                b +
+                '" height="' +
+                h +
+                '" fill="' +
+                beigeFill +
+                '"/>'
+            );
+          }
+        } else {
+          if (home) {
+            pushBorderSideBlueCellXPatternExport(
+              lines,
+              leftX,
+              b,
+              yTop,
+              yBottom
+            );
+            pushBorderSideBlueCellXPatternExport(
+              lines,
+              rightX,
+              b,
+              yTop,
+              yBottom
+            );
+          }
+          if (outlineOnly) {
+            pushBorderSideCellDiagonalsAtXExport(lines, leftX, b, yTop, yBottom);
+            pushBorderSideCellDiagonalsAtXExport(
+              lines,
+              rightX,
+              b,
+              yTop,
+              yBottom
+            );
+          }
+        }
+
+        if (home && outside && (cellType === "grey" || cellType === "beige")) {
+          var rhombusFill = getBorderSideRhombusFillForCellType(
+            /** @type {"grey"|"beige"} */ (cellType)
+          );
+          pushBorderSideCellRhombusExport(
+            lines,
+            leftX,
+            b,
+            yTop,
+            yBottom,
+            rhombusFill
+          );
+          pushBorderSideCellRhombusExport(
+            lines,
+            rightX,
+            b,
+            yTop,
+            yBottom,
+            rhombusFill
+          );
+        }
+      }
+
+      pushBorderDivisionLineExport(lines, leftX, divY.top, leftX + b, divY.top);
+      pushBorderDivisionLineExport(
+        lines,
+        leftX,
+        divY.bottom,
+        leftX + b,
+        divY.bottom
+      );
+      pushBorderDivisionLineExport(lines, rightX, divY.top, rightX + b, divY.top);
+      pushBorderDivisionLineExport(
+        lines,
+        rightX,
+        divY.bottom,
+        rightX + b,
+        divY.bottom
+      );
+      for (i = 0; i < sideInteriorY.length; i++) {
+        var yLine = sideInteriorY[i];
+        pushBorderDivisionLineExport(lines, leftX, yLine, leftX + b, yLine);
+        pushBorderDivisionLineExport(lines, rightX, yLine, rightX + b, yLine);
+      }
+    }
+
+    var innerX0 = b;
+    var innerX1 = CANVAS_W - b;
+    var cellsAcross = Math.floor(Math.max(0, innerX1 - innerX0) / b);
+    for (t = 1; t <= extra; t++) {
+      var topY0 = t * b;
+      var topY1 = (t + 1) * b;
+      var bottomY0 = CANVAS_H - (t + 1) * b;
+      var bottomY1 = CANVAS_H - t * b;
+
+      for (xi = 0; xi < cellsAcross; xi++) {
+        var x = innerX0 + xi * b;
+        var ct = getBorderSideCellType(xi);
+        var hhTop = topY1 - topY0;
+        var hhBottom = bottomY1 - bottomY0;
+
+        function drawBandCellExport(y0, y1, hh) {
+          pushOverlayCellBase(x, y0, b, hh);
+
+          if (ct === "outside") {
+            if (outside) {
+              pushBorderSideBrownCellXPatternExport(lines, x, b, y0, y1);
+            }
+            if (outside || outlineOnly) {
+              pushBorderSideCellDiagonalsAtXExport(lines, x, b, y0, y1);
+            }
+          } else if (ct === "grey") {
+            if (home && outside) {
+              lines.push(
+                '<rect x="' +
+                  x +
+                  '" y="' +
+                  y0 +
+                  '" width="' +
+                  b +
+                  '" height="' +
+                  hh +
+                  '" fill="' +
+                  BORDER_SIDE_CELL_COLOR_GREY +
+                  '"/>'
+              );
+            }
+          } else if (ct === "beige") {
+            if (home && outside) {
+              var beigeFill2 =
+                typeof BORDER_SIDE_CELL_COLOR_BEIGE !== "undefined"
+                  ? BORDER_SIDE_CELL_COLOR_BEIGE
+                  : BORDER_SIDE_X_FILL_RIGHT;
+              lines.push(
+                '<rect x="' +
+                  x +
+                  '" y="' +
+                  y0 +
+                  '" width="' +
+                  b +
+                  '" height="' +
+                  hh +
+                  '" fill="' +
+                  beigeFill2 +
+                  '"/>'
+              );
+            }
+          } else {
+            if (home) {
+              pushBorderSideBlueCellXPatternExport(lines, x, b, y0, y1);
+            }
+            if (outlineOnly) {
+              pushBorderSideCellDiagonalsAtXExport(lines, x, b, y0, y1);
+            }
+          }
+
+          if (home && outside && (ct === "grey" || ct === "beige")) {
+            var rFill = getBorderSideRhombusFillForCellType(
+              /** @type {"grey"|"beige"} */ (ct)
+            );
+            pushBorderSideCellRhombusExport(lines, x, b, y0, y1, rFill);
+          }
+
+          pushBorderDivisionLineExport(lines, x, y0, x, y1);
+        }
+
+        drawBandCellExport(topY0, topY1, hhTop);
+        drawBandCellExport(bottomY0, bottomY1, hhBottom);
+      }
+
+      pushBorderDivisionLineExport(lines, innerX0, topY0, innerX1, topY0);
+      pushBorderDivisionLineExport(lines, innerX0, topY1, innerX1, topY1);
+      pushBorderDivisionLineExport(lines, innerX0, bottomY0, innerX1, bottomY0);
+      pushBorderDivisionLineExport(lines, innerX0, bottomY1, innerX1, bottomY1);
+    }
+
+    lines.push("</g>");
+  }
+
   function createBorderDivisionOverlayGroup() {
     var g = elSvg("g");
     g.setAttribute("id", "layer-border-divisions-overlay");
@@ -4809,7 +6312,7 @@
   function appendBorderDivisionLayersToGroup(g) {
     appendLeftRightBorderCellFillsToGroup(g);
     g.setAttribute("fill", "none");
-    g.setAttribute("stroke", getPatternStrokeColor());
+    g.setAttribute("stroke", getBorderDivisionStrokeColor());
     g.setAttribute("stroke-width", String(BORDER_DIVISION_STROKE_WIDTH));
     appendBorderDivisionLinesToGroup(g);
     appendLeftRightBorderSolidCellRhombusesToGroup(g);
@@ -4901,9 +6404,7 @@
   }
 
   function getCanvasEdgeSerialFill() {
-    return typeof CANVAS_EDGE_SERIAL_FILL !== "undefined"
-      ? CANVAS_EDGE_SERIAL_FILL
-      : getPatternStrokeColor();
+    return sheetColor("G5");
   }
 
   function getCanvasEdgeSerialCircleGapPx() {
@@ -6403,7 +7904,7 @@
   function getLabelBarRightLionInnerRow2SvgFile() {
     return typeof LABEL_BAR_RIGHT_LION_INNER_ROW2_SVG !== "undefined"
       ? LABEL_BAR_RIGHT_LION_INNER_ROW2_SVG
-      : "undercover arabic.svg";
+      : "undercover english.svg";
   }
 
   function getLabelBarLostInnerSvgFile() {
@@ -7460,8 +8961,8 @@
         for (col = 0; col <= vCount; col++) {
           cell = getOuterThirdGridCellRect(edge, layout, row, col);
           fill = isOuterThirdGridCellBrownFill(row, col)
-            ? getLabelBarBackgroundColor()
-            : getLabelBarContentColor();
+            ? getCheckerboardDarkColor()
+            : getCheckerboardLightColor();
           appendBrownBarGridCellFillRect(g, cell, fill);
         }
       }
@@ -7735,8 +9236,8 @@
         for (col = 0; col <= vCount; col++) {
           cell = getOuterThirdGridCellRect(edge, layout, row, col);
           fill = isOuterThirdGridCellBrownFill(row, col)
-            ? getLabelBarBackgroundColor()
-            : getLabelBarContentColor();
+            ? getCheckerboardDarkColor()
+            : getCheckerboardLightColor();
           lines.push(
             '<rect x="' +
               cell.x +
@@ -7777,7 +9278,7 @@
 
     lines.push(
       '<g id="layer-border-divisions" fill="none" stroke="' +
-        getPatternStrokeColor() +
+        getBorderDivisionStrokeColor() +
         '" stroke-width="' +
         BORDER_DIVISION_STROKE_WIDTH +
         '">'
@@ -8154,6 +9655,15 @@
     clippedDiamonds.appendChild(diamondLayer);
     innerContent.appendChild(clippedDiamonds);
 
+    var clippedHollowDiamonds = createInnerContentClipGroup(
+      "inner-clipped-hollow-diamond-fills"
+    );
+    var hollowDiamondLayer = elSvg("g");
+    hollowDiamondLayer.setAttribute("id", "layer-hollow-diamond-fills");
+    hollowDiamondLayer.setAttribute("clip-path", "url(#canvas-clip)");
+    clippedHollowDiamonds.appendChild(hollowDiamondLayer);
+    innerContent.appendChild(clippedHollowDiamonds);
+
     innerContent.appendChild(createGridBoundaryRect());
 
     var clippedPattern = createInnerContentClipGroup("inner-clipped-pattern");
@@ -8190,6 +9700,8 @@
 
     svg.appendChild(innerContent);
 
+    svg.appendChild(createColorDivisionsLayer());
+
     // Overlays that cover grid content inward from the border (thickness control).
     svg.appendChild(createBorderDivisionOverlayGroup());
 
@@ -8204,19 +9716,17 @@
 
     svg.appendChild(createFrameInsetOverlayLayer());
 
-    bindHopePipetteCanvasListener();
-
     return svg;
   }
 
   function getHalfCircleVisible() {
     var toggle = document.getElementById("half-circle-toggle");
-    return !!(toggle && toggle.checked);
+    return !toggle || toggle.checked;
   }
 
   function getHalfCircleBottomVisible() {
     var toggle = document.getElementById("half-circle-bottom-toggle");
-    return !!(toggle && toggle.checked);
+    return !toggle || toggle.checked;
   }
 
   function getHalfCircleBottomFocalY() {
@@ -8229,18 +9739,11 @@
   }
 
   function getHalfCircleColor() {
-    var input = document.getElementById("half-circle-color");
-    if (input && typeof input.value === "string" && input.value) return input.value;
-    return typeof PATTERN_STROKE_COLOR_DEFAULT !== "undefined"
-      ? PATTERN_STROKE_COLOR_DEFAULT
-      : "#685450";
+    return sheetColor("D1");
   }
 
   function getHalfCircleRibCount() {
-    var input = document.getElementById("half-circle-ribs");
-    var raw = input ? Number(input.value) : 21;
-    if (!Number.isFinite(raw)) raw = 21;
-    return Math.max(5, Math.min(40, Math.round(raw)));
+    return 34;
   }
 
   function getHalfCircleInset() {
@@ -8261,23 +9764,21 @@
     return Math.max(0, getHalfCircleRibCount() - 1);
   }
 
-  function getHalfCircleVisiblePetalCount() {
-    var input = document.getElementById("half-circle-fan-opening");
+  function getWearControlPetalCount(sliderId) {
+    var input = document.getElementById(sliderId);
     var maxPetals = getHalfCircleMaxPetals();
-    var raw = input ? Number(input.value) : maxPetals;
-    if (!Number.isFinite(raw)) raw = maxPetals;
-    return Math.max(0, Math.min(maxPetals, Math.round(raw)));
+    var raw = input ? Number(input.value) : 50;
+    if (!Number.isFinite(raw)) raw = 50;
+    var percent = Math.max(0, Math.min(100, Math.round(raw)));
+    return Math.round((percent / 100) * maxPetals);
   }
 
-  function syncHalfCircleFanOpeningSlider() {
-    var slider = document.getElementById("half-circle-fan-opening");
-    var out = document.getElementById("half-circle-fan-opening-out");
-    if (!slider) return;
-    var maxPetals = getHalfCircleMaxPetals();
-    slider.max = String(maxPetals);
-    if (Number(slider.value) > maxPetals) slider.value = String(maxPetals);
-    if (Number(slider.value) < 0) slider.value = "0";
-    if (out) out.textContent = String(getHalfCircleVisiblePetalCount());
+  function getHalfCircleTopVisiblePetalCount() {
+    return getWearControlPetalCount("wear-control-home");
+  }
+
+  function getHalfCircleBottomVisiblePetalCount() {
+    return getWearControlPetalCount("wear-control-outside");
   }
 
   function getHalfCircleValleyCirclesVisible() {
@@ -9200,10 +10701,7 @@
     var rs = Math.max(0.01, chord * 0.55);
     var mx = (petal.inLeft.x + petal.inRight.x) * 0.5;
     var my = (petal.inLeft.y + petal.inRight.y) * 0.5;
-    var cross =
-      (petal.inLeft.x - petal.inRight.x) * (fy - my) -
-      (petal.inLeft.y - petal.inRight.y) * (fx - mx);
-    var sweep = cross > 0 ? 0 : 1;
+    var sweep = halfCircleOutwardCuspSweep(fx, fy, petal.inRight, petal.inLeft);
     d +=
       " A " +
       rs +
@@ -9251,6 +10749,37 @@
     return d;
   }
 
+  function halfCirclePetalFaceFillPath(fx, fy, outerP0, outerP1, inLeft, inRight) {
+    var d = "M " + fx + " " + fy;
+    d += " L " + outerP0.x + " " + outerP0.y;
+    d = appendHalfCircleInwardCuspArc(d, outerP0, outerP1);
+    d += " L " + fx + " " + fy + " Z";
+    d += " M " + fx + " " + fy;
+    d += " L " + inLeft.x + " " + inLeft.y;
+    d = appendHalfCircleOutwardCuspArc(d, inLeft, inRight, fx, fy);
+    d += " L " + fx + " " + fy + " Z";
+    return d;
+  }
+
+  function halfCircleInnerArcBandCellPath(
+    fx,
+    fy,
+    innerRadius,
+    outerRadius,
+    leftAngle,
+    rightAngle
+  ) {
+    var pInnerL = halfCirclePolarPoint(fx, fy, innerRadius, leftAngle);
+    var pInnerR = halfCirclePolarPoint(fx, fy, innerRadius, rightAngle);
+    var pOuterR = halfCirclePolarPoint(fx, fy, outerRadius, rightAngle);
+    var pOuterL = halfCirclePolarPoint(fx, fy, outerRadius, leftAngle);
+    var d = "M " + pInnerL.x + " " + pInnerL.y;
+    d = halfCircleAppendFocalArcBetween(d, fx, fy, innerRadius, pInnerL, pInnerR);
+    d += " L " + pOuterR.x + " " + pOuterR.y;
+    d = halfCircleAppendFocalArcBetween(d, fx, fy, outerRadius, pOuterR, pOuterL);
+    return d + " Z";
+  }
+
   function halfCircleRibStripFillPath(fx, fy, outerAngle, innerCorner, rInner, side) {
     var outerPt = halfCirclePolarPoint(fx, fy, rInner, outerAngle);
     var d = "M " + fx + " " + fy;
@@ -9277,15 +10806,24 @@
     var dy = p1.y - p0.y;
     var chord = Math.sqrt(dx * dx + dy * dy);
     var rs = Math.max(0.01, chord * 0.55);
-    var sweep = 0;
-    if (typeof fx === "number" && typeof fy === "number") {
-      var mx = (p0.x + p1.x) * 0.5;
-      var my = (p0.y + p1.y) * 0.5;
-      var cross = (p1.x - p0.x) * (fy - my) - (p1.y - p0.y) * (fx - mx);
-      // Bulge away from focal (convex petal cap), regardless of p0→p1 direction.
-      sweep = cross > 0 ? 1 : 0;
-    }
+    var sweep =
+      typeof fx === "number" && typeof fy === "number"
+        ? halfCircleOutwardCuspSweep(fx, fy, p0, p1)
+        : 0;
     return d + " A " + rs + " " + rs + " 0 0 " + sweep + " " + p1.x + " " + p1.y;
+  }
+
+  function halfCircleAngleOnArcSpan(a0, a1, passAngle, angle) {
+    var eps = 1e-9;
+    function onShortArc(a) {
+      if (a0 <= a1) {
+        return a >= a0 - eps && a <= a1 + eps;
+      }
+      return a >= a0 - eps || a <= a1 + eps;
+    }
+    var passOnShort = onShortArc(passAngle);
+    var onShort = onShortArc(angle);
+    return passOnShort ? onShort : !onShort;
   }
 
   function halfCircleOutwardCuspArcSpec(fx, fy, p0, p1) {
@@ -9306,23 +10844,46 @@
       ccx = mx - (apothem * toFocalX) / flen;
       ccy = my - (apothem * toFocalY) / flen;
     }
+    var apex = halfCircleCuspApexPoint(fx, fy, p0, p1, false);
     return {
       cx: ccx,
       cy: ccy,
       r: rs,
       a0: Math.atan2(-(p0.y - ccy), p0.x - ccx),
       a1: Math.atan2(-(p1.y - ccy), p1.x - ccx),
+      outwardApexAngle: Math.atan2(-(apex.y - ccy), apex.x - ccx),
       p0: p0,
       p1: p1,
     };
   }
 
   function halfCircleAngleInOutwardArc(spec, angle) {
-    var eps = 1e-9;
-    if (spec.a0 <= spec.a1) {
-      return angle >= spec.a0 - eps && angle <= spec.a1 + eps;
-    }
-    return angle >= spec.a0 - eps || angle <= spec.a1 + eps;
+    return halfCircleAngleOnArcSpan(
+      spec.a0,
+      spec.a1,
+      spec.outwardApexAngle,
+      angle
+    );
+  }
+
+  function halfCircleOutwardCuspSweep(fx, fy, p0, p1) {
+    var dx = p1.x - p0.x;
+    var dy = p1.y - p0.y;
+    var chord = Math.sqrt(dx * dx + dy * dy);
+    if (chord < 1e-9) return 0;
+    var rs = Math.max(0.01, chord * 0.55);
+    var mx = (p0.x + p1.x) * 0.5;
+    var my = (p0.y + p1.y) * 0.5;
+    var halfChord = chord * 0.5;
+    var apothem = Math.sqrt(Math.max(0, rs * rs - halfChord * halfChord));
+    var nx = -dy / chord;
+    var ny = dx / chord;
+    var spec = halfCircleOutwardCuspArcSpec(fx, fy, p0, p1);
+    var d0x = spec.cx - (mx - apothem * nx);
+    var d0y = spec.cy - (my - apothem * ny);
+    var d1x = spec.cx - (mx + apothem * nx);
+    var d1y = spec.cy - (my + apothem * ny);
+    return d0x * d0x + d0y * d0y <= d1x * d1x + d1y * d1y ? 0 : 1;
   }
 
   function halfCircleClosestPointOnArc(spec, tx, ty) {
@@ -9605,7 +11166,6 @@
     r,
     ribs,
     visiblePetals,
-    strokeColor,
     anchor
   ) {
     var layout = buildHalfCircleVisibleFanLayout(
@@ -9679,10 +11239,32 @@
       }
     }
 
+    var fanStrokeOuter = sheetColor("D1");
+    var fanStrokeInnerArc = sheetColor("D2");
+    var fanStrokeInnerRib = sheetColor("D3");
+    var fanStrokeDiagonal = sheetColor("D4");
+    var fanStrokeShelf = sheetColor("D5");
+    var fanFillPetalFace = sheetColor("D6");
+    var fanFillRibStrip = sheetColor("D7");
+    var fanFillCuspCap = sheetColor("D8");
+    var fanFillArcBand = sheetColor("D9");
+    var fanFillCircleGap = sheetColor("D10");
+    var fanFillCirclePetalGap = sheetColor("D11");
+    var fanFillValleyCircle = sheetColor("E1");
+    var fanStrokeValleyCircle = sheetColor("E2");
+    var fanFillOuterStar = sheetColor("E3");
+    var fanStrokeOuterStar = sheetColor("E4");
+    var fanFillInnerStar = sheetColor("E5");
+    var fanStrokeInnerStar = sheetColor("E6");
+    var fanFillPentagon = sheetColor("E7");
+    var fanStrokePentagon = sheetColor("E8");
+    var fanFillStarArms = sheetColor("E9");
+    var fanStrokeStarArms = sheetColor("E10");
+
     var bgFill = elSvg("path");
     bgFill.setAttribute("id", "half-circle-background-" + idPrefix);
     bgFill.setAttribute("d", sectorPath);
-    bgFill.setAttribute("fill", "white");
+    bgFill.setAttribute("fill", sheetColor("A2"));
     bgFill.setAttribute("stroke", "none");
     parentGroup.appendChild(bgFill);
 
@@ -9695,7 +11277,7 @@
     }
     outer.setAttribute("d", dOuter);
     outer.setAttribute("fill", "none");
-    outer.setAttribute("stroke", strokeColor);
+    outer.setAttribute("stroke", fanStrokeOuter);
     outer.setAttribute("stroke-width", String(HALF_CIRCLE_FAN_STROKE_WIDTH));
     parentGroup.appendChild(outer);
 
@@ -9704,7 +11286,7 @@
     leftBoundary.setAttribute("y1", String(focalY));
     leftBoundary.setAttribute("x2", String(endpoints[0].x));
     leftBoundary.setAttribute("y2", String(endpoints[0].y));
-    leftBoundary.setAttribute("stroke", strokeColor);
+    leftBoundary.setAttribute("stroke", fanStrokeOuter);
     leftBoundary.setAttribute("stroke-width", String(HALF_CIRCLE_FAN_STROKE_WIDTH));
     parentGroup.appendChild(leftBoundary);
 
@@ -9713,7 +11295,7 @@
     rightBoundary.setAttribute("y1", String(focalY));
     rightBoundary.setAttribute("x2", String(endpoints[visibleRibs - 1].x));
     rightBoundary.setAttribute("y2", String(endpoints[visibleRibs - 1].y));
-    rightBoundary.setAttribute("stroke", strokeColor);
+    rightBoundary.setAttribute("stroke", fanStrokeOuter);
     rightBoundary.setAttribute("stroke-width", String(HALF_CIRCLE_FAN_STROKE_WIDTH));
     parentGroup.appendChild(rightBoundary);
 
@@ -9737,7 +11319,7 @@
       )
     );
     innerArc.setAttribute("fill", "none");
-    innerArc.setAttribute("stroke", strokeColor);
+    innerArc.setAttribute("stroke", fanStrokeInnerArc);
     innerArc.setAttribute("stroke-width", String(HALF_CIRCLE_FAN_STROKE_WIDTH));
     innerArcPair.appendChild(innerArc);
 
@@ -9754,7 +11336,7 @@
       )
     );
     outerInnerArc.setAttribute("fill", "none");
-    outerInnerArc.setAttribute("stroke", strokeColor);
+    outerInnerArc.setAttribute("stroke", fanStrokeInnerArc);
     outerInnerArc.setAttribute("stroke-width", String(HALF_CIRCLE_FAN_STROKE_WIDTH));
     innerArcPair.appendChild(outerInnerArc);
 
@@ -9770,6 +11352,48 @@
       endpoints,
       deltaTheta
     );
+
+    var petalFillsGroup = elSvg("g");
+    petalFillsGroup.setAttribute("id", "half-circle-petal-fills-" + idPrefix);
+    var pfi;
+    for (pfi = 0; pfi < petals.length; pfi++) {
+      var fillPetal = petals[pfi];
+      if (!fillPetal) continue;
+
+      var petalFace = elSvg("path");
+      petalFace.setAttribute(
+        "d",
+        halfCirclePetalFaceFillPath(
+          cx,
+          focalY,
+          endpoints[pfi],
+          endpoints[pfi + 1],
+          fillPetal.inLeft,
+          fillPetal.inRight
+        )
+      );
+      petalFace.setAttribute("fill", fanFillPetalFace);
+      petalFace.setAttribute("fill-rule", "evenodd");
+      petalFace.setAttribute("stroke", "none");
+      petalFillsGroup.appendChild(petalFace);
+
+      var bandCell = elSvg("path");
+      bandCell.setAttribute(
+        "d",
+        halfCircleInnerArcBandCellPath(
+          cx,
+          focalY,
+          innerArcRadius,
+          outerArcRadius,
+          fillPetal.inLeftAngle,
+          fillPetal.inRightAngle
+        )
+      );
+      bandCell.setAttribute("fill", fanFillArcBand);
+      bandCell.setAttribute("stroke", "none");
+      petalFillsGroup.appendChild(bandCell);
+    }
+    parentGroup.insertBefore(petalFillsGroup, outer);
 
     if (getHalfCircleInnerArcDiagonalsVisible()) {
       var diagonalGroup = elSvg("g");
@@ -9818,7 +11442,7 @@
           diagonal.setAttribute("y2", String(pointC.y));
         }
         diagonal.setAttribute("fill", "none");
-        diagonal.setAttribute("stroke", strokeColor);
+        diagonal.setAttribute("stroke", fanStrokeDiagonal);
         diagonal.setAttribute("stroke-width", String(HALF_CIRCLE_FAN_STROKE_WIDTH));
         diagonalGroup.appendChild(diagonal);
         cellIndex++;
@@ -9828,7 +11452,6 @@
 
     var innerGroup = elSvg("g");
     innerGroup.setAttribute("id", "half-circle-inner-petals-" + idPrefix);
-    var ribStripFillColor = getLabelBarBackgroundColor();
     var pj;
     for (pj = 0; pj < petals.length; pj++) {
       var petal = petals[pj];
@@ -9849,7 +11472,7 @@
           "left"
         )
       );
-      leftStripFill.setAttribute("fill", ribStripFillColor);
+      leftStripFill.setAttribute("fill", fanFillRibStrip);
       leftStripFill.setAttribute("stroke", "none");
       innerGroup.appendChild(leftStripFill);
 
@@ -9865,7 +11488,7 @@
           "right"
         )
       );
-      rightStripFill.setAttribute("fill", ribStripFillColor);
+      rightStripFill.setAttribute("fill", fanFillRibStrip);
       rightStripFill.setAttribute("stroke", "none");
       innerGroup.appendChild(rightStripFill);
 
@@ -9881,7 +11504,7 @@
           if (petalCapPath) {
             var petalCapFill = elSvg("path");
             petalCapFill.setAttribute("d", petalCapPath);
-            petalCapFill.setAttribute("fill", ribStripFillColor);
+            petalCapFill.setAttribute("fill", fanFillCuspCap);
             petalCapFill.setAttribute("stroke", "none");
             innerGroup.appendChild(petalCapFill);
           }
@@ -9893,7 +11516,7 @@
       innerLeftRib.setAttribute("y1", String(focalY));
       innerLeftRib.setAttribute("x2", String(inLeft.x));
       innerLeftRib.setAttribute("y2", String(inLeft.y));
-      innerLeftRib.setAttribute("stroke", strokeColor);
+      innerLeftRib.setAttribute("stroke", fanStrokeInnerRib);
       innerLeftRib.setAttribute("stroke-width", String(HALF_CIRCLE_FAN_STROKE_WIDTH));
       innerGroup.appendChild(innerLeftRib);
 
@@ -9902,7 +11525,7 @@
       innerRightRib.setAttribute("y1", String(focalY));
       innerRightRib.setAttribute("x2", String(inRight.x));
       innerRightRib.setAttribute("y2", String(inRight.y));
-      innerRightRib.setAttribute("stroke", strokeColor);
+      innerRightRib.setAttribute("stroke", fanStrokeInnerRib);
       innerRightRib.setAttribute("stroke-width", String(HALF_CIRCLE_FAN_STROKE_WIDTH));
       innerGroup.appendChild(innerRightRib);
 
@@ -9917,7 +11540,7 @@
       var innerCusp = elSvg("path");
       innerCusp.setAttribute("d", dInnerCusp);
       innerCusp.setAttribute("fill", "none");
-      innerCusp.setAttribute("stroke", strokeColor);
+      innerCusp.setAttribute("stroke", fanStrokeInnerRib);
       innerCusp.setAttribute("stroke-width", String(HALF_CIRCLE_FAN_STROKE_WIDTH));
       innerGroup.appendChild(innerCusp);
     }
@@ -9941,7 +11564,7 @@
           if (!gapPathD) continue;
           var gapFill = elSvg("path");
           gapFill.setAttribute("d", gapPathD);
-          gapFill.setAttribute("fill", getLabelBarBackgroundColor());
+          gapFill.setAttribute("fill", fanFillCircleGap);
           gapFill.setAttribute("stroke", "none");
           valleyGapGroup.appendChild(gapFill);
         }
@@ -9959,7 +11582,7 @@
             if (petalCircleGap) {
               var petalCircleFill = elSvg("path");
               petalCircleFill.setAttribute("d", petalCircleGap);
-              petalCircleFill.setAttribute("fill", getLabelBarBackgroundColor());
+              petalCircleFill.setAttribute("fill", fanFillCirclePetalGap);
               petalCircleFill.setAttribute("stroke", "none");
               valleyGapGroup.appendChild(petalCircleFill);
             }
@@ -9975,7 +11598,7 @@
             if (circlePetalGap) {
               var circlePetalFill = elSvg("path");
               circlePetalFill.setAttribute("d", circlePetalGap);
-              circlePetalFill.setAttribute("fill", getLabelBarBackgroundColor());
+              circlePetalFill.setAttribute("fill", fanFillCirclePetalGap);
               circlePetalFill.setAttribute("stroke", "none");
               valleyGapGroup.appendChild(circlePetalFill);
             }
@@ -9993,8 +11616,8 @@
         circle.setAttribute("cx", String(valleyCircle.cx));
         circle.setAttribute("cy", String(valleyCircle.cy));
         circle.setAttribute("r", String(valleyCircle.r));
-        circle.setAttribute("fill", getLabelBarBackgroundColor());
-        circle.setAttribute("stroke", strokeColor);
+        circle.setAttribute("fill", fanFillValleyCircle);
+        circle.setAttribute("stroke", fanStrokeValleyCircle);
         circle.setAttribute("stroke-width", String(HALF_CIRCLE_FAN_STROKE_WIDTH));
         valleyGroup.appendChild(circle);
 
@@ -10012,8 +11635,8 @@
             valleyCircle.tipAngle
           )
         );
-        star.setAttribute("fill", "white");
-        star.setAttribute("stroke", strokeColor);
+        star.setAttribute("fill", fanFillOuterStar);
+        star.setAttribute("stroke", fanStrokeOuterStar);
         star.setAttribute("stroke-width", String(HALF_CIRCLE_FAN_STROKE_WIDTH));
         star.setAttribute("stroke-linejoin", "round");
         valleyGroup.appendChild(star);
@@ -10029,8 +11652,8 @@
             outerStarInnerR * starRatio
           )
         );
-        innerStar.setAttribute("fill", "white");
-        innerStar.setAttribute("stroke", strokeColor);
+        innerStar.setAttribute("fill", fanFillInnerStar);
+        innerStar.setAttribute("stroke", fanStrokeInnerStar);
         innerStar.setAttribute("stroke-width", String(HALF_CIRCLE_FAN_STROKE_WIDTH));
         innerStar.setAttribute("stroke-linejoin", "round");
         valleyGroup.appendChild(innerStar);
@@ -10047,8 +11670,8 @@
             innerStarTipAngle
           )
         );
-        starArms.setAttribute("fill", getLabelBarBackgroundColor());
-        starArms.setAttribute("stroke", strokeColor);
+        starArms.setAttribute("fill", fanFillStarArms);
+        starArms.setAttribute("stroke", fanStrokeStarArms);
         starArms.setAttribute("stroke-width", String(HALF_CIRCLE_FAN_STROKE_WIDTH));
         starArms.setAttribute("stroke-linejoin", "round");
         valleyGroup.appendChild(starArms);
@@ -10063,8 +11686,8 @@
             innerStarTipAngle
           )
         );
-        pentagon.setAttribute("fill", "white");
-        pentagon.setAttribute("stroke", strokeColor);
+        pentagon.setAttribute("fill", fanFillPentagon);
+        pentagon.setAttribute("stroke", fanStrokePentagon);
         pentagon.setAttribute("stroke-width", String(HALF_CIRCLE_FAN_STROKE_WIDTH));
         pentagon.setAttribute("stroke-linejoin", "round");
         valleyGroup.appendChild(pentagon);
@@ -10082,7 +11705,7 @@
             halfCircleValleyShelfArcPath(cx, focalY, shelfSpec)
           );
           shelfArc.setAttribute("fill", "none");
-          shelfArc.setAttribute("stroke", strokeColor);
+          shelfArc.setAttribute("stroke", fanStrokeShelf);
           shelfArc.setAttribute("stroke-width", String(HALF_CIRCLE_FAN_STROKE_WIDTH));
           parentGroup.appendChild(shelfArc);
         }
@@ -10105,14 +11728,16 @@
     var r = (diameter / 2) * HALF_CIRCLE_RADIUS_SCALE;
     var cx = CANVAS_W / 2;
     var ribs = getHalfCircleRibCount();
-    var visiblePetals = getHalfCircleVisiblePetalCount();
-    var strokeColor = getHalfCircleColor();
+    var topVisiblePetals = showTop ? getHalfCircleTopVisiblePetalCount() : 0;
+    var bottomVisiblePetals = showBottom
+      ? getHalfCircleBottomVisiblePetalCount()
+      : 0;
 
-    if (visiblePetals <= 0) {
+    if (topVisiblePetals <= 0 && bottomVisiblePetals <= 0) {
       return;
     }
 
-    if (showTop) {
+    if (showTop && topVisiblePetals > 0) {
       var topG = elSvg("g");
       topG.setAttribute("id", "half-circle-top");
       appendHalfCircleFan(
@@ -10122,13 +11747,12 @@
         HALF_CIRCLE_FOCAL_Y,
         r,
         ribs,
-        visiblePetals,
-        strokeColor
+        topVisiblePetals
       );
       layer.appendChild(topG);
     }
 
-    if (showBottom) {
+    if (showBottom && bottomVisiblePetals > 0) {
       var bottomG = elSvg("g");
       bottomG.setAttribute("id", "half-circle-bottom");
       bottomG.setAttribute("transform", getHalfCircleVerticalMirrorTransform());
@@ -10139,12 +11763,38 @@
         HALF_CIRCLE_FOCAL_Y,
         r,
         ribs,
-        visiblePetals,
-        strokeColor,
+        bottomVisiblePetals,
         "right"
       );
       layer.appendChild(bottomG);
     }
+  }
+
+  function shouldExportHalfCircleLayer() {
+    if (!getHalfCircleVisible() && !getHalfCircleBottomVisible()) return false;
+    if (getHalfCircleVisible() && getHalfCircleTopVisiblePetalCount() > 0) {
+      return true;
+    }
+    if (getHalfCircleBottomVisible() && getHalfCircleBottomVisiblePetalCount() > 0) {
+      return true;
+    }
+    return false;
+  }
+
+  function pushHalfCircleExportLines(lines) {
+    if (!shouldExportHalfCircleLayer() || !designSvg) return;
+    var layer = designSvg.querySelector("#layer-half-circle");
+    if (!layer || !layer.firstChild) return;
+    lines.push('<g id="layer-half-circle">');
+    lines.push(layer.innerHTML);
+    lines.push("</g>");
+  }
+
+  function isFrameInsetOverlayVisibleOnCanvas() {
+    if (!designSvg) return frameInsetOverlayVisible;
+    var layer = designSvg.querySelector("#layer-frame-inset-overlay");
+    if (!layer) return frameInsetOverlayVisible;
+    return layer.style.display !== "none";
   }
 
   function renderDiamondFillsLayer() {
@@ -10158,6 +11808,17 @@
     if (filled.length) diamondLayer.appendChild(diamondsToGroup(filled));
   }
 
+  function renderHollowDiamondFillsLayer() {
+    if (!designSvg) return;
+    var hollowLayer = designSvg.querySelector("#layer-hollow-diamond-fills");
+    if (!hollowLayer) return;
+
+    while (hollowLayer.firstChild) hollowLayer.removeChild(hollowLayer.firstChild);
+
+    var filled = getFilledHollowDiamonds();
+    if (filled.length) hollowLayer.appendChild(hollowDiamondsToGroup(filled));
+  }
+
   function renderPatternLayer() {
     if (!designSvg) return;
     var patternLayer = designSvg.querySelector("#layer-pattern");
@@ -10165,6 +11826,7 @@
 
     if (isStarGrid()) {
       renderDiamondFillsLayer();
+      renderHollowDiamondFillsLayer();
       while (patternLayer.firstChild) {
         patternLayer.removeChild(patternLayer.firstChild);
       }
@@ -10174,21 +11836,46 @@
       patternLayer.appendChild(
         segmentsToGroup(getVisibleSegments(getAllSegmentsForTracing()))
       );
+      var starHelplessnessMarks = getActiveHelplessnessMarks();
+      if (starHelplessnessMarks.length) {
+        patternLayer.appendChild(helplessnessToGroup(starHelplessnessMarks));
+      }
       var starCircles = getActiveCircles();
       if (starCircles.length) {
         patternLayer.appendChild(circlesToGroup(starCircles));
+      }
+      var starLongingCircles = getActiveLongingCircles();
+      if (starLongingCircles.length) {
+        patternLayer.appendChild(longingCirclesToGroup(starLongingCircles));
+      }
+      var starGriefCircles = getActiveGriefCircles();
+      if (starGriefCircles.length) {
+        patternLayer.appendChild(griefCirclesToGroup(starGriefCircles));
       }
       return;
     }
 
     renderDiamondFillsLayer();
+    renderHollowDiamondFillsLayer();
     while (patternLayer.firstChild) patternLayer.removeChild(patternLayer.firstChild);
     patternLayer.appendChild(
       segmentsToGroup(getVisibleSegments(cachedAllSegments))
     );
+    var helplessnessMarks = getActiveHelplessnessMarks();
+    if (helplessnessMarks.length) {
+      patternLayer.appendChild(helplessnessToGroup(helplessnessMarks));
+    }
     var circles = getActiveCircles();
     if (circles.length) {
       patternLayer.appendChild(circlesToGroup(circles));
+    }
+    var longingCircles = getActiveLongingCircles();
+    if (longingCircles.length) {
+      patternLayer.appendChild(longingCirclesToGroup(longingCircles));
+    }
+    var griefCircles = getActiveGriefCircles();
+    if (griefCircles.length) {
+      patternLayer.appendChild(griefCirclesToGroup(griefCircles));
     }
   }
 
@@ -10223,9 +11910,6 @@
         " px tile";
     }
 
-    var strokeOut = document.getElementById("grid-stroke-width-out");
-    if (strokeOut) strokeOut.textContent = String(getGridStrokeWidth()) + " px";
-
     var borderSideOut = document.getElementById("border-side-segments-out");
     if (borderSideOut) {
       borderSideOut.textContent = borderSideThicknessLabel(
@@ -10238,25 +11922,60 @@
     if (angerLengthOut) {
       angerLengthOut.textContent = String(getAngerVerticalLengthPercent()) + "%";
     }
+    syncAnxietyVerticalStrokeOutput();
 
     var circleSig = buildCircleLayoutSignature();
     if (circleSig !== lastCircleLayoutSignature) {
       lastCircleLayoutSignature = circleSig;
       syncCircleSelection(true);
     }
+    if (circleSig !== lastLongingCircleLayoutSignature) {
+      lastLongingCircleLayoutSignature = circleSig;
+      syncLongingCircleSelection(true);
+    }
+    if (circleSig !== lastGriefCircleLayoutSignature) {
+      lastGriefCircleLayoutSignature = circleSig;
+      syncGriefCircleSelection(true);
+    }
+    var helplessnessSig = buildHelplessnessLayoutSignature();
+    if (helplessnessSig !== lastHelplessnessLayoutSignature) {
+      lastHelplessnessLayoutSignature = helplessnessSig;
+      syncHelplessnessSelection(true);
+    }
 
     var diamondSig = buildDiamondLayoutSignature();
     if (diamondSig !== lastDiamondLayoutSignature) {
       lastDiamondLayoutSignature = diamondSig;
       syncDiamondFill(false);
+      syncGuiltShameDiamondFill(false);
     }
 
     var densityOut = document.getElementById("circle-density-out");
     if (densityOut) densityOut.textContent = String(getCircleDensity()) + "%";
 
+    var longingDensityOut = document.getElementById("longing-circle-density-out");
+    if (longingDensityOut) {
+      longingDensityOut.textContent = String(getLongingCircleDensity()) + "%";
+    }
+
+    var griefDensityOut = document.getElementById("grief-circle-density-out");
+    if (griefDensityOut) {
+      griefDensityOut.textContent = String(getGriefCircleDensity()) + "%";
+    }
+
+    var helplessnessOut = document.getElementById("helplessness-percent-out");
+    if (helplessnessOut) {
+      helplessnessOut.textContent = String(getHelplessnessPercent()) + "%";
+    }
+
     var prideFillOut = document.getElementById("pride-fill-percent-out");
     if (prideFillOut) {
       prideFillOut.textContent = String(getPrideFillPercent()) + "%";
+    }
+
+    var guiltShameFillOut = document.getElementById("guilt-shame-fill-percent-out");
+    if (guiltShameFillOut) {
+      guiltShameFillOut.textContent = String(getGuiltShameFillPercent()) + "%";
     }
 
     var fill = designSvg.querySelector("#canvas-background-fill");
@@ -10274,11 +11993,22 @@
     renderStippleDotsLayer();
     applyMergeReveal();
     renderAutoMergeFillsLayer();
+    updateGridBoundaryRect();
+    updateColorDivisionsLayer();
     layoutStage();
     updateResetButton();
   }
 
+  function applySheetPaletteToDom() {
+    if (!designSvg) return;
+    updateCanvasBackgroundColor();
+    invalidateLabelBarSvgTintCache();
+    refreshHopeColoredExportDataUri();
+    syncMagnifierBorderColor();
+  }
+
   function render() {
+    if (window.SheetPalettes) window.SheetPalettes.syncBorderGlobals();
     updateLayoutState();
 
     var outN = document.getElementById("octagons-n-out");
@@ -10327,19 +12057,53 @@
       lastCircleLayoutSignature = layoutSig;
       syncCircleSelection(true);
     }
+    if (layoutSig !== lastLongingCircleLayoutSignature) {
+      lastLongingCircleLayoutSignature = layoutSig;
+      syncLongingCircleSelection(true);
+    }
+    if (layoutSig !== lastGriefCircleLayoutSignature) {
+      lastGriefCircleLayoutSignature = layoutSig;
+      syncGriefCircleSelection(true);
+    }
+    var helplessnessSig = buildHelplessnessLayoutSignature();
+    if (helplessnessSig !== lastHelplessnessLayoutSignature) {
+      lastHelplessnessLayoutSignature = helplessnessSig;
+      syncHelplessnessSelection(true);
+    }
 
     var diamondSig = buildDiamondLayoutSignature();
     if (diamondSig !== lastDiamondLayoutSignature) {
       lastDiamondLayoutSignature = diamondSig;
       syncDiamondFill(false);
+      syncGuiltShameDiamondFill(false);
     }
 
     var densityOut = document.getElementById("circle-density-out");
     if (densityOut) densityOut.textContent = String(getCircleDensity()) + "%";
 
+    var longingDensityOut = document.getElementById("longing-circle-density-out");
+    if (longingDensityOut) {
+      longingDensityOut.textContent = String(getLongingCircleDensity()) + "%";
+    }
+
+    var griefDensityOut = document.getElementById("grief-circle-density-out");
+    if (griefDensityOut) {
+      griefDensityOut.textContent = String(getGriefCircleDensity()) + "%";
+    }
+
+    var helplessnessOut = document.getElementById("helplessness-percent-out");
+    if (helplessnessOut) {
+      helplessnessOut.textContent = String(getHelplessnessPercent()) + "%";
+    }
+
     var prideFillOut = document.getElementById("pride-fill-percent-out");
     if (prideFillOut) {
       prideFillOut.textContent = String(getPrideFillPercent()) + "%";
+    }
+
+    var guiltShameFillOut = document.getElementById("guilt-shame-fill-percent-out");
+    if (guiltShameFillOut) {
+      guiltShameFillOut.textContent = String(getGuiltShameFillPercent()) + "%";
     }
 
     updateAutoMergeIntensityOutput();
@@ -10348,9 +12112,7 @@
     if (angerLengthOut) {
       angerLengthOut.textContent = String(getAngerVerticalLengthPercent()) + "%";
     }
-
-    var strokeOut = document.getElementById("grid-stroke-width-out");
-    if (strokeOut) strokeOut.textContent = String(getGridStrokeWidth()) + " px";
+    syncAnxietyVerticalStrokeOutput();
 
     var borderSideOut = document.getElementById("border-side-segments-out");
     if (borderSideOut) {
@@ -10360,6 +12122,7 @@
     }
     syncBorderSideWhiteFillOutput();
 
+    applySheetPaletteToDom();
     renderBackgroundLayer();
     renderGridMaskLayer("render");
     renderStippleDotsLayer();
@@ -10369,6 +12132,7 @@
     renderAutoMergeFillsLayer();
     updateGridBoundaryRect();
     updateBorderDivisionLines();
+    updateColorDivisionsLayer();
     updateBorderDivisionOverlay();
     updateCanvasEdgeBrownBars();
     renderPatternLayer();
@@ -10412,30 +12176,43 @@
   }
 
   function applyRandomPaletteColors() {
-    if (!window.ColorPalette) return;
-    window.ColorPalette.randomizeCanvasColors();
+    if (window.SheetPalettes) window.SheetPalettes.pickRandomPalette();
   }
 
-  function refreshAfterPaletteColorsApplied() {
-    invalidateLabelBarSvgTintCache();
-    setHopeDotsColor(getHopeDotsColor());
-    syncMagnifierBorderColor();
+  function initSheetPaletteControls() {
+    if (!window.SheetPalettes) return;
+
+    var container = document.getElementById("sheet-palette-buttons");
+    if (container) {
+      var buttons = container.querySelectorAll("[data-palette-key]");
+      var i;
+      for (i = 0; i < buttons.length; i++) {
+        (function (btn) {
+          btn.addEventListener("click", function () {
+            var key = btn.getAttribute("data-palette-key");
+            if (key && window.SheetPalettes.setActivePalette(key)) {
+              applySheetPaletteToDom();
+              render();
+            }
+          });
+        })(buttons[i]);
+      }
+    }
+
+    var randomBtn = document.getElementById("sheet-palette-random-btn");
+    if (randomBtn) {
+      randomBtn.addEventListener("click", function () {
+        window.SheetPalettes.pickRandomPalette();
+        render();
+      });
+    }
+
+    window.SheetPalettes.updatePaletteButtonStates();
   }
 
   function applyRandomPaletteColorsAndRender() {
     applyRandomPaletteColors();
     render();
-  }
-
-  function initColorPaletteControls() {
-    if (!window.ColorPalette) return;
-
-    window.ColorPalette.onApplied = refreshAfterPaletteColorsApplied;
-
-    var randomizeColorsBtn = document.getElementById("randomize-colors-btn");
-    if (randomizeColorsBtn) {
-      randomizeColorsBtn.addEventListener("click", applyRandomPaletteColorsAndRender);
-    }
   }
 
   function randomizeAllDesignControls() {
@@ -10444,10 +12221,6 @@
     setSliderValue(
       "inner-scale",
       randomSteppedValue(INNER_SCALE_MIN, INNER_SCALE_MAX, 0.01)
-    );
-    setSliderValue(
-      "grid-stroke-width",
-      randomIntInRange(GRID_STROKE_WIDTH_MIN, GRID_STROKE_WIDTH_MAX)
     );
     setSliderValue(
       "border-side-segments",
@@ -10465,19 +12238,43 @@
       randomIntInRange(ANGER_VERTICAL_LENGTH_MIN, ANGER_VERTICAL_LENGTH_MAX)
     );
     setSliderValue(
+      "anxiety-vertical-stroke",
+      randomIntInRange(ANXIETY_VERTICAL_STROKE_MIN, ANXIETY_VERTICAL_STROKE_MAX)
+    );
+    setSliderValue(
       "circle-density",
+      randomIntInRange(CIRCLE_DENSITY_MIN, CIRCLE_DENSITY_MAX)
+    );
+    setSliderValue(
+      "longing-circle-density",
+      randomIntInRange(CIRCLE_DENSITY_MIN, CIRCLE_DENSITY_MAX)
+    );
+    setSliderValue(
+      "grief-circle-density",
       randomIntInRange(CIRCLE_DENSITY_MIN, CIRCLE_DENSITY_MAX)
     );
     setSliderValue(
       "pride-fill-percent",
       randomIntInRange(PRIDE_FILL_PERCENT_MIN, PRIDE_FILL_PERCENT_MAX)
     );
+    setSliderValue(
+      "guilt-shame-fill-percent",
+      randomIntInRange(GUILT_SHAME_FILL_PERCENT_MIN, GUILT_SHAME_FILL_PERCENT_MAX)
+    );
+    setSliderValue(
+      "helplessness-percent",
+      randomIntInRange(HELPLESSNESS_PERCENT_MIN, HELPLESSNESS_PERCENT_MAX)
+    );
 
     regenerateBorderSideSegmentRatios();
     syncBorderSideWhiteCells(true);
     clearMergeState();
     syncCircleSelection(true);
+    syncLongingCircleSelection(true);
+    syncGriefCircleSelection(true);
+    syncHelplessnessSelection(true);
     syncPrideShapes();
+    syncGuiltShameShapes();
     render();
   }
 
@@ -10617,6 +12414,7 @@
     segments,
     circles,
     diamonds,
+    hollowDiamonds,
     fontDataUri,
     hopeDotsVectorLines
   ) {
@@ -10700,6 +12498,24 @@
       lines.push("</g>");
     }
 
+    if (hollowDiamonds.length) {
+      var hollowFillColor = getGuiltShameDiamondFillColor();
+      lines.push('<g clip-path="url(#inner-content-clip)">');
+      lines.push('<g id="layer-hollow-diamond-fills">');
+      for (var hd = 0; hd < hollowDiamonds.length; hd++) {
+        var hdm = hollowDiamonds[hd];
+        lines.push(
+          '<path d="' +
+            hollowDiamondPathD(hdm.points) +
+            '" fill="' +
+            hollowFillColor +
+            '" fill-rule="evenodd" stroke="none"/>'
+        );
+      }
+      lines.push("</g>");
+      lines.push("</g>");
+    }
+
     pushGridBoundaryExportLine(lines, gridBounds);
     var gridStroke = getGridStrokeWidth();
     var circleStroke = getCircleStrokeWidth();
@@ -10730,12 +12546,14 @@
 
     lines.push("</g>");
 
+    pushHelplessnessExportLines(lines);
+
     if (circles.length) {
       lines.push(
         '<g id="layer-circles" fill="' +
           getCircleFillColor() +
           '" stroke="' +
-          getPatternStrokeColor() +
+          getCircleStrokeColor() +
           '" stroke-width="' +
           circleStroke +
           '">'
@@ -10757,15 +12575,86 @@
       lines.push("</g>");
     }
 
+    var longingCircles = getActiveLongingCircles();
+    if (longingCircles.length) {
+      var longingCircleStroke = getLongingCircleStrokeWidth();
+      lines.push(
+        '<g id="layer-longing-circles" fill="none" stroke="' +
+          getPatternStrokeColor() +
+          '" stroke-width="' +
+          longingCircleStroke +
+          '">'
+      );
+      var longingStrokeInset = longingCircleStroke / 2;
+      for (var lc = 0; lc < longingCircles.length; lc++) {
+        var longingCirc = longingCircles[lc];
+        var longingDrawR = Math.max(0, longingCirc.r - longingStrokeInset);
+        lines.push(
+          '<circle cx="' +
+            longingCirc.cx +
+            '" cy="' +
+            longingCirc.cy +
+            '" r="' +
+            longingDrawR +
+            '"/>'
+        );
+      }
+      lines.push("</g>");
+    }
+
+    var griefCircles = getActiveGriefCircles();
+    if (griefCircles.length) {
+      var griefCircleStroke = getGriefCircleStrokeWidth();
+      lines.push(
+        '<g id="layer-grief-circles" fill="none" stroke="' +
+          getPatternStrokeColor() +
+          '" stroke-width="' +
+          griefCircleStroke +
+          '">'
+      );
+      var griefStrokeInset = griefCircleStroke / 2;
+      var griefInnerRadiusOffset = GRIEF_INNER_CIRCLE_DIAMETER_GAP_PX / 2;
+      for (var gc = 0; gc < griefCircles.length; gc++) {
+        var griefCirc = griefCircles[gc];
+        var griefOuterDrawR = Math.max(0, griefCirc.r - griefStrokeInset);
+        lines.push(
+          '<circle cx="' +
+            griefCirc.cx +
+            '" cy="' +
+            griefCirc.cy +
+            '" r="' +
+            griefOuterDrawR +
+            '"/>'
+        );
+        var griefInnerDrawR = Math.max(0, griefOuterDrawR - griefInnerRadiusOffset);
+        if (griefInnerDrawR > 0) {
+          lines.push(
+            '<circle cx="' +
+              griefCirc.cx +
+              '" cy="' +
+              griefCirc.cy +
+              '" r="' +
+              griefInnerDrawR +
+              '"/>'
+          );
+        }
+      }
+      lines.push("</g>");
+    }
+
     pushAutoMergeFillExportLines(lines);
+
+    pushHalfCircleExportLines(lines);
 
     lines.push("</g>");
     lines.push("</g>");
+    pushColorDivisionsExportLines(lines);
+    pushBorderDivisionOverlayExportLines(lines);
     lines.push('<g id="layer-edge-brown-bars">');
     pushCanvasEdgeBrownBarExportLines(lines);
     lines.push("</g>");
     pushCanvasEdgeSerialExport(lines);
-    if (frameInsetOverlayVisible) {
+    if (isFrameInsetOverlayVisibleOnCanvas()) {
       pushFrameInsetOverlayExportLines(lines);
     }
     lines.push("</svg>");
@@ -10800,10 +12689,12 @@
         var hopeDotsVectorLines = results[3];
         try {
           syncVerticalGridLines(false);
+          renderHalfCircleLayer();
           var markup = buildExportSvgString(
             getVisibleSegments(cachedAllSegments),
             getActiveCircles(),
             getFilledDiamonds(),
+            getFilledHollowDiamonds(),
             fontDataUri,
             hopeDotsVectorLines
           );
@@ -10822,10 +12713,12 @@
         console.error(err);
         try {
           syncVerticalGridLines(false);
+          renderHalfCircleLayer();
           var markup = buildExportSvgString(
             getVisibleSegments(cachedAllSegments),
             getActiveCircles(),
             getFilledDiamonds(),
+            getFilledHollowDiamonds(),
             null,
             null
           );
@@ -10897,7 +12790,8 @@
     var changed = false;
     var pruneKeys = TopkapiGeometry.findDanglingPruneKeys(
       getSegmentsForMergeRegionDetection(),
-      removedEdges
+      removedEdges,
+      { bounds: getGridContentBounds() }
     );
     for (var j = 0; j < pruneKeys.length; j++) {
       var pk = pruneKeys[j];
@@ -11088,7 +12982,91 @@
     renderPatternAndVerticalLayers();
   }
 
-  function init() {
+  /** Dim sidebar sections except the one under the pointer (or nearest to viewport center when pointer is outside). */
+  function initSidebarScrollFocus() {
+    var scrollEl = document.querySelector(".sidebar__scroll");
+    if (!scrollEl) return;
+
+    var sections = scrollEl.querySelectorAll(".sidebar__section");
+    if (!sections.length) return;
+
+    var ticking = false;
+    var pointerInsideSidebar = false;
+    var pointerClientY = null;
+
+    function getSectionAtClientY(clientY) {
+      for (var i = 0; i < sections.length; i++) {
+        var rect = sections[i].getBoundingClientRect();
+        if (clientY >= rect.top && clientY <= rect.bottom) {
+          return sections[i];
+        }
+      }
+      var nearest = sections[0];
+      var minDistance = Infinity;
+      for (var k = 0; k < sections.length; k++) {
+        var sectionRect = sections[k].getBoundingClientRect();
+        var sectionCenter = sectionRect.top + sectionRect.height / 2;
+        var distance = Math.abs(clientY - sectionCenter);
+        if (distance < minDistance) {
+          minDistance = distance;
+          nearest = sections[k];
+        }
+      }
+      return nearest;
+    }
+
+    function getActiveSectionFromViewportCenter() {
+      var scrollRect = scrollEl.getBoundingClientRect();
+      var viewportCenter = scrollRect.top + scrollRect.height / 2;
+      return getSectionAtClientY(viewportCenter);
+    }
+
+    function updateSidebarSectionFocus() {
+      ticking = false;
+      var activeSection =
+        pointerInsideSidebar && pointerClientY != null
+          ? getSectionAtClientY(pointerClientY)
+          : getActiveSectionFromViewportCenter();
+
+      for (var j = 0; j < sections.length; j++) {
+        sections[j].classList.toggle("is-dimmed", sections[j] !== activeSection);
+      }
+    }
+
+    function scheduleSidebarSectionFocus() {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(updateSidebarSectionFocus);
+    }
+
+    function onSidebarPointerMove(clientY) {
+      pointerInsideSidebar = true;
+      pointerClientY = clientY;
+      scheduleSidebarSectionFocus();
+    }
+
+    function onSidebarPointerLeave() {
+      pointerInsideSidebar = false;
+      pointerClientY = null;
+      scheduleSidebarSectionFocus();
+    }
+
+    scrollEl.addEventListener(
+      "mousemove",
+      function (e) {
+        onSidebarPointerMove(e.clientY);
+      },
+      { passive: true }
+    );
+    scrollEl.addEventListener("mouseleave", onSidebarPointerLeave);
+    scrollEl.addEventListener("scroll", scheduleSidebarSectionFocus, {
+      passive: true,
+    });
+    window.addEventListener("resize", scheduleSidebarSectionFocus);
+    updateSidebarSectionFocus();
+  }
+
+  async function init() {
     initGridTypeButtons();
 
     var slider = document.getElementById("octagons-n");
@@ -11107,81 +13085,6 @@
       innerSlider.addEventListener("input", renderAfterSliderChange);
     }
 
-    var canvasBackgroundColorInput = document.getElementById(
-      "canvas-background-color"
-    );
-    if (canvasBackgroundColorInput) {
-      canvasBackgroundColorInput.value =
-        typeof CANVAS_BACKGROUND_COLOR_DEFAULT !== "undefined"
-          ? CANVAS_BACKGROUND_COLOR_DEFAULT
-          : BG_COLOR;
-      canvasBackgroundColorInput.addEventListener("input", function () {
-        updateCanvasBackgroundColor();
-      });
-    }
-
-    var patternColorInput = document.getElementById("pattern-stroke-color");
-    if (patternColorInput) {
-      patternColorInput.value = PATTERN_STROKE_COLOR_DEFAULT;
-      patternColorInput.addEventListener("input", function () {
-        updateGridBoundaryRect();
-        updateBorderDivisionLines();
-        renderPatternLayer();
-        renderVerticalGridLayer();
-        if (!isStarGrid()) {
-          renderAutoMergeFillsLayer();
-          updateFrameInsetOverlayLayer();
-        }
-        syncMagnifierBorderColor();
-      });
-    }
-
-    var circleFillColorInput = document.getElementById("circle-fill-color");
-    if (circleFillColorInput) {
-      circleFillColorInput.value =
-        typeof CIRCLE_FILL_COLOR_DEFAULT !== "undefined"
-          ? CIRCLE_FILL_COLOR_DEFAULT
-          : "#ffffff";
-      circleFillColorInput.addEventListener("input", function () {
-        renderPatternLayer();
-      });
-    }
-
-    var diamondFillColorInput = document.getElementById("diamond-fill-color");
-    if (diamondFillColorInput) {
-      diamondFillColorInput.value = DIAMOND_FILL_COLOR_DEFAULT;
-      diamondFillColorInput.addEventListener("input", function () {
-        renderDiamondFillsLayer();
-      });
-    }
-
-    function onLabelBarColorChange() {
-      invalidateLabelBarSvgTintCache();
-      if (isStarGrid()) render();
-      else updateCanvasEdgeBrownBars();
-      renderHalfCircleLayer();
-    }
-
-    var labelBarBackgroundColorInput = document.getElementById(
-      "label-bar-background-color"
-    );
-    if (labelBarBackgroundColorInput) {
-      labelBarBackgroundColorInput.value =
-        typeof LABEL_BAR_BACKGROUND_COLOR_DEFAULT !== "undefined"
-          ? LABEL_BAR_BACKGROUND_COLOR_DEFAULT
-          : CANVAS_EDGE_BROWN_BAR_COLOR;
-      labelBarBackgroundColorInput.addEventListener("input", onLabelBarColorChange);
-    }
-
-    var labelBarContentColorInput = document.getElementById("label-bar-content-color");
-    if (labelBarContentColorInput) {
-      labelBarContentColorInput.value =
-        typeof LABEL_BAR_CONTENT_COLOR_DEFAULT !== "undefined"
-          ? LABEL_BAR_CONTENT_COLOR_DEFAULT
-          : "#ffffff";
-      labelBarContentColorInput.addEventListener("input", onLabelBarColorChange);
-    }
-
     var borderSideSegmentsSlider = document.getElementById("border-side-segments");
     if (borderSideSegmentsSlider) {
       borderSideSegmentsSlider.min = "1";
@@ -11198,6 +13101,43 @@
         // so we re-render to update transforms + dependent layers.
         render();
       });
+    }
+
+    var colorDivisionsSlider = document.getElementById("color-divisions");
+    if (colorDivisionsSlider) {
+      colorDivisionsSlider.min = String(
+        typeof COLOR_DIVISIONS_MIN !== "undefined" ? COLOR_DIVISIONS_MIN : 1
+      );
+      colorDivisionsSlider.max = String(
+        typeof COLOR_DIVISIONS_MAX !== "undefined" ? COLOR_DIVISIONS_MAX : 5
+      );
+      colorDivisionsSlider.value = String(
+        typeof COLOR_DIVISIONS_DEFAULT !== "undefined"
+          ? COLOR_DIVISIONS_DEFAULT
+          : 1
+      );
+      syncColorDivisionsOutput();
+      colorDivisionsSlider.addEventListener("input", function () {
+        syncColorDivisionsOutput();
+        updateColorDivisionsLayer();
+      });
+    }
+
+    var colorDivisionsShuffleBtn = document.getElementById(
+      "color-divisions-shuffle-btn"
+    );
+    if (colorDivisionsShuffleBtn) {
+      colorDivisionsShuffleBtn.addEventListener("click", reshuffleColorDivisionRects);
+    }
+
+    var colorDivisionsMixAreasBtn = document.getElementById(
+      "color-divisions-mix-areas-btn"
+    );
+    if (colorDivisionsMixAreasBtn) {
+      colorDivisionsMixAreasBtn.addEventListener(
+        "click",
+        reshuffleColorDivisionAreaOrder
+      );
     }
 
     var borderSideWhiteFillSlider = document.getElementById("border-side-white-fill");
@@ -11227,7 +13167,6 @@
 
     var halfCircleToggle = document.getElementById("half-circle-toggle");
     var halfCircleColor = document.getElementById("half-circle-color");
-    var halfCircleRibs = document.getElementById("half-circle-ribs");
     if (halfCircleColor) halfCircleColor.value = PATTERN_STROKE_COLOR_DEFAULT;
     if (halfCircleToggle) {
       halfCircleToggle.checked = true;
@@ -11247,27 +13186,15 @@
         renderHalfCircleLayer();
       });
     }
-    if (halfCircleRibs) {
-      halfCircleRibs.min = "5";
-      halfCircleRibs.max = "40";
-      halfCircleRibs.value = "21";
-      var ribsOut = document.getElementById("half-circle-ribs-out");
-      if (ribsOut) ribsOut.textContent = String(getHalfCircleRibCount());
-      halfCircleRibs.addEventListener("input", function () {
-        var out = document.getElementById("half-circle-ribs-out");
-        if (out) out.textContent = String(getHalfCircleRibCount());
-        syncHalfCircleFanOpeningSlider();
+    var wearControlHome = document.getElementById("wear-control-home");
+    if (wearControlHome) {
+      wearControlHome.addEventListener("input", function () {
         renderHalfCircleLayer();
       });
     }
-
-    syncHalfCircleFanOpeningSlider();
-
-    var halfCircleFanOpening = document.getElementById("half-circle-fan-opening");
-    if (halfCircleFanOpening) {
-      halfCircleFanOpening.min = "0";
-      halfCircleFanOpening.addEventListener("input", function () {
-        syncHalfCircleFanOpeningSlider();
+    var wearControlOutside = document.getElementById("wear-control-outside");
+    if (wearControlOutside) {
+      wearControlOutside.addEventListener("input", function () {
         renderHalfCircleLayer();
       });
     }
@@ -11381,21 +13308,6 @@
       });
     }
 
-    var gridStrokeSlider = document.getElementById("grid-stroke-width");
-    if (gridStrokeSlider) {
-      gridStrokeSlider.min = String(GRID_STROKE_WIDTH_MIN);
-      gridStrokeSlider.max = String(GRID_STROKE_WIDTH_MAX);
-      gridStrokeSlider.value = String(GRID_STROKE_WIDTH_DEFAULT);
-      gridStrokeSlider.addEventListener("input", function () {
-        var strokeOut = document.getElementById("grid-stroke-width-out");
-        if (strokeOut) strokeOut.textContent = String(getGridStrokeWidth()) + " px";
-        updateGridBoundaryRect();
-        renderPatternLayer();
-        renderVerticalGridLayer();
-        renderAutoMergeFillsLayer();
-      });
-    }
-
     var circleDensitySlider = document.getElementById("circle-density");
     if (circleDensitySlider) {
       circleDensitySlider.min = String(CIRCLE_DENSITY_MIN);
@@ -11405,6 +13317,36 @@
         syncCircleSelection(true);
         var densityOut = document.getElementById("circle-density-out");
         if (densityOut) densityOut.textContent = String(getCircleDensity()) + "%";
+        renderPatternLayer();
+      });
+    }
+
+    var longingCircleDensitySlider = document.getElementById("longing-circle-density");
+    if (longingCircleDensitySlider) {
+      longingCircleDensitySlider.min = String(CIRCLE_DENSITY_MIN);
+      longingCircleDensitySlider.max = String(CIRCLE_DENSITY_MAX);
+      longingCircleDensitySlider.value = String(CIRCLE_DENSITY_DEFAULT);
+      longingCircleDensitySlider.addEventListener("input", function () {
+        syncLongingCircleSelection(true);
+        var longingDensityOut = document.getElementById("longing-circle-density-out");
+        if (longingDensityOut) {
+          longingDensityOut.textContent = String(getLongingCircleDensity()) + "%";
+        }
+        renderPatternLayer();
+      });
+    }
+
+    var griefCircleDensitySlider = document.getElementById("grief-circle-density");
+    if (griefCircleDensitySlider) {
+      griefCircleDensitySlider.min = String(CIRCLE_DENSITY_MIN);
+      griefCircleDensitySlider.max = String(CIRCLE_DENSITY_MAX);
+      griefCircleDensitySlider.value = String(CIRCLE_DENSITY_DEFAULT);
+      griefCircleDensitySlider.addEventListener("input", function () {
+        syncGriefCircleSelection(true);
+        var griefDensityOut = document.getElementById("grief-circle-density-out");
+        if (griefDensityOut) {
+          griefDensityOut.textContent = String(getGriefCircleDensity()) + "%";
+        }
         renderPatternLayer();
       });
     }
@@ -11424,6 +13366,17 @@
       });
     }
 
+    var anxietyVerticalStrokeSlider = document.getElementById("anxiety-vertical-stroke");
+    if (anxietyVerticalStrokeSlider) {
+      anxietyVerticalStrokeSlider.min = String(ANXIETY_VERTICAL_STROKE_MIN);
+      anxietyVerticalStrokeSlider.max = String(ANXIETY_VERTICAL_STROKE_MAX);
+      anxietyVerticalStrokeSlider.value = String(ANXIETY_VERTICAL_STROKE_DEFAULT);
+      anxietyVerticalStrokeSlider.addEventListener("input", function () {
+        syncAnxietyVerticalStrokeOutput();
+        renderVerticalGridLayer();
+      });
+    }
+
     var randomizeAllControlsBtn = document.getElementById(
       "randomize-all-controls-btn"
     );
@@ -11435,7 +13388,11 @@
     if (randomizeCirclesBtn) {
       randomizeCirclesBtn.addEventListener("click", function () {
         syncCircleSelection(true);
+        syncLongingCircleSelection(true);
+        syncGriefCircleSelection(true);
+        syncHelplessnessSelection(true);
         syncPrideShapes();
+        syncGuiltShameShapes();
         renderPatternLayer();
       });
     }
@@ -11459,6 +13416,58 @@
     if (prideColorShapesBtn) {
       prideColorShapesBtn.addEventListener("click", function () {
         syncPrideShapes();
+        renderPatternLayer();
+      });
+    }
+
+    var guiltShameFillPercentSlider = document.getElementById(
+      "guilt-shame-fill-percent"
+    );
+    if (guiltShameFillPercentSlider) {
+      guiltShameFillPercentSlider.min = String(GUILT_SHAME_FILL_PERCENT_MIN);
+      guiltShameFillPercentSlider.max = String(GUILT_SHAME_FILL_PERCENT_MAX);
+      guiltShameFillPercentSlider.value = String(GUILT_SHAME_FILL_PERCENT_DEFAULT);
+      guiltShameFillPercentSlider.addEventListener("input", function () {
+        var guiltShameFillOut = document.getElementById(
+          "guilt-shame-fill-percent-out"
+        );
+        if (guiltShameFillOut) {
+          guiltShameFillOut.textContent =
+            String(getGuiltShameFillPercent()) + "%";
+        }
+        syncGuiltShameShapes();
+        renderPatternLayer();
+      });
+    }
+
+    var guiltShameColorShapesBtn = document.getElementById(
+      "guilt-shame-color-shapes-btn"
+    );
+    if (guiltShameColorShapesBtn) {
+      guiltShameColorShapesBtn.addEventListener("click", function () {
+        syncGuiltShameShapes();
+        renderPatternLayer();
+      });
+    }
+
+    var helplessnessPercentSlider = document.getElementById("helplessness-percent");
+    if (helplessnessPercentSlider) {
+      helplessnessPercentSlider.min = String(HELPLESSNESS_PERCENT_MIN);
+      helplessnessPercentSlider.max = String(HELPLESSNESS_PERCENT_MAX);
+      helplessnessPercentSlider.value = String(HELPLESSNESS_PERCENT_DEFAULT);
+      helplessnessPercentSlider.addEventListener("input", function () {
+        syncHelplessnessSelection(true);
+        var helplessnessOut = document.getElementById("helplessness-percent-out");
+        if (helplessnessOut) {
+          helplessnessOut.textContent = String(getHelplessnessPercent()) + "%";
+        }
+        renderPatternLayer();
+      });
+    }
+
+    var helplessnessLayerToggle = document.getElementById("helplessness-layer-toggle");
+    if (helplessnessLayerToggle) {
+      helplessnessLayerToggle.addEventListener("change", function () {
         renderPatternLayer();
       });
     }
@@ -11516,9 +13525,12 @@
     updateAutoMergeIntensityOutput();
 
     loadHopeStippleImage();
-    initHopeDotsColorControls();
-    initColorPaletteControls();
-    applyRandomPaletteColors();
+
+    if (window.SheetPalettes) {
+      await window.SheetPalettes.loadSheetPalettes();
+      window.SheetPalettes.pickRandomPalette();
+      initSheetPaletteControls();
+    }
 
     if (window.IdentityControls && window.IdentityControls.setOnLivingInIranChange) {
       window.IdentityControls.setOnLivingInIranChange(refreshLabelBarContent);
@@ -11545,10 +13557,14 @@
     window.addEventListener("resize", layoutStage);
     initFeelingsCanvasToggles();
     lastCircleLayoutSignature = "";
+    lastLongingCircleLayoutSignature = "";
+    lastGriefCircleLayoutSignature = "";
+    lastHelplessnessLayoutSignature = "";
     lastDiamondLayoutSignature = "";
     render();
     syncFrameOverlayToggleButton();
     initMagnifier();
+    initSidebarScrollFocus();
     setMode("view");
   }
 

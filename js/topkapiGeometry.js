@@ -437,14 +437,33 @@
   }
 
   /**
+   * @param {number} x
+   * @param {number} y
+   * @param {{ x: number, y: number, width: number, height: number }} bounds
+   * @param {number} [epsilon]
+   * @returns {boolean}
+   */
+  function isPointOnGridBoundary(x, y, bounds, epsilon) {
+    var tol = typeof epsilon === "number" ? epsilon : 2;
+    return (
+      Math.abs(x - bounds.x) <= tol ||
+      Math.abs(x - (bounds.x + bounds.width)) <= tol ||
+      Math.abs(y - bounds.y) <= tol ||
+      Math.abs(y - (bounds.y + bounds.height)) <= tol
+    );
+  }
+
+  /**
    * Segment keys where at least one endpoint is incident to only that segment.
    * @param {{x1:number,y1:number,x2:number,y2:number}[]} segments
+   * @param {{ bounds?: { x: number, y: number, width: number, height: number } }} [options]
    * @returns {string[]}
    */
-  function findDanglingSegmentKeys(segments) {
+  function findDanglingSegmentKeys(segments, options) {
     var incidence = buildVertexIncidence(segments);
     var dangling = [];
     var seen = new Set();
+    var bounds = options && options.bounds ? options.bounds : null;
 
     for (var i = 0; i < segments.length; i++) {
       var s = segments[i];
@@ -456,7 +475,17 @@
       var v2 = vertexKey(s.x2, s.y2);
       var c1 = incidence[v1] ? incidence[v1].length : 0;
       var c2 = incidence[v2] ? incidence[v2].length : 0;
-      if (c1 === 1 || c2 === 1) dangling.push(sk);
+      if (c1 === 1 || c2 === 1) {
+        if (bounds) {
+          var loneOnBoundary =
+            (c1 === 1 &&
+              isPointOnGridBoundary(s.x1, s.y1, bounds)) ||
+            (c2 === 1 &&
+              isPointOnGridBoundary(s.x2, s.y2, bounds));
+          if (loneOnBoundary) continue;
+        }
+        dangling.push(sk);
+      }
     }
 
     return dangling;
@@ -467,9 +496,10 @@
    * Does not mutate removedSet.
    * @param {{x1:number,y1:number,x2:number,y2:number}[]} allSegments
    * @param {Set<string>} removedSet
+   * @param {{ bounds?: { x: number, y: number, width: number, height: number } }} [options]
    * @returns {string[]} keys in removal order (each prune wave)
    */
-  function findDanglingPruneKeys(allSegments, removedSet) {
+  function findDanglingPruneKeys(allSegments, removedSet, options) {
     var ordered = [];
     var removed = new Set(removedSet);
 
@@ -481,7 +511,7 @@
         if (!removed.has(k)) visible.push(s);
       }
 
-      var dangling = findDanglingSegmentKeys(visible);
+      var dangling = findDanglingSegmentKeys(visible, options);
       if (!dangling.length) break;
 
       var wave = false;
@@ -966,9 +996,75 @@
     return catalog;
   }
 
+  /**
+   * Half-side of the upright inner square at a cell center (X corner-to-corner).
+   * @param {number} T
+   * @param {number} cut
+   * @param {number} innerScale
+   * @returns {number}
+   */
+  function innerCrossHalfExtent(T, cut, innerScale) {
+    if (typeof innerScale !== "number") {
+      innerScale = 1;
+    }
+    return (T / 2 - cut) * innerScale;
+  }
+
+  /**
+   * Where the two inner diagonals cross inside each large octagon cell.
+   * @param {number} octagonsN
+   * @param {number} canvasW
+   * @param {number} canvasH
+   * @param {number} [innerScale]
+   * @returns {{ id: string, cx: number, cy: number, halfW: number, halfH: number }[]}
+   */
+  function buildHelplessnessJunctionCatalog(
+    octagonsN,
+    canvasW,
+    canvasH,
+    innerScale
+  ) {
+    if (typeof innerScale !== "number") {
+      innerScale = 1;
+    }
+    var layout = computeLayout(octagonsN, canvasW, canvasH);
+    var T = layout.tileSize;
+    var cut = T * CUT;
+    var halfExtent = innerCrossHalfExtent(T, cut, innerScale);
+    var catalog = [];
+    var row;
+    var col;
+
+    for (row = 0; row < layout.rows; row++) {
+      for (col = 0; col < layout.cols; col++) {
+        catalog.push({
+          id: "hp-x-" + col + "-" + row,
+          cx: (col + 0.5) * T,
+          cy: layout.offsetY + (row + 0.5) * T,
+          halfW: halfExtent,
+          halfH: halfExtent,
+        });
+      }
+    }
+
+    var bounds = getGridContentBounds(octagonsN, canvasW, canvasH);
+    return catalog.filter(function (entry) {
+      return (
+        entry.cx >= bounds.x &&
+        entry.cx <= bounds.x + bounds.width &&
+        entry.cy >= bounds.y &&
+        entry.cy <= bounds.y + bounds.height
+      );
+    });
+  }
+
   var VERTICAL_SEGMENT_X_EPS = 1e-6;
   var FACE_MIN_AREA = 0.5;
   var FACE_MAX_AREA_RATIO = 0.5;
+  /** Reject exterior faces that enclose most baseline cells (merge mask holes). */
+  var MERGED_FACE_MAX_BASELINE_FRACTION = 0.85;
+  /** Allow larger merged faces than generic tracing (still below exterior face). */
+  var MERGED_FACE_MAX_AREA_RATIO = 0.98;
 
   /**
    * @param {{x:number,y:number}[]} points
@@ -1142,14 +1238,21 @@
    * @param {{x1:number,y1:number,x2:number,y2:number}[]} segments
    * @returns {{ points: { x: number, y: number }[] }[]}
    */
-  function traceFaces(segments) {
+  function traceFaces(segments, options) {
     if (!segments.length) return [];
+    options = options || {};
 
     var halfEdges = buildHalfEdges(segments);
     var used = new Set();
     var faces = [];
     var bbox = segmentsBoundingBox(segments);
-    var maxArea = bbox.width * bbox.height * FACE_MAX_AREA_RATIO;
+    var areaRatio =
+      typeof options.maxAreaRatio === "number"
+        ? options.maxAreaRatio
+        : FACE_MAX_AREA_RATIO;
+    var maxArea = options.skipMaxAreaFilter
+      ? 0
+      : bbox.width * bbox.height * areaRatio;
 
     for (var i = 0; i < halfEdges.length; i++) {
       var start = halfEdges[i];
@@ -1349,14 +1452,23 @@
 
     var baselineFaces = traceFaces(allSegments);
     var visible = getVisibleSegmentsFromRemoved(allSegments, removedSet);
-    var currentFaces = traceFaces(visible);
+    var currentFaces = traceFaces(visible, {
+      maxAreaRatio: MERGED_FACE_MAX_AREA_RATIO,
+    });
     var merged = [];
+    var totalBaseline = baselineFaces.length;
 
     for (var i = 0; i < currentFaces.length; i++) {
       var face = currentFaces[i];
-      if (countBaselineFacesInsideCurrentFace(face, baselineFaces) > 1) {
-        merged.push(face);
+      var insideCount = countBaselineFacesInsideCurrentFace(face, baselineFaces);
+      if (insideCount <= 1) continue;
+      if (
+        totalBaseline > 0 &&
+        insideCount / totalBaseline > MERGED_FACE_MAX_BASELINE_FRACTION
+      ) {
+        continue;
       }
+      merged.push(face);
     }
 
     return merged;
@@ -1995,6 +2107,7 @@
     filterValidRestoreKeys: filterValidRestoreKeys,
     buildDiamondCatalog: buildDiamondCatalog,
     buildUprightSquareCatalog: buildUprightSquareCatalog,
+    buildHelplessnessJunctionCatalog: buildHelplessnessJunctionCatalog,
     collectUniqueGridXCoords: collectUniqueGridXCoords,
     traceFaces: traceFaces,
     getMergedPolygonRegions: getMergedPolygonRegions,

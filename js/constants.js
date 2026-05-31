@@ -11,15 +11,29 @@ var GRID_BOUNDARY_STROKE_WIDTH = 5;
 /** Layout margins (CSS px) around scaled canvas */
 var VIEW_MARGIN = 24;
 
-/** Grid + circle stroke (shared color picker) — RGB(104, 84, 80) */
-var PATTERN_STROKE_COLOR_DEFAULT = "#685450";
+/** Grid + circle stroke (shared color picker) — RGB(255, 60, 60) */
+var PATTERN_STROKE_COLOR_DEFAULT = "#ff3c3c";
 /** Sadness circles fill (color picker default) */
 var CIRCLE_FILL_COLOR_DEFAULT = "#ffffff";
-var GRID_STROKE_WIDTH_MIN = 1;
-var GRID_STROKE_WIDTH_MAX = 3;
 var GRID_STROKE_WIDTH_DEFAULT = 1;
-/** Canvas background (color picker default) */
-var CANVAS_BACKGROUND_COLOR_DEFAULT = "#ffffff";
+/** Color divisions slider: 1 = none, 5 = four regions colored */
+var COLOR_DIVISIONS_MIN = 1;
+var COLOR_DIVISIONS_MAX = 5;
+var COLOR_DIVISIONS_DEFAULT = 1;
+var COLOR_DIVISIONS_FILL_DEFAULT = "#4200ae";
+/** Max colored regions from the palette table (slots H1–H4) */
+var COLOR_DIVISIONS_REGION_COUNT = 4;
+/** Area 1–4 defaults: RGB(66,0,174), (178,255,0), (255,255,255), (31,42,20) */
+var COLOR_DIVISIONS_FILL_DEFAULTS = [
+  "#4200ae",
+  "#b2ff00",
+  "#ffffff",
+  "#000000",
+];
+/** Canvas background (color picker default) — must be one of CANVAS_BACKGROUND_COLORS */
+var CANVAS_BACKGROUND_COLOR_DEFAULT = "#fffce8";
+/** Only these three colors may be used as canvas background */
+var CANVAS_BACKGROUND_COLORS = ["#fffce8", "#ffc9e2", "#ffeff7"];
 var BG_COLOR = CANVAS_BACKGROUND_COLOR_DEFAULT;
 
 /**
@@ -33,7 +47,7 @@ var CANVAS_EDGE_BROWN_BAR_COLOR = "#685450";
 /** Label bar background (color picker default) */
 var LABEL_BAR_BACKGROUND_COLOR_DEFAULT = CANVAS_EDGE_BROWN_BAR_COLOR;
 /** Icons, text, and separators on the label bar (color picker default) */
-var LABEL_BAR_CONTENT_COLOR_DEFAULT = "#ffffff";
+var LABEL_BAR_CONTENT_COLOR_DEFAULT = "#b2ff00";
 /** Horizontal bands inside each top/bottom brown bar (2 divider lines → 3 equal parts) */
 var CANVAS_EDGE_BROWN_BAR_HORIZONTAL_SEGMENTS = 3;
 /** Division lines on brown bars (visible on #685450 fill) */
@@ -50,7 +64,7 @@ var CANVAS_EDGE_BROWN_BAR_GRID_ROW_RATIOS = [0.4, 0.4, 0.2];
 var CANVAS_EDGE_BROWN_BAR_OUTER_THIRD_GRID_INSET_PX = 10;
 /** Padding on the inner edge (toward row 2 / horizontal division above the grid) */
 var CANVAS_EDGE_BROWN_BAR_OUTER_THIRD_GRID_INSET_TOP_PX = 0;
-/** Non-highlighted grid cells in outer third (use Label content / pipette color) */
+/** Non-highlighted grid cells in outer third (use label content color from palette) */
 var CANVAS_EDGE_BROWN_BAR_GRID_CELL_BASE_FILL = "#ffffff";
 /** Min column width (px) for randomized outer-third grid columns */
 var CANVAS_EDGE_BROWN_BAR_GRID_MIN_COL_WIDTH_PX = 10;
@@ -127,9 +141,10 @@ var LABEL_BAR_BARCODE_SVG = "barcode.svg";
 var LABEL_BAR_PROFILE_FROM_DEFAULT = "TEHERAN";
 var LABEL_BAR_PROFILE_NOW_IN_DEFAULT = "MAINZ";
 var LABEL_BAR_PROFILE_LEAVING_YEAR_DEFAULT = "2021";
+var LABEL_BAR_AGE_DEFAULT = "27";
 /** Row 2: left icon + leaving year text (single cluster) */
 var LABEL_BAR_LEFT_SVG = "left.svg";
-/** Row 2: women icon left of undercover arabic */
+/** Row 2: women icon left of undercover english */
 var LABEL_BAR_WOMEN_SVG = "women.svg";
 /** Fixed wordmarks by the lions */
 var LABEL_BAR_LEFT_LION_INNER_ROW1_SVG = "undercover english.svg";
@@ -147,7 +162,7 @@ var LABEL_BAR_AGE_OVERLAY_FONT_SIZE_RATIO = 0.58;
 var LABEL_BAR_AGE_OVERLAY_FILL = "#ffffff";
 /** Nudge age digits down inside the circle (px) */
 var LABEL_BAR_AGE_OVERLAY_Y_OFFSET_PX = 1;
-var LABEL_BAR_RIGHT_LION_INNER_ROW2_SVG = "undercover arabic.svg";
+var LABEL_BAR_RIGHT_LION_INNER_ROW2_SVG = "undercover english.svg";
 /** Profile Lost slider → icon inward from the right lion (row 1) */
 var LABEL_BAR_LOST_INNER_SVG = "LOST/man.svg";
 var LABEL_BAR_LOST_MIDDLE_SVG = "LOST/2 man.svg";
@@ -287,10 +302,10 @@ var BORDER_SIDE_CELL_COLOR_BROWN = "#685450";
 var BORDER_SIDE_CELL_COLOR_BLUE = "#ff3c3c";
 
 /** Four triangles inside the X on each brown margin cell */
-var BORDER_SIDE_X_FILL_TOP = "#685450";
-var BORDER_SIDE_X_FILL_LEFT = "#ff3c3c";
-var BORDER_SIDE_X_FILL_RIGHT = "#fdfae3";
-var BORDER_SIDE_X_FILL_BOTTOM = "#d9d9d9";
+var BORDER_SIDE_X_FILL_TOP = "#655551";
+var BORDER_SIDE_X_FILL_LEFT = "#655551";
+var BORDER_SIDE_X_FILL_RIGHT = "#eb4f46";
+var BORDER_SIDE_X_FILL_BOTTOM = "#3c06a7";
 
 /** Blue margin cell X: top/bottom blue, left/right brown */
 var BORDER_SIDE_BLUE_X_FILL_TOP = BORDER_SIDE_CELL_COLOR_BLUE;
@@ -299,9 +314,9 @@ var BORDER_SIDE_BLUE_X_FILL_LEFT = BORDER_SIDE_CELL_COLOR_BROWN;
 var BORDER_SIDE_BLUE_X_FILL_RIGHT = BORDER_SIDE_CELL_COLOR_BROWN;
 
 /** Empty margin row between home and outside (solid, no X) */
-var BORDER_SIDE_CELL_COLOR_GREY = "#d9d9d9";
-/** Empty margin row after outside — same as outside X right triangle */
-var BORDER_SIDE_CELL_COLOR_BEIGE = BORDER_SIDE_X_FILL_RIGHT;
+var BORDER_SIDE_CELL_COLOR_GREY = "#f7cecd";
+/** Empty margin row after outside */
+var BORDER_SIDE_CELL_COLOR_BEIGE = "#655551";
 
 /** Default fill for pride diamonds — #FF3C3C */
 var DIAMOND_FILL_COLOR_DEFAULT = "#ff3c3c";
@@ -311,6 +326,21 @@ var PRIDE_FILL_PERCENT_MIN = 10;
 var PRIDE_FILL_PERCENT_MAX = 40;
 var PRIDE_FILL_PERCENT_DEFAULT = 25;
 
+/** Guilt / Shame: hollow junction diamonds (% of diamond catalog on canvas) */
+var GUILT_SHAME_FILL_PERCENT_MIN = 10;
+var GUILT_SHAME_FILL_PERCENT_MAX = 40;
+var GUILT_SHAME_FILL_PERCENT_DEFAULT = 25;
+/** Inner hole scale relative to outer diamond (0.5 = half size) */
+var GUILT_SHAME_INNER_DIAMOND_SCALE = 0.5;
+var GUILT_SHAME_DIAMOND_FILL_COLOR_DEFAULT = "#ff3c3c";
+
+/** Helplessness: X marks at inner-diagonal crossings in each octagon cell (% of catalog) */
+var HELPLESSNESS_PERCENT_MIN = 10;
+var HELPLESSNESS_PERCENT_MAX = 40;
+var HELPLESSNESS_PERCENT_DEFAULT = 10;
+var HELPLESSNESS_SHUFFLE_SEED = 847293;
+var HELPLESSNESS_STROKE_WIDTH = 3;
+
 /** Anger slider: visible length of vertical grid lines across full width (% of full span) */
 var ANGER_VERTICAL_LENGTH_MIN = 0;
 var ANGER_VERTICAL_LENGTH_MAX = 40;
@@ -318,11 +348,13 @@ var ANGER_VERTICAL_LENGTH_DEFAULT = 40;
 /** At slider 0%, line span = this × the previous minimum (0.5 = 2× shorter than before) */
 var ANGER_VERTICAL_LENGTH_MIN_SPAN_RATIO = 0.5;
 
-/** 6-fold rotated-square grid (six-fold.html): repeat unit side length in px */
-var SIX_FOLD_UNIT_MIN = 40;
-var SIX_FOLD_UNIT_MAX = 280;
-var SIX_FOLD_UNIT_DEFAULT = 100;
-var SIX_FOLD_STROKE_WIDTH = 1;
+/** Anxiety slider: fear vertical line stroke (0–100 maps min → max px) */
+var ANXIETY_VERTICAL_STROKE_MIN = 0;
+var ANXIETY_VERTICAL_STROKE_MAX = 100;
+/** ~17% ≈ 3 px at default grid weight (2×1 … 8 px), matching prior 3× grid stroke */
+var ANXIETY_VERTICAL_STROKE_DEFAULT = 17;
+var ANXIETY_VERTICAL_STROKE_MAX_PX = 8;
+var ANXIETY_VERTICAL_STROKE_GRID_MULT_MIN = 2;
 
 /** Star grid (nested-star-octagons.html): minimum tile size in px */
 var NESTED_STAR_TILE_MIN = 40;
@@ -362,3 +394,27 @@ var COLOR_PALETTE = [
   "#FFFCE8",
 ];
 var COLOR_PALETTE_PICK_COUNT = 5;
+
+/** Default 5-color session shown on first load (Active palette row). */
+var DEFAULT_ACTIVE_PALETTE = [
+  "#fffce8",
+  "#ff3c3c",
+  "#685450",
+  "#b2ff00",
+  "#ffc9e2",
+];
+
+/** Default role colors on first load (matches Colors & export pickers). */
+var DEFAULT_COLOR_ASSIGNMENTS = {
+  canvasBackground: "#fffce8",
+  patternStroke: "#ff3c3c",
+  diamondFill: "#ff3c3c",
+  labelBarBackground: "#685450",
+  labelBarContent: "#b2ff00",
+  borderSideGrey: "#f7cecd",
+  borderSideBeige: "#655551",
+  borderSideXTop: "#655551",
+  borderSideXLeft: "#655551",
+  borderSideXRight: "#eb4f46",
+  borderSideXBottom: "#3c06a7",
+};

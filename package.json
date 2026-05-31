@@ -1,0 +1,31 @@
+{
+  "name": "under.cover---grids",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "dependencies": {
+    "boolbase": "^1.0.0",
+    "css-select": "^5.2.2",
+    "css-what": "^6.2.2",
+    "cssom": "^0.5.0",
+    "dom-serializer": "^2.0.0",
+    "domelementtype": "^2.3.0",
+    "domhandler": "^5.0.3",
+    "domutils": "^3.2.2",
+    "entities": "^4.5.0",
+    "html-escaper": "^3.0.3",
+    "htmlparser2": "^10.1.0",
+    "linkedom": "^0.18.9",
+    "nth-check": "^2.1.1",
+    "uhyphen": "^0.2.0"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "sync:palette-csv": "curl -sL \"https://docs.google.com/spreadsheets/d/1V7A6B8TV905pomdluT97zMrABwlBeNSLeaaPLEigRRA/export?format=csv&gid=624707697\" -o data/sheet-palette-colors.csv"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs"
+}

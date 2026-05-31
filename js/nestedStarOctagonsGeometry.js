@@ -969,6 +969,73 @@ function roundCoord(v) {
           return catalog;
         }
 
+        /**
+         * Helplessness X marks on star grid: diagonal crossings between adjacent octagons
+         * (not junction diamonds). H-mid = between two vertically stacked octagons;
+         * V-mid = between two horizontally adjacent octagons. X half-extent = cut / 2.
+         * @param {{ tileSize: number, cols: number, rows: number, offsetY: number }} layout
+         * @param {number} canvasW
+         * @param {number} canvasH
+         * @returns {{ id: string, cx: number, cy: number, halfW: number, halfH: number }[]}
+         */
+        function buildHelplessnessJunctionCatalog(layout, canvasW, canvasH) {
+          var T = layout.tileSize;
+          var cut = T * CUT_RATIO;
+          var halfExtent = cut / 2;
+          var margin = halfExtent;
+          var catalog = [];
+          var row;
+          var col;
+          var cx;
+          var cy;
+
+          for (row = 0; row <= layout.rows; row++) {
+            for (col = 0; col < layout.cols; col++) {
+              cx = (col + 0.5) * T;
+              cy = layout.offsetY + row * T;
+              if (
+                cx + margin <= 0 ||
+                cx - margin >= canvasW ||
+                cy + margin <= 0 ||
+                cy - margin >= canvasH
+              ) {
+                continue;
+              }
+              catalog.push({
+                id: "star-hp-h-" + col + "-" + row,
+                cx: cx,
+                cy: cy,
+                halfW: halfExtent,
+                halfH: halfExtent,
+              });
+            }
+          }
+
+          for (row = 0; row < layout.rows; row++) {
+            for (col = 0; col <= layout.cols; col++) {
+              cx = col * T;
+              cy = layout.offsetY + (row + 0.5) * T;
+              if (
+                cx + margin <= 0 ||
+                cx - margin >= canvasW ||
+                cy + margin <= 0 ||
+                cy - margin >= canvasH
+              ) {
+                continue;
+              }
+              catalog.push({
+                id: "star-hp-v-" + col + "-" + row,
+                cx: cx,
+                cy: cy,
+                halfW: halfExtent,
+                halfH: halfExtent,
+              });
+            }
+          }
+
+          return catalog;
+        }
+
   global.NestedStarOctagonsGeometry = {
     computeLayoutFromN: computeLayoutFromN,
     buildValidLayouts: buildValidLayouts,
@@ -981,5 +1048,6 @@ function roundCoord(v) {
     collectStarGridVerticalAnchorXCoords: collectStarGridVerticalAnchorXCoords,
     buildJunctionDiamondCatalog: buildJunctionDiamondCatalog,
     buildJunctionCircleCatalog: buildJunctionCircleCatalog,
+    buildHelplessnessJunctionCatalog: buildHelplessnessJunctionCatalog,
   };
 })(typeof window !== "undefined" ? window : this);

@@ -38,6 +38,12 @@
     circleFill: "circle-fill-color",
     hopeDots: "hope-dots-color",
     halfCircle: "half-circle-color",
+    borderSideGrey: "border-side-grey-color",
+    borderSideBeige: "border-side-beige-color",
+    borderSideXTop: "border-side-x-top-color",
+    borderSideXLeft: "border-side-x-left-color",
+    borderSideXRight: "border-side-x-right-color",
+    borderSideXBottom: "border-side-x-bottom-color",
   };
 
   var ROLE_TO_GLOBAL = {
@@ -101,12 +107,83 @@
     return activeColors[Math.floor(Math.random() * activeColors.length)];
   }
 
-  function pickRandomFromExcept(activeColors, excludeHex) {
+  function colorsEquivalent(a, b) {
+    var na = normalizeHex(a);
+    var nb = normalizeHex(b);
+    return !!(na && nb && na === nb);
+  }
+
+  function pickRandomFromExceptMany(activeColors, excludeHexes) {
+    var excludes = {};
+    var i;
+    for (i = 0; i < excludeHexes.length; i++) {
+      var normalized = normalizeHex(excludeHexes[i]);
+      if (normalized) excludes[normalized] = true;
+    }
     var choices = activeColors.filter(function (color) {
-      return color !== excludeHex;
+      var hex = normalizeHex(color);
+      return hex && !excludes[hex];
     });
     if (!choices.length) return pickRandomFrom(activeColors);
     return pickRandomFrom(choices);
+  }
+
+  function pickRandomFromExcept(activeColors, excludeHex) {
+    return pickRandomFromExceptMany(activeColors, [excludeHex]);
+  }
+
+  function getCanvasBackgroundPalette() {
+    if (
+      typeof CANVAS_BACKGROUND_COLORS !== "undefined" &&
+      CANVAS_BACKGROUND_COLORS.length
+    ) {
+      return CANVAS_BACKGROUND_COLORS.slice();
+    }
+    return getPalette();
+  }
+
+  function isCanvasBackgroundEquivalent(hex) {
+    var normalized = normalizeHex(hex);
+    if (!normalized) return false;
+    var palette = getCanvasBackgroundPalette();
+    var i;
+    for (i = 0; i < palette.length; i++) {
+      if (normalizeHex(palette[i]) === normalized) return true;
+    }
+    return false;
+  }
+
+  function snapPatternStrokeColorForPalette(value) {
+    var normalized = normalizeHex(value);
+    if (normalized && !isCanvasBackgroundEquivalent(normalized)) return normalized;
+
+    var activeColors =
+      typeof activePick !== "undefined" && activePick.length
+        ? activePick
+        : getPalette();
+    var i;
+    for (i = 0; i < activeColors.length; i++) {
+      var candidate = normalizeHex(activeColors[i]);
+      if (candidate && !isCanvasBackgroundEquivalent(candidate)) return candidate;
+    }
+
+    var fallback =
+      typeof PATTERN_STROKE_COLOR_DEFAULT !== "undefined"
+        ? PATTERN_STROKE_COLOR_DEFAULT
+        : "#685450";
+    return normalizeHex(fallback) || "#685450";
+  }
+
+  function snapCanvasBackgroundColorForPalette(value) {
+    var allowed = getCanvasBackgroundPalette();
+    var normalized = normalizeHex(value);
+    var i;
+    if (normalized) {
+      for (i = 0; i < allowed.length; i++) {
+        if (normalizeHex(allowed[i]) === normalized) return normalized;
+      }
+    }
+    return normalizeHex(allowed[0]) || "#fffce8";
   }
 
   /**
@@ -117,20 +194,29 @@
     var i;
     var role;
     var color;
+    var canvasBackgroundPalette = getCanvasBackgroundPalette();
 
-    // Rule: grid background and grid line color must never match.
-    result.canvasBackground = pickRandomFrom(activeColors);
-    result.patternStroke = pickRandomFromExcept(
+    // Rule: canvas background is limited to the three approved colors.
+    result.canvasBackground = pickRandomFrom(canvasBackgroundPalette);
+    // Rule: grid lines must never use any canvas background color.
+    result.patternStroke = pickRandomFromExceptMany(
       activeColors,
-      result.canvasBackground
+      canvasBackgroundPalette
     );
 
+    // Rule: fan face / label bar background must never match grid background.
+    result.labelBarBackground = pickRandomFromExceptMany(activeColors, [
+      result.canvasBackground,
+    ]);
     // Rule: label bar background and content (text + symbols) must never match.
-    result.labelBarBackground = pickRandomFrom(activeColors);
-    result.labelBarContent = pickRandomFromExcept(
-      activeColors,
-      result.labelBarBackground
-    );
+    result.labelBarContent = pickRandomFromExceptMany(activeColors, [
+      result.labelBarBackground,
+    ]);
+    // Rule: fan star fills must never match grid background.
+    result.circleFill = pickRandomFromExceptMany(activeColors, [
+      result.canvasBackground,
+      result.labelBarBackground,
+    ]);
 
     for (i = 0; i < roles.length; i++) {
       role = roles[i];
@@ -138,6 +224,25 @@
       color = pickRandomFrom(activeColors);
       result[role] = color;
     }
+
+    if (colorsEquivalent(result.labelBarBackground, result.canvasBackground)) {
+      result.labelBarBackground = pickRandomFromExceptMany(activeColors, [
+        result.canvasBackground,
+      ]);
+    }
+    if (colorsEquivalent(result.circleFill, result.canvasBackground)) {
+      result.circleFill = pickRandomFromExceptMany(activeColors, [
+        result.canvasBackground,
+        result.labelBarBackground,
+      ]);
+    }
+    if (isCanvasBackgroundEquivalent(result.patternStroke)) {
+      result.patternStroke = pickRandomFromExceptMany(
+        activeColors,
+        canvasBackgroundPalette
+      );
+    }
+
     return result;
   }
 
@@ -179,7 +284,14 @@
       inputId = ROLE_TO_INPUT_ID[role];
       if (inputId) {
         input = document.getElementById(inputId);
-        if (input) input.value = hex;
+        if (input) {
+          input.value =
+            role === "canvasBackground"
+              ? snapCanvasBackgroundColorForPalette(hex)
+              : role === "patternStroke"
+                ? snapPatternStrokeColorForPalette(hex)
+                : hex;
+        }
       }
 
       globalName = ROLE_TO_GLOBAL[role];
@@ -210,18 +322,43 @@
       .join("");
   }
 
-  function randomizeCanvasColors() {
-    activePick = pickRandomPaletteColors(getPickCount());
-    assignments = assignRolesFromActiveColors(COLOR_ROLES, activePick);
-    applyAssignments(assignments);
-    updateActivePaletteSwatches();
-
+  function notifyApplied() {
     if (typeof onApplied === "function") {
       onApplied({
         activePick: activePick.slice(),
         assignments: Object.assign({}, assignments),
       });
     }
+  }
+
+  function applyDefaultCanvasColors() {
+    var defaultPick =
+      typeof DEFAULT_ACTIVE_PALETTE !== "undefined" && DEFAULT_ACTIVE_PALETTE.length
+        ? DEFAULT_ACTIVE_PALETTE.slice()
+        : pickRandomPaletteColors(getPickCount());
+    var defaultAssignments =
+      typeof DEFAULT_COLOR_ASSIGNMENTS !== "undefined"
+        ? Object.assign({}, DEFAULT_COLOR_ASSIGNMENTS)
+        : assignRolesFromActiveColors(COLOR_ROLES, defaultPick);
+
+    activePick = defaultPick;
+    assignments = defaultAssignments;
+    applyAssignments(assignments);
+    updateActivePaletteSwatches();
+    notifyApplied();
+
+    return {
+      activePick: activePick.slice(),
+      assignments: Object.assign({}, assignments),
+    };
+  }
+
+  function randomizeCanvasColors() {
+    activePick = pickRandomPaletteColors(getPickCount());
+    assignments = assignRolesFromActiveColors(COLOR_ROLES, activePick);
+    applyAssignments(assignments);
+    updateActivePaletteSwatches();
+    notifyApplied();
 
     return {
       activePick: activePick.slice(),
@@ -230,6 +367,7 @@
   }
 
   global.ColorPalette = {
+    applyDefaultCanvasColors: applyDefaultCanvasColors,
     randomizeCanvasColors: randomizeCanvasColors,
     getActivePick: function () {
       return activePick.slice();

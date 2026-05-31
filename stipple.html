@@ -321,6 +321,10 @@
         Download PNG
       </button>
 
+      <button type="button" id="download-svg-btn" class="btn" disabled>
+        Download SVG
+      </button>
+
       <div class="progress-wrap" id="progress-wrap" aria-live="polite">
         <progress id="progress" max="100" value="0"></progress>
         <p class="progress-label" id="progress-label">Processing… 0%</p>
@@ -346,6 +350,7 @@
         var srcH = 0;
         var generationId = 0;
         var colorMode = "bw";
+        var lastExport = null;
 
         var panel = document.getElementById("panel");
         var fileInput = document.getElementById("file-input");
@@ -360,6 +365,7 @@
         var modeColorBtn = document.getElementById("mode-color");
         var generateBtn = document.getElementById("generate-btn");
         var downloadBtn = document.getElementById("download-btn");
+        var downloadSvgBtn = document.getElementById("download-svg-btn");
         var progressWrap = document.getElementById("progress-wrap");
         var progressEl = document.getElementById("progress");
         var progressLabel = document.getElementById("progress-label");
@@ -391,10 +397,15 @@
           dotSpacingOut.textContent = dotSpacingInput.value + "px";
         }
 
+        function setDownloadEnabled(enabled) {
+          downloadBtn.disabled = !enabled;
+          downloadSvgBtn.disabled = !enabled;
+        }
+
         function setBusy(busy) {
           panel.classList.toggle("is-busy", busy);
           generateBtn.disabled = busy || !sourceImage;
-          if (busy) downloadBtn.disabled = true;
+          if (busy) setDownloadEnabled(false);
         }
 
         function showProgress(visible) {
@@ -431,7 +442,8 @@
                 size.outH +
                 " at current resolution";
               generateBtn.disabled = false;
-              downloadBtn.disabled = true;
+              lastExport = null;
+              setDownloadEnabled(false);
             };
             img.onerror = function () {
               alert("Could not load this image. Try another JPG or PNG.");
@@ -653,7 +665,8 @@
           setBusy(true);
           showProgress(true);
           setProgress(0, gridRows);
-          downloadBtn.disabled = true;
+          lastExport = null;
+          setDownloadEnabled(false);
 
           var imageData = scaleSourceToCanvas(outW, outH);
           var samples = sampleGrid(imageData, pitch, gridCols, gridRows);
@@ -729,7 +742,18 @@
               if (jobId !== generationId) return;
               showProgress(false);
               setBusy(false);
-              downloadBtn.disabled = false;
+              lastExport = {
+                outW: outW,
+                outH: outH,
+                pitch: pitch,
+                dotRadius: dotRadius,
+                gridCols: gridCols,
+                gridRows: gridRows,
+                place: place,
+                samples: samples,
+                isColor: isColor,
+              };
+              setDownloadEnabled(true);
               fileMeta.textContent =
                 fileMeta.textContent.split(" — ")[0] +
                 " — output " +
@@ -792,15 +816,89 @@
           runGeneration();
         });
 
+        function downloadBlob(blob, filename) {
+          if (!blob) return;
+          var a = document.createElement("a");
+          a.download = filename;
+          a.href = URL.createObjectURL(blob);
+          a.click();
+          URL.revokeObjectURL(a.href);
+        }
+
+        function buildStippleSvg(exportData) {
+          var parts = [
+            '<?xml version="1.0" encoding="UTF-8"?>',
+            '<svg xmlns="http://www.w3.org/2000/svg" width="' +
+              exportData.outW +
+              '" height="' +
+              exportData.outH +
+              '" viewBox="0 0 ' +
+              exportData.outW +
+              " " +
+              exportData.outH +
+              '">',
+            '<rect width="100%" height="100%" fill="#ffffff"/>',
+          ];
+          var place = exportData.place;
+          var pitch = exportData.pitch;
+          var dotRadius = exportData.dotRadius;
+          var gridCols = exportData.gridCols;
+          var gridRows = exportData.gridRows;
+          var outW = exportData.outW;
+          var outH = exportData.outH;
+          var samples = exportData.samples;
+          var isColor = exportData.isColor;
+
+          for (var y = 0; y < gridRows; y++) {
+            for (var x = 0; x < gridCols; x++) {
+              var i = y * gridCols + x;
+              if (!place[i]) continue;
+
+              var cx = x * pitch + pitch / 2;
+              var cy = y * pitch + pitch / 2;
+              if (cx >= outW || cy >= outH) continue;
+
+              var fill = isColor
+                ? "rgb(" +
+                  Math.round(samples.r[i]) +
+                  "," +
+                  Math.round(samples.g[i]) +
+                  "," +
+                  Math.round(samples.b[i]) +
+                  ")"
+                : "#000000";
+
+              parts.push(
+                '<circle cx="' +
+                  cx +
+                  '" cy="' +
+                  cy +
+                  '" r="' +
+                  dotRadius +
+                  '" fill="' +
+                  fill +
+                  '"/>'
+              );
+            }
+          }
+
+          parts.push("</svg>");
+          return parts.join("");
+        }
+
         downloadBtn.addEventListener("click", function () {
           outputCanvas.toBlob(function (blob) {
-            if (!blob) return;
-            var a = document.createElement("a");
-            a.download = "stipple-" + Date.now() + ".png";
-            a.href = URL.createObjectURL(blob);
-            a.click();
-            URL.revokeObjectURL(a.href);
+            downloadBlob(blob, "stipple-" + Date.now() + ".png");
           }, "image/png");
+        });
+
+        downloadSvgBtn.addEventListener("click", function () {
+          if (!lastExport) return;
+          var svg = buildStippleSvg(lastExport);
+          downloadBlob(
+            new Blob([svg], { type: "image/svg+xml;charset=utf-8" }),
+            "stipple-" + Date.now() + ".svg"
+          );
         });
 
         updateSliderOutputs();

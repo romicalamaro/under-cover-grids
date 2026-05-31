@@ -10,7 +10,10 @@
   /** @type {((choice: 1 | 2 | 3) => void) | null} */
   var onLostCircleChange = null;
   /** @type {string} */
-  var ageValue = "";
+  var ageValue =
+    typeof LABEL_BAR_AGE_DEFAULT !== "undefined"
+      ? LABEL_BAR_AGE_DEFAULT
+      : "27";
   /** @type {((value: string) => void) | null} */
   var onAgeChange = null;
   /** @type {string} */
@@ -314,19 +317,6 @@
     }
   }
 
-  function initRegimeSlider() {
-    initThreeStepSlider({
-      sliderId: "identity-regime-slider",
-      controlId: "identity-regime-control",
-      labelAttr: "data-regime",
-      labelsMap: {
-        1: "Personal",
-        2: "Family Members",
-        3: "Friends",
-      },
-    });
-  }
-
   function initLostSlider() {
     initThreeStepSlider({
       sliderId: "identity-lost-slider",
@@ -369,17 +359,11 @@
 
   function init() {
     initLivingInIranToggle();
-    initYesNoToggle({
-      yesBtnId: "family-friends-iran-yes-btn",
-      noBtnId: "family-friends-iran-no-btn",
-      defaultYes: true,
-    });
     initAgeInput();
     initLeavingYearInput();
     initNameInput();
     initNameDisplayModeToggle();
     initFromAndNowInInputs();
-    initRegimeSlider();
     initLostSlider();
     initWearControlSliders();
   }
