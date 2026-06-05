@@ -156,7 +156,7 @@ var LABEL_BAR_SVG_DIMENSIONS = {
   "from.svg": { width: 96, height: 85 },
   "now in.svg": { width: 96, height: 85 },
   "circle.svg": { width: 154, height: 152 },
-  "Union.svg": { width: 212.27, height: 53 },
+  "Union.svg": { width: 296.9, height: 53 },
   "Vector.svg": { width: 164, height: 91 },
   "left.svg": { width: 81, height: 80 },
   "women.svg": { width: 47.58, height: 80 },
@@ -325,6 +325,8 @@ var STRENGTH_DENSITY_DEFAULT = CIRCLE_DENSITY_DEFAULT;
 
 /** Left/right horizontal divisions inset from grid border (top and bottom), px */
 var BORDER_SIDE_DIVISION_INSET_PX = 30;
+/** Filled dots at border-frame grid line crossings (diameter, px) */
+var BORDER_DIVISION_JUNCTION_CIRCLE_DIAMETER_PX = 5;
 
 /** Inset frame overlay inside grid content bounds (px from grid frame edges) */
 var GRID_FRAME_INSET_OVERLAY_HORIZONTAL_PX = 90;
@@ -359,6 +361,49 @@ var BORDER_SIDE_WHITE_FILL_DEFAULT = 0;
 var BORDER_SIDE_WHITE_FILL_STEPS = 5;
 /** At slider maximum, this fraction of margin division cells are painted white */
 var BORDER_SIDE_WHITE_CAP_PERCENT = 40;
+
+/** Fan geometry variant: original (cusp petals) or radial (base line + arc + ribs) */
+var FAN_TYPE_ORIGINAL = "original";
+var FAN_TYPE_RADIAL = "radial";
+var FAN_TYPE_DEFAULT = "radial";
+/** Radial fan: inner arcs in a tight band near the focal center */
+var RADIAL_FAN_INNER_ARC_COUNT = 6;
+/** +1 arc inset by RADIAL_FAN_INNER_ARC_STEP_PX from the outer frame arc */
+var RADIAL_FAN_FRAME_ADJACENT_INNER_ARC = true;
+/** +1 arc inward from frame-adjacent arc: step × this multiplier (4 = 2× gap between arcs 7–8) */
+var RADIAL_FAN_FRAME_INWARD_ARC = true;
+var RADIAL_FAN_FRAME_INWARD_ARC_STEP_MULTIPLIER = 4;
+/** Scales Arc position toward center (0.72 × 50% slider ≈ 36% of fan radius) */
+var RADIAL_FAN_INNER_ARC_INWARD_SCALE = 0.72;
+/** Fixed px gap between consecutive inner arcs and from outer frame (scaled by HALF_CIRCLE_RADIUS_SCALE in app) */
+var RADIAL_FAN_INNER_ARC_STEP_PX = 11;
+/** Radial fan stroke width (px); original fan uses HALF_CIRCLE_FAN_STROKE_WIDTH in app.js */
+var RADIAL_FAN_STROKE_WIDTH = 2;
+/** Mirrored diagonals on 6th inner arc: start corner rib index 1, outer end at 3rd rib (index 2) */
+var RADIAL_FAN_SIXTH_ARC_DIAGONAL_ARC_INDEX = 5;
+var RADIAL_FAN_SIXTH_ARC_DIAGONAL_START_CORNER_RIB_INDEX = 1;
+var RADIAL_FAN_SIXTH_ARC_DIAGONAL_END_RIB_INDEX = 2;
+/** Base-left diagonal: outer-arc end at this rib (1-based from the right / fan end) */
+var RADIAL_FAN_BASE_LEFT_DIAGONAL_END_RIB_FROM_END = 9;
+/** Base-right diagonal: outer-arc end at this rib (1-based from the left / fan start) */
+var RADIAL_FAN_BASE_RIGHT_DIAGONAL_END_RIB_FROM_START = 9;
+/** Ribs from focal center to outer arc (equal angular spacing across the semicircle) */
+var RADIAL_FAN_RIB_COUNT = 26;
+/** Rings seated on the 3rd inner arc: count, radius (px), arc index (0-based) */
+var RADIAL_FAN_THIRD_ARC_RING_COUNT = 5;
+var RADIAL_FAN_THIRD_ARC_RING_RADIUS = 44;
+var RADIAL_FAN_THIRD_ARC_RING_ARC_INDEX = 2;
+/** Concentric rings per seat: large + medium + small (equal radial gaps) */
+var RADIAL_FAN_THIRD_ARC_NESTED_RING_COUNT = 3;
+/** Radial slice lines per large ring set (pizza-style equal sectors) */
+var RADIAL_FAN_THIRD_ARC_RING_SLICE_COUNT = 16;
+/** Min angular gap between ring centers = no-touch × this margin (prevents overlap) */
+var RADIAL_FAN_THIRD_ARC_RING_GAP_MARGIN = 1.2;
+/** Extra inset for outermost rings from fan edges (fraction of safe arc span) */
+var RADIAL_FAN_THIRD_ARC_RING_EDGE_MARGIN_RATIO = 0.08;
+/** Elevated rings between base pairs 1–2 and 4–5 (1-based): scale, edge clearance from neighbors (px) */
+var RADIAL_FAN_ELEVATED_RING_SCALE = 1.2;
+var RADIAL_FAN_ELEVATED_RING_GAP_PX = 8;
 
 /** Body autonomy: shared fan opening (both manifolds), discrete steps (inverted: 0 = open, 10 = none) */
 var WEAR_CONTROL_OPENING_STEP_MIN = 0;
@@ -467,14 +512,8 @@ var NESTED_STAR_STRENGTH_SQUARE_USE_TILE_CUT = true;
 /** Main app grid type (index.html) */
 var GRID_TYPE_OCTAGON = "octagon";
 var GRID_TYPE_STAR = "star";
-var GRID_TYPE_GIRIH = "girih";
 /** Star grid only: max value on “Iranian community” density slider (octagons-n) */
 var STAR_GRID_OCTAGONS_N_MAX = 11;
-/** Girih 5-tile grid: density slider range (higher N = smaller tiles) */
-var GIRIH_DENSITY_N_MIN = 3;
-var GIRIH_DENSITY_N_MAX = 25;
-var GIRIH_DENSITY_N_DEFAULT = 5;
-var GIRIH_EDGE_LENGTH_MIN = 40;
 /** Hope merge cutouts: ignore micro-faces smaller than this × tileSize² */
 var STAR_GRID_HOPE_MERGE_MIN_AREA_TILE_FRACTION = 0.45;
 /**
@@ -486,6 +525,17 @@ var STAR_GRID_AUTO_MERGE_EDGE_MULTIPLIER = 1;
 var STAR_GRID_PRIDE_COARSE_INNER_SCALE = 1;
 /** Pride star grid: keep merged fills that span at least this many star cells */
 var STAR_GRID_PRIDE_MIN_STARS_INSIDE = 2;
+/**
+ * Pride auto-merge performance: denser grid → simpler merged shapes (fewer edges,
+ * skip orphan/prune passes) so tracing stays fast.
+ */
+var PRIDE_AUTO_MERGE_REFERENCE_N_OCTAGON = OCTAGONS_N_DEFAULT;
+/** Edge budget scale ~ (refTile / currentTile)^exp; 1 = gentle reduction */
+var PRIDE_AUTO_MERGE_DENSITY_SIMPLIFY_EXPONENT = 1;
+/** Minimum edge-budget scale on very dense grids (0.35 ≈ 35% of base edges) */
+var PRIDE_AUTO_MERGE_DENSITY_EDGE_SCALE_MIN = 0.35;
+/** refTile/currentTile at/above this → fast simple merge path (no prune/orphans) */
+var PRIDE_AUTO_MERGE_SIMPLE_MODE_DENSITY_RATIO = 1.15;
 /** Octagon grid + low inner-scale: min Hope stipple region area (× tileSize²) */
 var HOPE_LOW_INNER_SCALE_MIN_AREA_TILE_FRACTION = 1.5;
 /** Default stipple dot fill (Hope layer) */

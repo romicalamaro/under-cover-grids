@@ -3,7 +3,7 @@
 
   var HALF_CIRCLE_RADIUS_SCALE = 0.9;
   var HALF_CIRCLE_INNER_ARC_PAIR_GAP_PX = 20;
-  var HALF_CIRCLE_FAN_STROKE_WIDTH = 1.5;
+  var HALF_CIRCLE_FAN_STROKE_WIDTH = 1;
   var HALF_CIRCLE_FOCAL_Y = 450;
   var NS = "http://www.w3.org/2000/svg";
   var designSvg = null;
@@ -20,8 +20,6 @@
   var cachedStarFills = [];
   /** @type {{ outline: {x:number,y:number}[] }[]} */
   var cachedStarRhombusFills = [];
-  var cachedGirihTileCount = 0;
-  var girihSliderRenderTimer = null;
   var cachedVerticalGridLines = [];
   var lastVerticalGridLayoutSignature = "";
 
@@ -55,6 +53,7 @@
   var HOPE_DOTS_MASK_INVERT_FILTER_ID = "hope-dots-mask-invert-filter";
   var hopeStippleImageReady = false;
   var hopeStippleImageElement = null;
+  var hopeStippleSvgText = null;
   var hopeStippleExportDataUri = null;
   var hopeStippleRawExportDataUri = null;
   var hopeStippleExportDataLoadPromise = null;
@@ -432,6 +431,63 @@
     }
   }
 
+  function prepareHopeStippleSvgContent(svgText, dotColor) {
+    var viewBoxMatch = svgText.match(/viewBox="([^"]+)"/i);
+    var viewBox = viewBoxMatch ? viewBoxMatch[1] : "0 0 " + CANVAS_W + " " + CANVAS_H;
+    var innerMatch = svgText.match(/<svg[^>]*>([\s\S]*)<\/svg>/i);
+    var inner = innerMatch ? innerMatch[1] : svgText;
+    inner = inner.replace(/fill="#000000"/gi, 'fill="' + dotColor + '"');
+    inner = inner.replace(/fill="#000"/gi, 'fill="' + dotColor + '"');
+    inner = inner.replace(
+      /<circle\b(?![^>]*\bfill=)/gi,
+      '<circle fill="' + dotColor + '" '
+    );
+    inner = inner.replace(
+      /<rect[^>]*fill="(?:#ffffff|#fff|white)"[^>]*\/?>/gi,
+      ""
+    );
+    var vbParts = viewBox.trim().split(/[\s,]+/).map(function (v) {
+      return parseFloat(v);
+    });
+    var vbMinX = isFinite(vbParts[0]) ? vbParts[0] : 0;
+    var vbMinY = isFinite(vbParts[1]) ? vbParts[1] : 0;
+    var vbW = isFinite(vbParts[2]) && vbParts[2] > 0 ? vbParts[2] : CANVAS_W;
+    var vbH = isFinite(vbParts[3]) && vbParts[3] > 0 ? vbParts[3] : CANVAS_H;
+    var stippleScaleX = CANVAS_W / vbW;
+    var stippleScaleY = CANVAS_H / vbH;
+    return {
+      inner: inner,
+      transform:
+        "translate(" +
+        -vbMinX * stippleScaleX +
+        "," +
+        -vbMinY * stippleScaleY +
+        ") scale(" +
+        stippleScaleX +
+        "," +
+        stippleScaleY +
+        ")",
+    };
+  }
+
+  function appendHopeStippleSvgToLayer(layer, svgText, dotColor) {
+    var prepared = prepareHopeStippleSvgContent(svgText, dotColor);
+    var wrap = elSvg("g");
+    wrap.setAttribute("transform", prepared.transform);
+    var doc = new DOMParser().parseFromString(
+      '<svg xmlns="' + NS + '">' + prepared.inner + "</svg>",
+      "image/svg+xml"
+    );
+    var srcSvg = doc.documentElement;
+    var node = srcSvg.firstChild;
+    while (node) {
+      var next = node.nextSibling;
+      wrap.appendChild(document.importNode(node, true));
+      node = next;
+    }
+    layer.appendChild(wrap);
+  }
+
   function buildHopeStippleSvgExportLines() {
     if (!isEmotionLayerActive("hope") || !hasActiveMergeCutouts()) {
       return Promise.resolve(null);
@@ -443,17 +499,7 @@
         var mergedRegions = getMergedRegionsForMask();
         if (!mergedRegions || !mergedRegions.length) return null;
 
-        var viewBoxMatch = svgText.match(/viewBox="([^"]+)"/i);
-        var viewBox = viewBoxMatch ? viewBoxMatch[1] : "0 0 2494 6247";
-        var dotColor = getHopeDotsColor();
-        var innerMatch = svgText.match(/<svg[^>]*>([\s\S]*)<\/svg>/i);
-        var inner = innerMatch ? innerMatch[1] : svgText;
-        inner = inner.replace(/fill="#000000"/gi, 'fill="' + dotColor + '"');
-        inner = inner.replace(/fill="#000"/gi, 'fill="' + dotColor + '"');
-        inner = inner.replace(
-          /<rect[^>]*fill="(?:#ffffff|#fff|white)"[^>]*\/?>/gi,
-          ""
-        );
+        var prepared = prepareHopeStippleSvgContent(svgText, getHopeDotsColor());
 
         var lines = [];
         lines.push("<defs>");
@@ -481,19 +527,9 @@
             MERGE_REGIONS_CLIP_ID +
             ')">'
         );
-        lines.push(
-          '<svg xmlns="' +
-            NS +
-            '" x="0" y="0" width="' +
-            CANVAS_W +
-            '" height="' +
-            CANVAS_H +
-            '" viewBox="' +
-            viewBox +
-            '" overflow="hidden">'
-        );
-        lines.push(inner);
-        lines.push("</svg>");
+        lines.push('<g transform="' + prepared.transform + '">');
+        lines.push(prepared.inner);
+        lines.push("</g>");
         lines.push("</g>");
         lines.push("</g>");
         return lines;
@@ -506,15 +542,62 @@
   function buildHopeStippleExportLines() {
     return ensureHopeStippleExportDataLoaded()
       .then(function () {
-        return ensureHopeStippleExportDataUriFromEmbed();
+        return getHopeStippleSvgTextForExport();
       })
-      .then(function () {
+      .then(function (svgText) {
+        if (svgText && !hopeStippleSvgText) hopeStippleSvgText = svgText;
         return buildHopeStippleSvgExportLines();
-      })
-      .then(function (svgLines) {
-        if (svgLines && svgLines.length) return svgLines;
-        return buildHopeDotsCirclesExportLines();
       });
+  }
+
+  function pushHopeStippleSvgExportLines(lines) {
+    if (
+      !isEmotionLayerActive("hope") ||
+      !hasActiveMergeCutouts() ||
+      !hopeStippleSvgText
+    ) {
+      return false;
+    }
+
+    var mergedRegions = getMergedRegionsForMask();
+    if (!mergedRegions || !mergedRegions.length) return false;
+
+    var prepared = prepareHopeStippleSvgContent(
+      hopeStippleSvgText,
+      getHopeDotsColor()
+    );
+
+    lines.push("<defs>");
+    lines.push('<clipPath id="' + MERGE_REGIONS_CLIP_ID + '">');
+    var i;
+    var pts;
+    var p;
+    var pointsAttr;
+    for (i = 0; i < mergedRegions.length; i++) {
+      pts = mergedRegions[i].points;
+      if (!pts || !pts.length) continue;
+      pointsAttr = "";
+      for (p = 0; p < pts.length; p++) {
+        if (p) pointsAttr += " ";
+        pointsAttr += pts[p].x + "," + pts[p].y;
+      }
+      lines.push('<polygon points="' + pointsAttr + '"/>');
+    }
+    lines.push("</clipPath>");
+    lines.push("</defs>");
+
+    lines.push('<g clip-path="url(#inner-content-clip)">');
+    lines.push(
+      '<g id="layer-stipple-svg" clip-path="url(#' +
+        MERGE_REGIONS_CLIP_ID +
+        ')">'
+    );
+    lines.push('<g transform="' + prepared.transform + '">');
+    lines.push(prepared.inner);
+    lines.push("</g>");
+    lines.push("</g>");
+    lines.push("</g>");
+    return true;
   }
 
   function buildHopeDotsCirclesExportLines() {
@@ -629,16 +712,27 @@
     });
   }
 
+  function getHopeStippleMaskImageHref() {
+    if (hopeStippleRawExportDataUri) return hopeStippleRawExportDataUri;
+    if (
+      typeof window !== "undefined" &&
+      window.HOPE_STIPPLE_EXPORT_PNG_DATA_URI
+    ) {
+      return window.HOPE_STIPPLE_EXPORT_PNG_DATA_URI;
+    }
+    return HOPE_STIPPLE_IMAGE;
+  }
+
   function refreshHopeColoredExportDataUri() {
     if (!hopeStippleImageReady) return;
-    var img = new Image();
-    img.onload = function () {
-      hopeStippleExportDataUri = bakeHopeColoredStippleDataUri(
-        img,
-        getHopeDotsColor()
-      );
-    };
-    img.src = HOPE_STIPPLE_IMAGE;
+    var layer =
+      designSvg && designSvg.querySelector("#layer-stipple-dots");
+    var rect = layer && layer.querySelector("[data-hope-dots-rect]");
+    if (rect) {
+      rect.setAttribute("fill", getHopeDotsColor());
+      return;
+    }
+    renderStippleDotsLayer();
   }
 
   function ensureHopeDotsMaskDef(defs) {
@@ -670,38 +764,43 @@
       defs.appendChild(mask);
     }
 
-    while (mask.firstChild) mask.removeChild(mask.firstChild);
-    var maskImg = elSvg("image");
-    maskImg.setAttribute("href", HOPE_STIPPLE_IMAGE);
-    maskImg.setAttribute("filter", "url(#" + HOPE_DOTS_MASK_INVERT_FILTER_ID + ")");
-    maskImg.setAttribute("x", "0");
-    maskImg.setAttribute("y", "0");
-    maskImg.setAttribute("width", String(CANVAS_W));
-    maskImg.setAttribute("height", String(CANVAS_H));
-    maskImg.setAttribute("preserveAspectRatio", "none");
-    mask.appendChild(maskImg);
+    var maskHref = getHopeStippleMaskImageHref();
+    var maskImg = mask.querySelector("image");
+    if (!maskImg) {
+      maskImg = elSvg("image");
+      maskImg.setAttribute("filter", "url(#" + HOPE_DOTS_MASK_INVERT_FILTER_ID + ")");
+      maskImg.setAttribute("x", "0");
+      maskImg.setAttribute("y", "0");
+      maskImg.setAttribute("width", String(CANVAS_W));
+      maskImg.setAttribute("height", String(CANVAS_H));
+      maskImg.setAttribute("preserveAspectRatio", "none");
+      mask.appendChild(maskImg);
+    }
+    maskImg.setAttribute("href", maskHref);
   }
 
-  function loadHopeStippleImage() {
-    var img = new Image();
-    img.onload = function () {
-      hopeStippleImageElement = img;
-      hopeStippleImageReady = true;
-      hopeStippleExportDataUri = bakeHopeColoredStippleDataUri(
-        img,
-        getHopeDotsColor()
-      );
-      ensureHopeStippleRawExportDataUri();
-      renderStippleDotsLayer();
-      applyMergeReveal();
-    };
-    img.onerror = function () {
-      hopeStippleImageElement = null;
-      hopeStippleImageReady = false;
-      hopeStippleExportDataUri = null;
-      hopeStippleRawExportDataUri = null;
-    };
-    img.src = HOPE_STIPPLE_IMAGE;
+  function loadHopeStippleSvg() {
+    ensureHopeStippleExportDataLoaded()
+      .then(function () {
+        return Promise.all([
+          getHopeStippleSvgTextForExport(),
+          ensureHopeStippleRawExportDataUri(),
+        ]);
+      })
+      .then(function (results) {
+        var svgText = results[0];
+        if (!svgText) throw new Error("Hope stipple SVG missing");
+        hopeStippleSvgText = svgText;
+        hopeStippleImageReady = true;
+        applyMergeReveal();
+      })
+      .catch(function () {
+        hopeStippleSvgText = null;
+        hopeStippleImageElement = null;
+        hopeStippleImageReady = false;
+        hopeStippleExportDataUri = null;
+        hopeStippleRawExportDataUri = null;
+      });
   }
 
   function getStarGridOctagonsNMax() {
@@ -712,7 +811,6 @@
 
   function getOctagonsNMaxForActiveGrid() {
     if (isStarGrid()) return getStarGridOctagonsNMax();
-    if (isGirihGrid()) return GIRIH_DENSITY_N_MAX;
     return OCTAGONS_N_MAX;
   }
 
@@ -729,10 +827,6 @@
     return gridType === GRID_TYPE_STAR;
   }
 
-  function isGirihGrid() {
-    return gridType === GRID_TYPE_GIRIH;
-  }
-
   function isOctagonGrid() {
     return gridType === GRID_TYPE_OCTAGON;
   }
@@ -743,22 +837,7 @@
   }
 
   function isAlternateGrid() {
-    return isStarGrid() || isGirihGrid();
-  }
-
-  function getGirihLayout() {
-    if (
-      typeof GirihGeometry === "undefined" ||
-      !GirihGeometry.computeLayout
-    ) {
-      return {
-        densityN: lastOctagonsN,
-        edgeLength: lastTileSize,
-        canvasW: CANVAS_W,
-        canvasH: CANVAS_H,
-      };
-    }
-    return GirihGeometry.computeLayout(lastOctagonsN, CANVAS_W, CANVAS_H);
+    return isStarGrid();
   }
 
   function ensureStarValidLayouts() {
@@ -810,15 +889,6 @@
       if (Number(slider.value) > maxN) {
         slider.value = String(maxN);
       }
-    } else if (isGirihGrid()) {
-      slider.min = String(GIRIH_DENSITY_N_MIN);
-      slider.max = String(GIRIH_DENSITY_N_MAX);
-      if (Number(slider.value) < GIRIH_DENSITY_N_MIN) {
-        slider.value = String(GIRIH_DENSITY_N_MIN);
-      }
-      if (Number(slider.value) > GIRIH_DENSITY_N_MAX) {
-        slider.value = String(GIRIH_DENSITY_N_MAX);
-      }
     } else {
       slider.min = String(OCTAGONS_N_MIN);
       slider.max = String(OCTAGONS_N_MAX);
@@ -828,7 +898,6 @@
   function syncGridTypeButtons() {
     var octBtn = document.getElementById("grid-choose-octagon-btn");
     var starBtn = document.getElementById("grid-choose-star-btn");
-    var girihBtn = document.getElementById("grid-choose-girih-btn");
     if (octBtn) {
       octBtn.classList.toggle("is-active", isOctagonGrid());
       octBtn.setAttribute("aria-pressed", String(isOctagonGrid()));
@@ -836,10 +905,6 @@
     if (starBtn) {
       starBtn.classList.toggle("is-active", isStarGrid());
       starBtn.setAttribute("aria-pressed", String(isStarGrid()));
-    }
-    if (girihBtn) {
-      girihBtn.classList.toggle("is-active", isGirihGrid());
-      girihBtn.setAttribute("aria-pressed", String(isGirihGrid()));
     }
   }
 
@@ -900,10 +965,6 @@
     if (!designSvg) return;
     var inner = designSvg.querySelector("#inner-content");
     if (inner) inner.setAttribute("transform", getInnerContentTransformAttr());
-    var gridBoundaryLayer = designSvg.querySelector("#layer-grid-boundary");
-    if (gridBoundaryLayer) {
-      gridBoundaryLayer.setAttribute("transform", getInnerContentTransformAttr());
-    }
   }
 
   function refreshBorderFrameAndLabelBars() {
@@ -915,11 +976,7 @@
   }
 
   function setGridType(nextType) {
-    if (
-      nextType !== GRID_TYPE_OCTAGON &&
-      nextType !== GRID_TYPE_STAR &&
-      nextType !== GRID_TYPE_GIRIH
-    ) {
+    if (nextType !== GRID_TYPE_OCTAGON && nextType !== GRID_TYPE_STAR) {
       return;
     }
     if (gridType === nextType) return;
@@ -928,9 +985,6 @@
     clearAutoMergeState();
     if (isStarGrid()) {
       ensureStarValidLayouts();
-      syncOctagonDensitySliderRange();
-      setHopeInteractionMode("view");
-    } else if (isGirihGrid()) {
       syncOctagonDensitySliderRange();
       setHopeInteractionMode("view");
     } else {
@@ -947,7 +1001,6 @@
   function initGridTypeButtons() {
     var octBtn = document.getElementById("grid-choose-octagon-btn");
     var starBtn = document.getElementById("grid-choose-star-btn");
-    var girihBtn = document.getElementById("grid-choose-girih-btn");
     if (octBtn) {
       octBtn.addEventListener("click", function () {
         setGridType(GRID_TYPE_OCTAGON);
@@ -956,11 +1009,6 @@
     if (starBtn) {
       starBtn.addEventListener("click", function () {
         setGridType(GRID_TYPE_STAR);
-      });
-    }
-    if (girihBtn) {
-      girihBtn.addEventListener("click", function () {
-        setGridType(GRID_TYPE_GIRIH);
       });
     }
     syncGridTypeButtons();
@@ -1202,6 +1250,67 @@
     return Math.round(snapFeelingsSliderValue(v, min, max));
   }
 
+  /** Tile size at reference density — baseline for Pride area compensation. */
+  function getPrideAutoMergeReferenceTileSize() {
+    if (isStarGrid()) {
+      ensureStarValidLayouts();
+      if (
+        typeof NestedStarOctagonsGeometry !== "undefined" &&
+        NestedStarOctagonsGeometry.snapLayoutToN
+      ) {
+        return NestedStarOctagonsGeometry.snapLayoutToN(
+          OCTAGONS_N_DEFAULT,
+          starValidLayouts,
+          CANVAS_W,
+          CANVAS_H
+        ).tileSize;
+      }
+    }
+    var octRefN =
+      typeof PRIDE_AUTO_MERGE_REFERENCE_N_OCTAGON !== "undefined"
+        ? PRIDE_AUTO_MERGE_REFERENCE_N_OCTAGON
+        : OCTAGONS_N_DEFAULT;
+    return TopkapiGeometry.tileSizeFromN(octRefN, CANVAS_W);
+  }
+
+  /** refTile / currentTile — 1 at reference density, >1 when grid is denser. */
+  function getPrideAutoMergeDensityRatio() {
+    updateLayoutState();
+    var currentTile = lastTileSize;
+    if (!currentTile || currentTile <= 0) return 1;
+    var refTile = getPrideAutoMergeReferenceTileSize();
+    if (!refTile || refTile <= 0) return 1;
+    return refTile / currentTile;
+  }
+
+  /**
+   * Denser grid → lower edge budget so Pride clusters stay small and simple.
+   * @returns {number} scale in [min, 1]
+   */
+  function getPrideAutoMergeDensityEdgeScale() {
+    var densityRatio = getPrideAutoMergeDensityRatio();
+    if (densityRatio <= 1) return 1;
+
+    var exponent =
+      typeof PRIDE_AUTO_MERGE_DENSITY_SIMPLIFY_EXPONENT !== "undefined"
+        ? PRIDE_AUTO_MERGE_DENSITY_SIMPLIFY_EXPONENT
+        : 1;
+    var minScale =
+      typeof PRIDE_AUTO_MERGE_DENSITY_EDGE_SCALE_MIN !== "undefined"
+        ? PRIDE_AUTO_MERGE_DENSITY_EDGE_SCALE_MIN
+        : 0.35;
+    return Math.max(minScale, Math.pow(1 / densityRatio, exponent));
+  }
+
+  /** Fast Pride path: skip dangling prune, orphan fills, midpoint segment tests. */
+  function shouldUseSimplePrideAutoMergeMode() {
+    var threshold =
+      typeof PRIDE_AUTO_MERGE_SIMPLE_MODE_DENSITY_RATIO !== "undefined"
+        ? PRIDE_AUTO_MERGE_SIMPLE_MODE_DENSITY_RATIO
+        : 1.15;
+    return getPrideAutoMergeDensityRatio() >= threshold;
+  }
+
   /**
    * Map discrete step 0–7 to area count (0 = off, 1–7 → 2–8 areas) and edge budget.
    * @returns {{ areaCountMin: number, areaCountMax: number, edgesPerAreaMin: number, edgesPerAreaMax: number, boundsInset: number }}
@@ -1255,6 +1364,15 @@
       edgesPerAreaMin = Math.round(edgesPerAreaMin * edgeMult);
       edgesPerAreaMax = Math.round(edgesPerAreaMax * edgeMult);
       if (edgesPerAreaMax < edgesPerAreaMin) edgesPerAreaMax = edgesPerAreaMin;
+    }
+
+    var densityEdgeScale = getPrideAutoMergeDensityEdgeScale();
+    if (densityEdgeScale < 1) {
+      edgesPerAreaMin = Math.max(2, Math.round(edgesPerAreaMin * densityEdgeScale));
+      edgesPerAreaMax = Math.max(
+        edgesPerAreaMin,
+        Math.round(edgesPerAreaMax * densityEdgeScale)
+      );
     }
 
     return {
@@ -1766,14 +1884,6 @@
       applyMergeReveal();
       return;
     }
-    if (isGirihGrid()) {
-      renderBackgroundLayer();
-      updateBorderDivisionLines();
-      renderGridMaskLayer("canvas-background-color");
-      renderPatternLayer();
-      applyMergeReveal();
-      return;
-    }
     renderBackgroundLayer();
     renderGridMaskLayer("canvas-background-color");
     renderHalfCircleLayer();
@@ -2008,6 +2118,7 @@
       if (dotsClipped) dotsClipped.style.display = "none";
       if (hopeFillLayer) hopeFillLayer.removeAttribute("clip-path");
       if (dotsLayer) dotsLayer.removeAttribute("clip-path");
+      renderStippleDotsLayer();
       return;
     }
 
@@ -2448,7 +2559,7 @@
       !hasActiveMergeCutouts() ||
       !hopeStippleImageReady
     ) {
-      applyMergeReveal();
+      layer.removeAttribute("clip-path");
       return;
     }
 
@@ -2457,115 +2568,27 @@
     );
     if (!hasMergeClip) {
       layer.removeAttribute("clip-path");
-      applyMergeReveal();
       return;
     }
 
     layer.setAttribute("clip-path", "url(#" + MERGE_REGIONS_CLIP_ID + ")");
-
     ensureHopeDotsMaskDef(defs);
-    var fill = elSvg("rect");
-    fill.setAttribute("x", "0");
-    fill.setAttribute("y", "0");
-    fill.setAttribute("width", String(CANVAS_W));
-    fill.setAttribute("height", String(CANVAS_H));
-    fill.setAttribute("fill", getHopeDotsColor());
-    fill.setAttribute("mask", "url(#" + HOPE_DOTS_MASK_ID + ")");
-    layer.appendChild(fill);
+    var rect = elSvg("rect");
+    rect.setAttribute("data-hope-dots-rect", "1");
+    rect.setAttribute("x", "0");
+    rect.setAttribute("y", "0");
+    rect.setAttribute("width", String(CANVAS_W));
+    rect.setAttribute("height", String(CANVAS_H));
+    rect.setAttribute("fill", getHopeDotsColor());
+    rect.setAttribute("mask", "url(#" + HOPE_DOTS_MASK_ID + ")");
+    layer.appendChild(rect);
   }
 
   /**
    * @param {string[]} lines
    */
   function pushStippleDotsExportLines(lines) {
-    if (
-      !isEmotionLayerActive("hope") ||
-      !hasActiveMergeCutouts() ||
-      !hopeStippleImageReady
-    ) {
-      return;
-    }
-
-    var mergedRegions = getMergedRegionsForMask();
-    if (mergedRegions.length) {
-      lines.push("<defs>");
-      lines.push('<clipPath id="' + MERGE_REGIONS_CLIP_ID + '">');
-      var i;
-      var pts;
-      var p;
-      var pointsAttr;
-      for (i = 0; i < mergedRegions.length; i++) {
-        pts = mergedRegions[i].points;
-        if (!pts.length) continue;
-        pointsAttr = "";
-        for (p = 0; p < pts.length; p++) {
-          if (p) pointsAttr += " ";
-          pointsAttr += pts[p].x + "," + pts[p].y;
-        }
-        lines.push('<polygon points="' + pointsAttr + '"/>');
-      }
-      lines.push("</clipPath>");
-      lines.push("</defs>");
-    }
-
-    var imageHref = hopeStippleExportDataUri || hopeStippleRawExportDataUri || HOPE_STIPPLE_IMAGE;
-    var dotColor = getHopeDotsColor();
-
-    lines.push('<g clip-path="url(#inner-content-clip)">');
-    lines.push("<defs>");
-    lines.push(
-      '<filter id="' +
-        HOPE_DOTS_MASK_INVERT_FILTER_ID +
-        '-export"><feColorMatrix type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  -1 -1 -1 1 1"/></filter>'
-    );
-    lines.push(
-      '<mask id="' +
-        HOPE_DOTS_MASK_ID +
-        '-export" maskUnits="userSpaceOnUse" x="0" y="0" width="' +
-        CANVAS_W +
-        '" height="' +
-        CANVAS_H +
-        '"><image href="' +
-        imageHref +
-        '" filter="url(#' +
-        HOPE_DOTS_MASK_INVERT_FILTER_ID +
-        '-export)" x="0" y="0" width="' +
-        CANVAS_W +
-        '" height="' +
-        CANVAS_H +
-        '" preserveAspectRatio="none"/></mask>'
-    );
-    lines.push("</defs>");
-    lines.push(
-      '<g id="layer-stipple-dots" clip-path="url(#' +
-        MERGE_REGIONS_CLIP_ID +
-        ')">'
-    );
-    if (hopeStippleExportDataUri) {
-      lines.push(
-        '<image href="' +
-          imageHref +
-          '" x="0" y="0" width="' +
-          CANVAS_W +
-          '" height="' +
-          CANVAS_H +
-          '" preserveAspectRatio="none"/>'
-      );
-    } else {
-      lines.push(
-        '<rect x="0" y="0" width="' +
-          CANVAS_W +
-          '" height="' +
-          CANVAS_H +
-          '" fill="' +
-          dotColor +
-          '" mask="url(#' +
-          HOPE_DOTS_MASK_ID +
-          '-export)"/>'
-      );
-    }
-    lines.push("</g>");
-    lines.push("</g>");
+    pushHopeStippleSvgExportLines(lines);
   }
 
   function buildLayoutSignature() {
@@ -2587,19 +2610,6 @@
         1
       );
     }
-    if (isGirihGrid()) {
-      if (
-        typeof GirihGeometry === "undefined" ||
-        !GirihGeometry.buildJunctionCircleCatalog
-      ) {
-        return [];
-      }
-      return GirihGeometry.buildJunctionCircleCatalog(
-        getGirihLayout(),
-        CANVAS_W,
-        CANVAS_H
-      );
-    }
     // Junction positions only; halfSide is for Strength marks — not tied to inner-scale slider.
     return TopkapiGeometry.buildUprightSquareCatalog(
       lastOctagonsN,
@@ -2619,19 +2629,6 @@
       }
       return NestedStarOctagonsGeometry.buildHelplessnessJunctionCatalog(
         getStarLayout(),
-        CANVAS_W,
-        CANVAS_H
-      );
-    }
-    if (isGirihGrid()) {
-      if (
-        typeof GirihGeometry === "undefined" ||
-        !GirihGeometry.buildHelplessnessJunctionCatalog
-      ) {
-        return [];
-      }
-      return GirihGeometry.buildHelplessnessJunctionCatalog(
-        getGirihLayout(),
         CANVAS_W,
         CANVAS_H
       );
@@ -2662,17 +2659,6 @@
         CANVAS_H
       );
     }
-    if (isGirihGrid()) {
-      var girihLayout = getGirihLayout();
-      return (
-        "girih-hp|" +
-        girihLayout.densityN +
-        "|" +
-        CANVAS_W +
-        "|" +
-        CANVAS_H
-      );
-    }
     return buildDiamondLayoutSignature() + "|" + getInnerScale();
   }
 
@@ -2690,19 +2676,6 @@
       }
       return NestedStarOctagonsGeometry.buildJunctionDiamondCatalog(
         getStarLayout(),
-        CANVAS_W,
-        CANVAS_H
-      );
-    }
-    if (isGirihGrid()) {
-      if (
-        typeof GirihGeometry === "undefined" ||
-        !GirihGeometry.buildDiamondCatalog
-      ) {
-        return [];
-      }
-      return GirihGeometry.buildDiamondCatalog(
-        getGirihLayout(),
         CANVAS_W,
         CANVAS_H
       );
@@ -2733,17 +2706,6 @@
         CANVAS_H +
         "|" +
         getInnerScale()
-      );
-    }
-    if (isGirihGrid()) {
-      var girihLayout = getGirihLayout();
-      return (
-        "girih|" +
-        girihLayout.densityN +
-        "|" +
-        CANVAS_W +
-        "|" +
-        CANVAS_H
       );
     }
     return lastOctagonsN + "|" + CANVAS_W + "|" + CANVAS_H;
@@ -3571,16 +3533,6 @@
       var starLayout = getStarLayout();
       lastOctagonsN = starLayout.n;
       lastTileSize = starLayout.tileSize;
-    } else if (isGirihGrid()) {
-      if (
-        typeof GirihGeometry !== "undefined" &&
-        GirihGeometry.edgeLengthFromDensity
-      ) {
-        lastTileSize = GirihGeometry.edgeLengthFromDensity(
-          lastOctagonsN,
-          CANVAS_W
-        );
-      }
     } else {
       lastTileSize = TopkapiGeometry.tileSizeFromN(lastOctagonsN, CANVAS_W);
     }
@@ -3595,7 +3547,6 @@
       ) {
         cachedStarFills = [];
         cachedStarRhombusFills = [];
-        cachedGirihTileCount = 0;
         return [];
       }
       var pattern = NestedStarOctagonsGeometry.buildPattern(
@@ -3604,31 +3555,10 @@
       );
       cachedStarFills = pattern.starFills || [];
       cachedStarRhombusFills = pattern.starRhombusFills || [];
-      cachedGirihTileCount = 0;
       return pattern.segments;
-    }
-    if (isGirihGrid()) {
-      cachedStarFills = [];
-      cachedStarRhombusFills = [];
-      if (
-        typeof GirihGeometry === "undefined" ||
-        !GirihGeometry.buildPattern
-      ) {
-        cachedGirihTileCount = 0;
-        return [];
-      }
-      var girihPattern = GirihGeometry.buildPattern({
-        canvasW: CANVAS_W,
-        canvasH: CANVAS_H,
-        densityN: lastOctagonsN,
-        seed: lastOctagonsN,
-      });
-      cachedGirihTileCount = girihPattern.tileCount || 0;
-      return girihPattern.segments;
     }
     cachedStarFills = [];
     cachedStarRhombusFills = [];
-    cachedGirihTileCount = 0;
     return TopkapiGeometry.buildPatternSegments(
       lastTileSize,
       CANVAS_W,
@@ -3733,7 +3663,7 @@
 
   /**
    * Hope merge: octagon grid uses coarse cell boundaries only (no inner diamond).
-   * Star / girih keep the full tracing network; false positives are filtered in
+   * Star grid keeps the full tracing network; false positives are filtered in
    * filterHopeMergeRegionsForGridType.
    * @returns {{x1:number,y1:number,x2:number,y2:number}[]}
    */
@@ -3757,11 +3687,23 @@
   }
 
   /**
-   * Pride auto-merge on star grid: octagon + square tessellation only (no inner-star
-   * micro-faces) so merged regions match octagon-grid simplicity.
+   * Pride auto-merge: coarse octagon + square mesh (no inner diamonds / star micro-faces).
+   * Dense grids always use this simpler network for speed; octagon grid switches at
+   * simple-mode density, star grid always uses its coarse mesh here.
    * @returns {{x1:number,y1:number,x2:number,y2:number}[]}
    */
   function getSegmentsForPrideAutoMerge() {
+    if (isOctagonGrid()) {
+      if (shouldUseSimplePrideAutoMergeMode()) {
+        return TopkapiGeometry.buildCoarseCellBoundarySegments(
+          lastTileSize,
+          CANVAS_W,
+          CANVAS_H,
+          lastOctagonsN
+        );
+      }
+      return getAllSegmentsForTracing();
+    }
     if (!isStarGrid()) return getAllSegmentsForTracing();
     var layout = getStarLayout();
     var coarseInner =
@@ -3778,6 +3720,7 @@
   }
 
   function isSegmentMidpointInsidePrideFill(s) {
+    if (shouldUseSimplePrideAutoMergeMode()) return false;
     if (!isStarGrid() || !isEmotionLayerActive("pride")) return false;
     if (!autoMergeFillRegions || !autoMergeFillRegions.length) return false;
     var mx = (s.x1 + s.x2) * 0.5;
@@ -4079,7 +4022,9 @@
       return;
     }
 
-    var limitLowInnerScale = shouldLimitPrideAutoMergeAtLowInnerScale();
+    var limitLowInnerScale =
+      shouldLimitPrideAutoMergeAtLowInnerScale() ||
+      shouldUseSimplePrideAutoMergeMode();
 
     var bounds = getGridContentBounds();
     var manualVisible = getVisibleSegmentsManualOnly(prideSegments);
@@ -4119,8 +4064,8 @@
       if (fillRegion) fillRegions.push(fillRegion);
     }
 
-    // Girih: skip orphans. Star + octagon: square fills between octagons (coarse mesh).
-    if (!isGirihGrid() && !limitLowInnerScale) {
+    // Star + octagon: square fills between octagons (coarse mesh).
+    if (!limitLowInnerScale) {
       fillRegions = TopkapiGeometry.appendOrphanAutoMergeFillRegions(
         fillRegions,
         prideSegments,
@@ -4211,14 +4156,6 @@
         height: y1 - y0,
       };
     }
-    if (isGirihGrid()) {
-      return {
-        x: 0,
-        y: 0,
-        width: CANVAS_W,
-        height: CANVAS_H,
-      };
-    }
     return TopkapiGeometry.getGridContentBounds(
       lastOctagonsN,
       CANVAS_W,
@@ -4236,20 +4173,26 @@
   }
 
   /**
-   * Grid-boundary rect in inner-content coordinates, inset horizontally so the
-   * thick outline sits on the inner edge of the innermost border column.
-   * @returns {{ x: number, y: number, width: number, height: number }}
+   * Grid-boundary frame in canvas (viewBox) coordinates — same space as margin cells.
+   * Each bar's outer edge sits on the frame inner boundary; thickness grows inward only
+   * (filled rects, not centered SVG stroke).
+   * @returns {{ inset: number, sw: number, y: number, h: number, left: number, right: number }}
    */
-  function getGridBoundaryDisplayBounds() {
+  function getGridBoundaryCanvasLayout() {
     var bounds = getGridContentBounds();
     var inset = getBorderStripInnerEdgePx();
+    var sw = GRID_BOUNDARY_STROKE_WIDTH;
     var off = getInnerContentOffset();
     var s = getInnerContentScale();
+    var y = off.y + bounds.y * s;
+    var h = bounds.height * s;
     return {
-      x: (inset - off.x) / s,
-      y: bounds.y,
-      width: (CANVAS_W - 2 * inset) / s,
-      height: bounds.height,
+      inset: inset,
+      sw: sw,
+      y: y,
+      h: h,
+      left: inset,
+      right: CANVAS_W - inset,
     };
   }
 
@@ -4917,11 +4860,6 @@
         getInnerScale()
       );
     }
-    if (isGirihGrid()) {
-      return (
-        "girih|" + lastOctagonsN + "|" + CANVAS_W + "|" + CANVAS_H + "|" + gridType
-      );
-    }
     return (
       lastOctagonsN +
       "|" +
@@ -4946,16 +4884,6 @@
     return NestedStarOctagonsGeometry.collectStarGridVerticalAnchorXCoords(
       getStarLayout()
     );
-  }
-
-  function collectGirihVerticalAnchorXCoords() {
-    if (
-      typeof GirihGeometry === "undefined" ||
-      !GirihGeometry.collectVerticalAnchorXCoords
-    ) {
-      return [];
-    }
-    return GirihGeometry.collectVerticalAnchorXCoords(getGirihLayout());
   }
 
   function pickVerticalShortenMode() {
@@ -5074,9 +5002,7 @@
 
     var xs = isStarGrid()
       ? collectStarGridVerticalAnchorXCoords()
-      : isGirihGrid()
-        ? collectGirihVerticalAnchorXCoords()
-        : TopkapiGeometry.collectUniqueGridXCoords(cachedAllSegments);
+      : TopkapiGeometry.collectUniqueGridXCoords(cachedAllSegments);
     var bounds = getGridContentBounds();
     // Fear verticals (anger-vertical-length slider under Fear heading).
     // Restrict verticals to the left third of the grid content area.
@@ -5224,79 +5150,106 @@
     renderGridMaskLayer("renderPatternAndVerticalLayers");
     renderAutoMergeFillsLayer();
     applyMergeReveal();
-    renderStippleDotsLayer();
   }
 
-  function applyGridBoundaryAttrs(rect, bounds) {
-    rect.setAttribute("x", String(bounds.x));
-    rect.setAttribute("y", String(bounds.y));
-    rect.setAttribute("width", String(bounds.width));
-    rect.setAttribute("height", String(bounds.height));
-  }
-
-  function applyGridBoundaryStyle(rect) {
-    rect.setAttribute("fill", "none");
-    rect.setAttribute("stroke", getGridBoundaryStrokeColor());
-    rect.setAttribute("stroke-width", String(GRID_BOUNDARY_STROKE_WIDTH));
-    rect.setAttribute("vector-effect", "non-scaling-stroke");
-  }
-
-  function createGridBoundaryRect() {
+  /**
+   * @param {SVGElement} g
+   * @param {number} x
+   * @param {number} y
+   * @param {number} w
+   * @param {number} h
+   * @param {string} fill
+   */
+  function appendGridBoundaryBar(g, x, y, w, h, fill) {
     var rect = elSvg("rect");
-    rect.setAttribute("id", "grid-boundary");
-    applyGridBoundaryAttrs(rect, getGridBoundaryDisplayBounds());
-    applyGridBoundaryStyle(rect);
-    return rect;
+    rect.setAttribute("x", String(x));
+    rect.setAttribute("y", String(y));
+    rect.setAttribute("width", String(w));
+    rect.setAttribute("height", String(h));
+    rect.setAttribute("fill", fill);
+    rect.setAttribute("stroke", "none");
+    rect.setAttribute("shape-rendering", "crispEdges");
+    g.appendChild(rect);
+  }
+
+  function gridBoundaryToGroup() {
+    var L = getGridBoundaryCanvasLayout();
+    var g = elSvg("g");
+    var sw = L.sw;
+    var fill = getGridBoundaryStrokeColor();
+    var innerW = L.right - L.left - 2 * sw;
+    g.setAttribute("id", "grid-boundary");
+    appendGridBoundaryBar(g, L.left, L.y, sw, L.h, fill);
+    appendGridBoundaryBar(g, L.right - sw, L.y, sw, L.h, fill);
+    if (innerW > 0) {
+      appendGridBoundaryBar(g, L.left + sw, L.y, innerW, sw, fill);
+      appendGridBoundaryBar(g, L.left + sw, L.y + L.h - sw, innerW, sw, fill);
+    }
+    return g;
   }
 
   function createGridBoundaryLayer() {
     var layer = elSvg("g");
     layer.setAttribute("id", "layer-grid-boundary");
-    layer.setAttribute("transform", getInnerContentTransformAttr());
-    layer.appendChild(createGridBoundaryRect());
+    layer.appendChild(gridBoundaryToGroup());
     return layer;
   }
 
   function updateGridBoundaryRect() {
     if (!designSvg) return;
-    var rect = designSvg.querySelector("#grid-boundary");
-    if (!rect) return;
-    applyGridBoundaryAttrs(rect, getGridBoundaryDisplayBounds());
-    applyGridBoundaryStyle(rect);
     var layer = designSvg.querySelector("#layer-grid-boundary");
-    if (layer) {
-      layer.setAttribute("transform", getInnerContentTransformAttr());
-    }
+    if (!layer) return;
+    var existing = layer.querySelector("#grid-boundary");
+    if (existing) layer.removeChild(existing);
+    layer.appendChild(gridBoundaryToGroup());
   }
 
   function ensureGridBoundaryLayerOnTop() {
     if (!designSvg) return;
     var layer = designSvg.querySelector("#layer-grid-boundary");
     if (!layer) return;
-    var anchor = designSvg.querySelector("#layer-edge-brown-bars");
-    if (anchor && anchor.parentNode === designSvg) {
-      designSvg.insertBefore(layer, anchor);
-      return;
+    var blendRoot = designSvg.querySelector("#color-divisions-blend-root");
+    var overlay = designSvg.querySelector("#layer-border-divisions-overlay");
+    if (blendRoot && overlay && overlay.parentNode === blendRoot) {
+      blendRoot.insertBefore(layer, overlay);
     }
-    designSvg.appendChild(layer);
+    var anchor = designSvg.querySelector("#layer-edge-brown-bars");
+    if (anchor && anchor.parentNode === designSvg && layer.parentNode === designSvg) {
+      designSvg.insertBefore(layer, anchor);
+    }
   }
 
-  function pushGridBoundaryExportLine(lines, bounds) {
-    lines.push(
-      '<rect x="' +
-        bounds.x +
-        '" y="' +
-        bounds.y +
-        '" width="' +
-        bounds.width +
-        '" height="' +
-        bounds.height +
-        '" fill="none" stroke="' +
-        getGridBoundaryStrokeColor() +
-        '" stroke-width="' +
-        GRID_BOUNDARY_STROKE_WIDTH +
-        '" vector-effect="non-scaling-stroke"/>'
-    );
+  /**
+   * @param {string[]} lines
+   * @param {{ inset: number, sw: number, y: number, h: number, left: number, right: number }} layout
+   */
+  function pushGridBoundaryExportBars(lines, layout) {
+    var sw = layout.sw;
+    var fill = getGridBoundaryStrokeColor();
+    var innerW = layout.right - layout.left - 2 * sw;
+
+    function pushBar(x, y, w, h) {
+      lines.push(
+        '<rect x="' +
+          x +
+          '" y="' +
+          y +
+          '" width="' +
+          w +
+          '" height="' +
+          h +
+          '" fill="' +
+          fill +
+          '" stroke="none" shape-rendering="crispEdges"/>'
+      );
+    }
+
+    pushBar(layout.left, layout.y, sw, layout.h);
+    pushBar(layout.right - sw, layout.y, sw, layout.h);
+    if (innerW > 0) {
+      pushBar(layout.left + sw, layout.y, innerW, sw);
+      pushBar(layout.left + sw, layout.y + layout.h - sw, innerW, sw);
+    }
   }
 
   /**
@@ -5520,7 +5473,6 @@
   function createFrameInsetOverlayLayer() {
     var layer = elSvg("g");
     layer.setAttribute("id", "layer-frame-inset-overlay");
-    layer.setAttribute("transform", getInnerContentTransformAttr());
     layer.appendChild(frameInsetOverlayToGroup());
     applyFrameInsetOverlayVisibility();
     return layer;
@@ -5530,22 +5482,27 @@
     if (!designSvg) return;
     var layer = designSvg.querySelector("#layer-frame-inset-overlay");
     if (!layer) return;
-    layer.setAttribute("transform", getInnerContentTransformAttr());
     while (layer.firstChild) layer.removeChild(layer.firstChild);
     layer.appendChild(frameInsetOverlayToGroup());
     applyFrameInsetOverlayVisibility();
   }
 
-  function pushFrameInsetOverlayExportLines(lines) {
+  function pushFrameInsetOverlayExportLines(lines, options) {
+    var nestedInInnerContent =
+      options && options.nestedInInnerContent === true;
     var segments = getGridFrameInsetOverlaySegments();
     var rects = getGridFrameInsetOverlayCapRects();
     var ellipses = getGridFrameInsetOverlayCapEllipses();
     var stroke = getPatternStrokeColor();
-    lines.push(
-      '<g id="layer-frame-inset-overlay" transform="' +
-        getInnerContentTransformAttr() +
-        '">'
-    );
+    if (nestedInInnerContent) {
+      lines.push('<g id="layer-frame-inset-overlay">');
+    } else {
+      lines.push(
+        '<g id="layer-frame-inset-overlay" transform="' +
+          getInnerContentTransformAttr() +
+          '">'
+      );
+    }
     lines.push(
       '<g fill="none" stroke="' +
         stroke +
@@ -5614,17 +5571,16 @@
   }
 
   /**
-   * ViewBox Y of the grid-boundary stroke (outer edge) on top and bottom.
+   * ViewBox Y of the grid-boundary outer edge on top and bottom.
    * @returns {{ top: number, bottom: number }}
    */
   function getBorderDivisionFrameY() {
     var bounds = getGridContentBounds();
     var off = getInnerContentOffset();
     var s = getInnerContentScale();
-    var halfStroke = GRID_BOUNDARY_STROKE_WIDTH / 2;
     return {
-      top: off.y + (bounds.y - halfStroke) * s,
-      bottom: off.y + (bounds.y + bounds.height + halfStroke) * s,
+      top: off.y + bounds.y * s,
+      bottom: off.y + (bounds.y + bounds.height) * s,
     };
   }
 
@@ -5647,6 +5603,135 @@
     line.setAttribute("stroke-width", String(BORDER_DIVISION_STROKE_WIDTH));
     line.setAttribute("shape-rendering", "crispEdges");
     container.appendChild(line);
+  }
+
+  /**
+   * Horizontal division Y in left/right margin strips (frame + interior rows).
+   * @returns {number[]}
+   */
+  function getBorderDivisionHorizontalYPositions() {
+    var divY = getLeftRightBorderDivisionYBounds();
+    var ys = [divY.top, divY.bottom];
+    var interior = getLeftRightBorderInteriorYPositions();
+    var i;
+    for (i = 0; i < interior.length; i++) ys.push(interior[i]);
+    return ys;
+  }
+
+  /**
+   * Interior column-divider × horizontal crossings (col 1↔2, 2↔3, …).
+   * Uses frame column dividers at x = c·b (c = 1 … cols−1) on both sides.
+   * @returns {{ cx: number, cy: number }[]}
+   */
+  function collectBorderFrameGridJunctionPoints() {
+    var b = getCanvasBorderPx();
+    var cols = getBorderSideThicknessColumns();
+    if (cols < 2) return [];
+
+    var extra = Math.max(0, cols - 1);
+    var ys = getBorderDivisionHorizontalYPositions();
+    var points = [];
+    var seen = {};
+    var j;
+    var c;
+    var t;
+    var x;
+
+    function add(px, py) {
+      var key = px.toFixed(3) + "," + py.toFixed(3);
+      if (seen[key]) return;
+      seen[key] = true;
+      points.push({ cx: px, cy: py });
+    }
+
+    for (c = 1; c < cols; c++) {
+      x = c * b;
+      for (j = 0; j < ys.length; j++) {
+        add(x, ys[j]);
+        add(CANVAS_W - x, ys[j]);
+      }
+    }
+
+    if (extra > 0) {
+      for (c = 1; c < cols; c++) {
+        x = c * b;
+        for (t = 1; t <= extra; t++) {
+          var bandYs = [
+            t * b,
+            (t + 1) * b,
+            CANVAS_H - (t + 1) * b,
+            CANVAS_H - t * b,
+          ];
+          for (j = 0; j < bandYs.length; j++) {
+            add(x, bandYs[j]);
+            add(CANVAS_W - x, bandYs[j]);
+          }
+        }
+      }
+    }
+
+    return points;
+  }
+
+  function getBorderDivisionJunctionCircleRadius() {
+    var diameter =
+      typeof BORDER_DIVISION_JUNCTION_CIRCLE_DIAMETER_PX !== "undefined"
+        ? BORDER_DIVISION_JUNCTION_CIRCLE_DIAMETER_PX
+        : 5;
+    return diameter / 2;
+  }
+
+  /**
+   * @param {SVGElement} g
+   */
+  function appendBorderDivisionJunctionCircles(g) {
+    var points = collectBorderFrameGridJunctionPoints();
+    if (!points.length) return;
+
+    var fill = getPatternStrokeColor();
+    var r = getBorderDivisionJunctionCircleRadius();
+    var dotG = elSvg("g");
+    dotG.setAttribute("class", "border-division-junction-dots");
+    dotG.setAttribute("fill", fill);
+    dotG.setAttribute("stroke", "none");
+
+    for (var i = 0; i < points.length; i++) {
+      var circle = elSvg("circle");
+      circle.setAttribute("cx", String(points[i].cx));
+      circle.setAttribute("cy", String(points[i].cy));
+      circle.setAttribute("r", String(r));
+      dotG.appendChild(circle);
+    }
+    g.appendChild(dotG);
+  }
+
+  /**
+   * @param {string[]} lines
+   */
+  function pushBorderDivisionJunctionCirclesExport(lines) {
+    var points = collectBorderFrameGridJunctionPoints();
+    if (!points.length) return;
+
+    var fill = getPatternStrokeColor();
+    var r = getBorderDivisionJunctionCircleRadius();
+    var i;
+    lines.push(
+      '<g class="border-division-junction-dots" fill="' +
+        fill +
+        '" stroke="none">'
+    );
+    for (i = 0; i < points.length; i++) {
+      lines.push(
+        '<circle cx="' +
+          points[i].cx +
+          '" cy="' +
+          points[i].cy +
+          '" r="' +
+          r +
+          '"/>'
+      );
+    }
+    lines.push("</g>");
   }
 
   /**
@@ -6968,6 +7053,7 @@
 
     // Column separators on top of all overlay fills.
     appendLeftRightBorderColumnDividers(g);
+    appendBorderDivisionJunctionCircles(g);
   }
 
   /**
@@ -7320,6 +7406,7 @@
       pushBorderDivisionLineExport(lines, innerX0, bottomY1, innerX1, bottomY1);
     }
 
+    pushBorderDivisionJunctionCirclesExport(lines);
     lines.push("</g>");
   }
 
@@ -7360,6 +7447,9 @@
     appendBorderDivisionLinesToGroup(g);
     appendLeftRightBorderSolidCellRhombusesToGroup(g);
     appendLeftRightBorderCellDiagonalsToGroup(g);
+    if (getBorderSideThicknessColumns() <= 1) {
+      appendBorderDivisionJunctionCircles(g);
+    }
   }
 
   function createBorderDivisionLinesGroup() {
@@ -11101,6 +11191,10 @@
 
     pushLeftRightBorderColumnDividersExport(lines);
 
+    if (getBorderSideThicknessColumns() <= 1) {
+      pushBorderDivisionJunctionCirclesExport(lines);
+    }
+
     lines.push("</g>");
   }
 
@@ -11246,6 +11340,8 @@
     clippedAngerTriangles.appendChild(angerTriangleLayer);
     innerContent.appendChild(clippedAngerTriangles);
 
+    innerContent.appendChild(createFrameInsetOverlayLayer());
+
     var clippedHalfCircle = createInnerContentClipGroup("inner-clipped-half-circle");
     var halfCircleLayer = elSvg("g");
     halfCircleLayer.setAttribute("id", "layer-half-circle");
@@ -11258,11 +11354,10 @@
     colorDivisionsBlendRoot.setAttribute("style", "isolation:isolate");
     colorDivisionsBlendRoot.appendChild(innerContent);
     colorDivisionsBlendRoot.appendChild(createColorDivisionsLayer());
-    // Medium/Thick margin columns: last in blend root so they paint over grid + color tiles.
+    colorDivisionsBlendRoot.appendChild(createGridBoundaryLayer());
+    // Medium/Thick margin columns paint over grid + boundary at shared edges.
     colorDivisionsBlendRoot.appendChild(createBorderDivisionOverlayGroup());
     svg.appendChild(colorDivisionsBlendRoot);
-
-    svg.appendChild(createGridBoundaryLayer());
 
     var edgeBrownBars = elSvg("g");
     edgeBrownBars.setAttribute("id", "layer-edge-brown-bars");
@@ -11272,8 +11367,6 @@
     svg.appendChild(createBrownBarBannerTextGroup());
 
     svg.appendChild(createCanvasEdgeSerialGroup());
-
-    svg.appendChild(createFrameInsetOverlayLayer());
 
     return svg;
   }
@@ -11302,7 +11395,13 @@
   }
 
   function getHalfCircleRibCount() {
-    return 11;
+    return 21;
+  }
+
+  function getRadialFanRibCount() {
+    return typeof RADIAL_FAN_RIB_COUNT !== "undefined"
+      ? RADIAL_FAN_RIB_COUNT
+      : 26;
   }
 
   function getFanInnerLeafSizeRatio() {
@@ -11372,13 +11471,64 @@
   }
 
   function getHalfCircleMaxPetals() {
-    return Math.max(0, getHalfCircleRibCount() - 1);
+    var radialType =
+      typeof FAN_TYPE_RADIAL !== "undefined" ? FAN_TYPE_RADIAL : "radial";
+    var ribCount =
+      getFanType() === radialType
+        ? getRadialFanRibCount()
+        : getHalfCircleRibCount();
+    return Math.max(0, ribCount - 1);
   }
 
   var FAN_SHARED_LEAVES_ID = "fan-leaves";
   var FAN_SHARED_LEAF_SIZE_ID = "fan-leaf-size";
   var FAN_SHARED_ARC_ID = "fan-arc";
   var FAN_SHARED_STARS_ID = "fan-stars";
+  var FAN_TYPE_ORIGINAL_BTN_ID = "fan-type-original-btn";
+  var FAN_TYPE_RADIAL_BTN_ID = "fan-type-radial-btn";
+
+  function getFanType() {
+    var radialBtn = document.getElementById(FAN_TYPE_RADIAL_BTN_ID);
+    var radialType =
+      typeof FAN_TYPE_RADIAL !== "undefined" ? FAN_TYPE_RADIAL : "radial";
+    if (radialBtn && radialBtn.classList.contains("is-active")) {
+      return radialType;
+    }
+    return typeof FAN_TYPE_ORIGINAL !== "undefined"
+      ? FAN_TYPE_ORIGINAL
+      : "original";
+  }
+
+  function bindFanTypeToggle() {
+    var originalBtn = document.getElementById(FAN_TYPE_ORIGINAL_BTN_ID);
+    var radialBtn = document.getElementById(FAN_TYPE_RADIAL_BTN_ID);
+    if (!originalBtn || !radialBtn) return;
+
+    var originalType =
+      typeof FAN_TYPE_ORIGINAL !== "undefined" ? FAN_TYPE_ORIGINAL : "original";
+    var radialType =
+      typeof FAN_TYPE_RADIAL !== "undefined" ? FAN_TYPE_RADIAL : "radial";
+
+    function setFanType(type) {
+      var isRadial = type === radialType;
+      originalBtn.classList.toggle("is-active", !isRadial);
+      radialBtn.classList.toggle("is-active", isRadial);
+      originalBtn.setAttribute("aria-pressed", String(!isRadial));
+      radialBtn.setAttribute("aria-pressed", String(isRadial));
+      renderHalfCircleLayer();
+    }
+
+    originalBtn.addEventListener("click", function () {
+      setFanType(originalType);
+    });
+    radialBtn.addEventListener("click", function () {
+      setFanType(radialType);
+    });
+
+    var defaultType =
+      typeof FAN_TYPE_DEFAULT !== "undefined" ? FAN_TYPE_DEFAULT : originalType;
+    setFanType(defaultType);
+  }
 
   /** @param {"top" | "bottom"} idPrefix */
   function getFanSliderIds(idPrefix) {
@@ -12098,6 +12248,13 @@
     var rs = Math.max(0.01, chord * getHalfCircleInnerTipArcChordFactor());
     var sweep = halfCircleOutwardCuspSweep(fx, fy, p0, p1);
     return d + " A " + rs + " " + rs + " 0 0 " + (1 - sweep) + " " + p1.x + " " + p1.y;
+  }
+
+  function halfCircleInnerPetalTopCapPath(fx, fy, rInner, inLeft, inRight) {
+    var d = "M " + inLeft.x + " " + inLeft.y;
+    d = appendHalfCircleInnerPetalTipArc(d, fx, fy, rInner, inLeft, inRight);
+    var focalArc = halfCircleAppendFocalArcBetween(d, fx, fy, rInner, inRight, inLeft);
+    return (focalArc || d + " L " + inLeft.x + " " + inLeft.y) + " Z";
   }
 
   function halfCircleAppendFocalArcBetween(d, fx, fy, radius, fromPt, toPt) {
@@ -13224,63 +13381,13 @@
 
     var inset = getHalfCircleInset();
     var cuspGap = getHalfCircleCuspGapPx() * HALF_CIRCLE_RADIUS_SCALE;
-    var firstRib = layout.firstRib;
-    var valleyCircles = [];
-    if (getHalfCircleValleyCirclesVisible()) {
-      var fullFan = buildHalfCircleFullEndpoints(cx, focalY, r, ribs);
-      var fullPetals = buildHalfCirclePetals(
-        cx,
-        focalY,
-        ribs,
-        inset,
-        cuspGap,
-        r,
-        fullFan.endpoints,
-        fullFan.deltaTheta
-      );
-      var allValleyCircles = computeHalfCircleValleyCircles(
-        cx,
-        focalY,
-        ribs,
-        fullFan.endpoints,
-        fullPetals,
-        idPrefix
-      );
-      var vci;
-      for (vci = 0; vci < allValleyCircles.length; vci++) {
-        var vcCandidate = allValleyCircles[vci];
-        if (
-          vcCandidate.ribIndex > firstRib &&
-          vcCandidate.ribIndex < firstRib + visiblePetals
-        ) {
-          valleyCircles.push(vcCandidate);
-        }
-      }
-    }
-
     var fanStrokeOuter = sheetColor("D1");
     var fanStrokeInnerArc = sheetColor("D2");
     var fanStrokeInnerRib = sheetColor("D3");
     var fanStrokeDiagonal = sheetColor("D4");
-    var fanStrokeShelf = sheetColor("D5");
     var fanFillPetalFace = sheetColor("D6");
     var fanFillRibStrip = sheetColor("D7");
-    var fanFillCuspCap = sheetColor("D8");
     var fanFillArcBand = sheetColor("D9");
-    var fanFillCircleGap = sheetColor("D10");
-    var fanFillCirclePetalGap = sheetColor("D11");
-    var fanFillValleyCircle = sheetColor("E1");
-    var fanStrokeValleyCircle = sheetColor("E2");
-    var fanFillOuterStar = sheetColor("E3");
-    var fanStrokeOuterStar = sheetColor("E4");
-    var fanFillInnerStar = sheetColor("E5");
-    var fanStrokeInnerStar = sheetColor("E6");
-    var fanFillPentagon = sheetColor("E7");
-    var fanStrokePentagon = sheetColor("E8");
-    var fanFillStarArms = sheetColor("E9");
-    var fanStrokeStarArms = sheetColor("E10");
-
-    var drawCircleShelfFrame = false;
 
     var bgFill = elSvg("path");
     bgFill.setAttribute("id", "half-circle-background-" + idPrefix);
@@ -13502,25 +13609,6 @@
       rightStripFill.setAttribute("stroke", "none");
       innerGroup.appendChild(rightStripFill);
 
-      if (drawCircleShelfFrame && getHalfCircleValleyCirclesVisible() && valleyCircles.length > 0) {
-        var capShelfRadius = halfCircleValleyShelfRadius(cx, focalY, valleyCircles);
-        if (capShelfRadius > 0) {
-          var petalCapPath = halfCirclePetalShelfCuspCapPath(
-            cx,
-            focalY,
-            capShelfRadius,
-            petal
-          );
-          if (petalCapPath) {
-            var petalCapFill = elSvg("path");
-            petalCapFill.setAttribute("d", petalCapPath);
-            petalCapFill.setAttribute("fill", fanFillCuspCap);
-            petalCapFill.setAttribute("stroke", "none");
-            innerGroup.appendChild(petalCapFill);
-          }
-        }
-      }
-
       var innerLeftRib = elSvg("line");
       innerLeftRib.setAttribute("x1", String(cx));
       innerLeftRib.setAttribute("y1", String(focalY));
@@ -13539,6 +13627,15 @@
       innerRightRib.setAttribute("stroke-width", String(HALF_CIRCLE_FAN_STROKE_WIDTH));
       innerGroup.appendChild(innerRightRib);
 
+      var topCapFill = elSvg("path");
+      topCapFill.setAttribute(
+        "d",
+        halfCircleInnerPetalTopCapPath(cx, focalY, petal.rInner, inLeft, inRight)
+      );
+      topCapFill.setAttribute("fill", fanFillRibStrip);
+      topCapFill.setAttribute("stroke", "none");
+      innerGroup.appendChild(topCapFill);
+
       var dInnerCusp = "M " + inLeft.x + " " + inLeft.y;
       dInnerCusp = appendHalfCircleInnerPetalTipArc(
         dInnerCusp,
@@ -13556,212 +13653,855 @@
       innerGroup.appendChild(innerCusp);
     }
     parentGroup.appendChild(innerGroup);
+  }
 
-    if (valleyCircles.length > 0) {
-      var shelfRadius = halfCircleValleyShelfRadius(cx, focalY, valleyCircles);
-      var valleyGapGroup = null;
-      if (drawCircleShelfFrame && shelfRadius > 0) {
-        valleyGapGroup = elSvg("g");
-        valleyGapGroup.setAttribute("id", "half-circle-valley-gaps-" + idPrefix);
-        var gi;
-        for (gi = 0; gi < valleyCircles.length - 1; gi++) {
-          var gapPathD = halfCircleValleyGapFillPath(
-            cx,
-            focalY,
-            shelfRadius,
-            valleyCircles[gi],
-            valleyCircles[gi + 1]
-          );
-          if (!gapPathD) continue;
-          var gapFill = elSvg("path");
-          gapFill.setAttribute("d", gapPathD);
-          gapFill.setAttribute("fill", fanFillCircleGap);
-          gapFill.setAttribute("stroke", "none");
-          valleyGapGroup.appendChild(gapFill);
-        }
+  function getRadialFanStrokeWidth() {
+    return typeof RADIAL_FAN_STROKE_WIDTH !== "undefined"
+      ? RADIAL_FAN_STROKE_WIDTH
+      : 2;
+  }
 
-        for (gi = 0; gi < valleyCircles.length; gi++) {
-          var vcGap = valleyCircles[gi];
-          if (vcGap.leftPetal) {
-            var petalCircleGap = halfCirclePetalCircleGapFillPath(
-              cx,
-              focalY,
-              shelfRadius,
-              vcGap.leftPetal,
-              vcGap
-            );
-            if (petalCircleGap) {
-              var petalCircleFill = elSvg("path");
-              petalCircleFill.setAttribute("d", petalCircleGap);
-              petalCircleFill.setAttribute("fill", fanFillCirclePetalGap);
-              petalCircleFill.setAttribute("stroke", "none");
-              valleyGapGroup.appendChild(petalCircleFill);
-            }
+  /** @param {"top" | "bottom"} idPrefix @returns {number[]} */
+  function getRadialFanEvenInnerArcRadii(idPrefix, fanRadius) {
+    var count =
+      typeof RADIAL_FAN_INNER_ARC_COUNT !== "undefined"
+        ? RADIAL_FAN_INNER_ARC_COUNT
+        : 6;
+    if (count < 1) return [];
+
+    var inwardScale =
+      typeof RADIAL_FAN_INNER_ARC_INWARD_SCALE !== "undefined"
+        ? RADIAL_FAN_INNER_ARC_INWARD_SCALE
+        : 0.38;
+    var stepPx =
+      typeof RADIAL_FAN_INNER_ARC_STEP_PX !== "undefined"
+        ? RADIAL_FAN_INNER_ARC_STEP_PX
+        : 11;
+    var step = stepPx * HALF_CIRCLE_RADIUS_SCALE;
+    var frameInset = getRadialFanStrokeWidth();
+    var rStart =
+      fanRadius * getFanInnerArcRadiusRatio(idPrefix) * inwardScale;
+    var radii = [];
+    var i;
+    for (i = 0; i < count; i++) {
+      var radius = rStart + i * step;
+      if (radius >= fanRadius - frameInset) break;
+      radii.push(radius);
+    }
+
+    var addFrameAdjacent =
+      typeof RADIAL_FAN_FRAME_ADJACENT_INNER_ARC !== "undefined"
+        ? RADIAL_FAN_FRAME_ADJACENT_INNER_ARC
+        : true;
+    if (addFrameAdjacent && step > 0) {
+      var frameAdjacentRadius = fanRadius - step;
+      var innermost = radii.length ? radii[radii.length - 1] : 0;
+      if (
+        frameAdjacentRadius > innermost + 0.5 &&
+        frameAdjacentRadius < fanRadius - frameInset
+      ) {
+        radii.push(frameAdjacentRadius);
+
+        var addFrameInward =
+          typeof RADIAL_FAN_FRAME_INWARD_ARC !== "undefined"
+            ? RADIAL_FAN_FRAME_INWARD_ARC
+            : true;
+        var inwardMultiplier =
+          typeof RADIAL_FAN_FRAME_INWARD_ARC_STEP_MULTIPLIER !== "undefined"
+            ? RADIAL_FAN_FRAME_INWARD_ARC_STEP_MULTIPLIER
+            : 2;
+        if (addFrameInward && inwardMultiplier > 0) {
+          var frameInwardRadius =
+            frameAdjacentRadius - inwardMultiplier * step;
+          if (
+            frameInwardRadius > innermost + 0.5 &&
+            frameInwardRadius > 0
+          ) {
+            radii.push(frameInwardRadius);
           }
-          if (vcGap.rightPetal) {
-            var circlePetalGap = halfCircleCirclePetalGapFillPath(
-              cx,
-              focalY,
-              shelfRadius,
-              vcGap,
-              vcGap.rightPetal
-            );
-            if (circlePetalGap) {
-              var circlePetalFill = elSvg("path");
-              circlePetalFill.setAttribute("d", circlePetalGap);
-              circlePetalFill.setAttribute("fill", fanFillCirclePetalGap);
-              circlePetalFill.setAttribute("stroke", "none");
-              valleyGapGroup.appendChild(circlePetalFill);
-            }
-          }
-        }
-        parentGroup.appendChild(valleyGapGroup);
-      }
-
-      var valleyGroup = elSvg("g");
-      valleyGroup.setAttribute("id", "half-circle-valley-circles-" + idPrefix);
-      var vc;
-      for (vc = 0; vc < valleyCircles.length; vc++) {
-        var valleyCircle = valleyCircles[vc];
-        if (drawCircleShelfFrame) {
-          var circle = elSvg("circle");
-          circle.setAttribute("cx", String(valleyCircle.cx));
-          circle.setAttribute("cy", String(valleyCircle.cy));
-          circle.setAttribute("r", String(valleyCircle.r));
-          circle.setAttribute("fill", fanFillValleyCircle);
-          circle.setAttribute("stroke", fanStrokeValleyCircle);
-          circle.setAttribute("stroke-width", String(HALF_CIRCLE_FAN_STROKE_WIDTH));
-          valleyGroup.appendChild(circle);
-        }
-
-        var starRatio = getFanStarInnerRadiusRatio(idPrefix);
-        var starPoints = getFanStarPointCount(idPrefix);
-        var outerStarInnerR = valleyCircle.r * starRatio;
-        var innerStarTipAngle = valleyCircle.tipAngle - Math.PI / starPoints;
-
-        var star = elSvg("path");
-        star.setAttribute(
-          "d",
-          halfCircleStarSilhouettePath(
-            valleyCircle.cx,
-            valleyCircle.cy,
-            valleyCircle.r,
-            valleyCircle.tipAngle,
-            outerStarInnerR,
-            starPoints
-          )
-        );
-        star.setAttribute("fill", fanFillOuterStar);
-        star.setAttribute("stroke", "none");
-        valleyGroup.appendChild(star);
-
-        var starOutline = elSvg("path");
-        starOutline.setAttribute(
-          "d",
-          halfCircleStarTipsOutlinePath(
-            valleyCircle.cx,
-            valleyCircle.cy,
-            valleyCircle.r,
-            valleyCircle.tipAngle,
-            starPoints
-          )
-        );
-        starOutline.setAttribute("fill", "none");
-        starOutline.setAttribute("stroke", fanStrokeOuterStar);
-        starOutline.setAttribute("stroke-width", String(HALF_CIRCLE_FAN_STROKE_WIDTH));
-        starOutline.setAttribute("stroke-linejoin", "round");
-        valleyGroup.appendChild(starOutline);
-
-        var innerStar = elSvg("path");
-        innerStar.setAttribute(
-          "d",
-          halfCircleStarSilhouettePath(
-            valleyCircle.cx,
-            valleyCircle.cy,
-            outerStarInnerR,
-            innerStarTipAngle,
-            outerStarInnerR * starRatio,
-            starPoints
-          )
-        );
-        innerStar.setAttribute("fill", fanFillInnerStar);
-        innerStar.setAttribute("stroke", "none");
-        valleyGroup.appendChild(innerStar);
-
-        var innerStarOutline = elSvg("path");
-        innerStarOutline.setAttribute(
-          "d",
-          halfCircleStarTipsOutlinePath(
-            valleyCircle.cx,
-            valleyCircle.cy,
-            outerStarInnerR,
-            innerStarTipAngle,
-            starPoints
-          )
-        );
-        innerStarOutline.setAttribute("fill", "none");
-        innerStarOutline.setAttribute("stroke", fanStrokeInnerStar);
-        innerStarOutline.setAttribute(
-          "stroke-width",
-          String(HALF_CIRCLE_FAN_STROKE_WIDTH)
-        );
-        innerStarOutline.setAttribute("stroke-linejoin", "round");
-        valleyGroup.appendChild(innerStarOutline);
-
-        var innerStarInnerR = outerStarInnerR * starRatio;
-        var starArms = elSvg("path");
-        starArms.setAttribute(
-          "d",
-          halfCircleStarArmTrianglesPath(
-            valleyCircle.cx,
-            valleyCircle.cy,
-            outerStarInnerR,
-            innerStarInnerR,
-            innerStarTipAngle,
-            starPoints
-          )
-        );
-        starArms.setAttribute("fill", fanFillStarArms);
-        starArms.setAttribute("stroke", fanStrokeStarArms);
-        starArms.setAttribute("stroke-width", String(HALF_CIRCLE_FAN_STROKE_WIDTH));
-        starArms.setAttribute("stroke-linejoin", "round");
-        valleyGroup.appendChild(starArms);
-
-        var pentagon = elSvg("path");
-        pentagon.setAttribute(
-          "d",
-          halfCircleStarInnerPentagonPath(
-            valleyCircle.cx,
-            valleyCircle.cy,
-            innerStarInnerR,
-            innerStarTipAngle,
-            starPoints
-          )
-        );
-        pentagon.setAttribute("fill", fanFillPentagon);
-        pentagon.setAttribute("stroke", fanStrokePentagon);
-        pentagon.setAttribute("stroke-width", String(HALF_CIRCLE_FAN_STROKE_WIDTH));
-        pentagon.setAttribute("stroke-linejoin", "round");
-        valleyGroup.appendChild(pentagon);
-      }
-
-      parentGroup.appendChild(valleyGroup);
-
-      if (drawCircleShelfFrame && valleyCircles.length > 0) {
-        var shelfSpec = halfCircleValleyShelfArcSpec(cx, focalY, valleyCircles);
-        if (shelfSpec && shelfSpec.radius > 0) {
-          var shelfArc = elSvg("path");
-          shelfArc.setAttribute("id", "half-circle-circle-shelf-arc-" + idPrefix);
-          shelfArc.setAttribute(
-            "d",
-            halfCircleValleyShelfArcPath(cx, focalY, shelfSpec)
-          );
-          shelfArc.setAttribute("fill", "none");
-          shelfArc.setAttribute("stroke", fanStrokeShelf);
-          shelfArc.setAttribute("stroke-width", String(HALF_CIRCLE_FAN_STROKE_WIDTH));
-          parentGroup.appendChild(shelfArc);
         }
       }
+    }
+    return radii;
+  }
+
+  /**
+   * Angles along the arc where ring bottoms stay inside the fan sector
+   * (clear of base line and left/right boundary rays).
+   * @returns {number[]}
+   */
+  function getRadialFanThirdArcRingAngles(
+    arcRadius,
+    ringRadius,
+    startAngle,
+    endAngle,
+    ringCount
+  ) {
+    if (ringCount < 1 || ringRadius <= 0) return [];
+
+    var centerDist = arcRadius + ringRadius;
+    var lateralInset = Math.atan2(ringRadius, centerDist);
+    var baseInset = Math.asin(Math.min(1, ringRadius / centerDist));
+
+    var arcFrom = startAngle;
+    var arcTo = endAngle;
+    var thetaLow = arcTo + lateralInset;
+    var thetaHigh = arcFrom - lateralInset;
+    thetaLow = Math.max(thetaLow, baseInset);
+    thetaHigh = Math.min(thetaHigh, Math.PI - baseInset);
+
+    if (thetaLow >= thetaHigh) {
+      return [Math.max(thetaLow, Math.min(thetaHigh, Math.PI / 2))];
+    }
+
+    var span = thetaHigh - thetaLow;
+    if (ringCount === 1) {
+      return [(thetaLow + thetaHigh) * 0.5];
+    }
+
+    // Min center-to-center angle so ring circles do not overlap on the arc.
+    var minGap = 2 * Math.asin(Math.min(1, ringRadius / centerDist));
+    var gapMargin =
+      typeof RADIAL_FAN_THIRD_ARC_RING_GAP_MARGIN !== "undefined"
+        ? RADIAL_FAN_THIRD_ARC_RING_GAP_MARGIN
+        : 1.2;
+    var minRingGap = minGap * gapMargin;
+    var edgeMarginRatio =
+      typeof RADIAL_FAN_THIRD_ARC_RING_EDGE_MARGIN_RATIO !== "undefined"
+        ? RADIAL_FAN_THIRD_ARC_RING_EDGE_MARGIN_RATIO
+        : 0.08;
+    var edgeMargin = span * edgeMarginRatio;
+
+    var innerLow = thetaLow + edgeMargin;
+    var innerHigh = thetaHigh - edgeMargin;
+    var innerSpan = innerHigh - innerLow;
+    if (innerSpan <= 0) {
+      return [(thetaLow + thetaHigh) * 0.5];
+    }
+
+    var ringGap = innerSpan / (ringCount - 1);
+    var rowSpan = ringGap * (ringCount - 1);
+    var firstAngle = innerLow;
+
+    if (ringGap < minRingGap) {
+      ringGap = minRingGap;
+      rowSpan = ringGap * (ringCount - 1);
+      firstAngle = innerLow + (innerSpan - rowSpan) * 0.5;
+    }
+
+    var angles = [];
+    var ri;
+    for (ri = 0; ri < ringCount; ri++) {
+      angles.push(firstAngle + ri * ringGap);
+    }
+    return angles;
+  }
+
+  /** @returns {number[]} radii small → large, equal gaps from center to outer */
+  function getRadialFanNestedRingRadii(outerRingRadius, nestedCount) {
+    if (nestedCount < 1 || outerRingRadius <= 0) return [];
+    var gap = outerRingRadius / nestedCount;
+    var radii = [];
+    var ni;
+    for (ni = 1; ni <= nestedCount; ni++) {
+      radii.push(gap * ni);
+    }
+    return radii;
+  }
+
+  function appendRadialFanRingSliceLines(
+    parentGroup,
+    idPrefix,
+    setIndex,
+    centerX,
+    centerY,
+    outerRadius,
+    sliceCount,
+    stroke,
+    strokeWidth
+  ) {
+    if (sliceCount < 2 || outerRadius <= 0) return;
+
+    var slicesGroup = elSvg("g");
+    slicesGroup.setAttribute(
+      "id",
+      "radial-fan-third-arc-ring-slices-" + idPrefix + "-" + setIndex
+    );
+    var si;
+    for (si = 0; si < sliceCount; si++) {
+      var angle = (si * 2 * Math.PI) / sliceCount;
+      var endX = centerX + outerRadius * Math.cos(angle);
+      var endY = centerY + outerRadius * Math.sin(angle);
+
+      var slice = elSvg("line");
+      slice.setAttribute(
+        "id",
+        "radial-fan-third-arc-ring-slice-" + idPrefix + "-" + setIndex + "-" + si
+      );
+      slice.setAttribute("x1", String(centerX));
+      slice.setAttribute("y1", String(centerY));
+      slice.setAttribute("x2", String(endX));
+      slice.setAttribute("y2", String(endY));
+      slice.setAttribute("stroke", stroke);
+      slice.setAttribute("stroke-width", String(strokeWidth));
+      slicesGroup.appendChild(slice);
+    }
+    parentGroup.appendChild(slicesGroup);
+  }
+
+  function appendRadialFanRingSet(
+    parentGroup,
+    idPrefix,
+    setId,
+    centerX,
+    centerY,
+    outerRingRadius,
+    stroke,
+    strokeWidth
+  ) {
+    if (outerRingRadius <= 0) return;
+
+    var nestedCount =
+      typeof RADIAL_FAN_THIRD_ARC_NESTED_RING_COUNT !== "undefined"
+        ? RADIAL_FAN_THIRD_ARC_NESTED_RING_COUNT
+        : 3;
+    var nestedRadii = getRadialFanNestedRingRadii(outerRingRadius, nestedCount);
+    var sliceCount =
+      typeof RADIAL_FAN_THIRD_ARC_RING_SLICE_COUNT !== "undefined"
+        ? RADIAL_FAN_THIRD_ARC_RING_SLICE_COUNT
+        : 16;
+
+    var nestGroup = elSvg("g");
+    nestGroup.setAttribute("id", "radial-fan-ring-set-" + idPrefix + "-" + setId);
+    var nj;
+    for (nj = 0; nj < nestedRadii.length; nj++) {
+      var ring = elSvg("circle");
+      ring.setAttribute(
+        "id",
+        "radial-fan-ring-" + idPrefix + "-" + setId + "-" + nj
+      );
+      ring.setAttribute("cx", String(centerX));
+      ring.setAttribute("cy", String(centerY));
+      ring.setAttribute("r", String(nestedRadii[nj]));
+      ring.setAttribute("fill", "none");
+      ring.setAttribute("stroke", stroke);
+      ring.setAttribute("stroke-width", String(strokeWidth));
+      nestGroup.appendChild(ring);
+    }
+    appendRadialFanRingSliceLines(
+      nestGroup,
+      idPrefix,
+      setId,
+      centerX,
+      centerY,
+      outerRingRadius,
+      sliceCount,
+      stroke,
+      strokeWidth
+    );
+    parentGroup.appendChild(nestGroup);
+  }
+
+  /**
+   * Radial distance for an elevated ring: outer edge stays at least gapPx away
+   * from each adjacent base ring (prevents circle overlap).
+   */
+  function getRadialFanElevatedCenterDist(
+    cx,
+    focalY,
+    arcRadius,
+    baseRingRadius,
+    midAngle,
+    elevatedRadius,
+    adjacentIndices,
+    ringAngles,
+    gapPx
+  ) {
+    if (!adjacentIndices || !adjacentIndices.length) {
+      return arcRadius + 2 * baseRingRadius + gapPx + elevatedRadius;
+    }
+
+    var baseCenterDist = arcRadius + baseRingRadius;
+    var lo = arcRadius + 2 * baseRingRadius;
+    var hi = arcRadius + 2 * baseRingRadius + gapPx + elevatedRadius + 120;
+    var iter;
+    var mid;
+    var ai;
+    var elevCenter;
+    var minEdgeGap;
+
+    for (iter = 0; iter < 48; iter++) {
+      mid = (lo + hi) * 0.5;
+      elevCenter = halfCirclePolarPoint(cx, focalY, mid, midAngle);
+      minEdgeGap = Infinity;
+
+      for (ai = 0; ai < adjacentIndices.length; ai++) {
+        var adjIdx = adjacentIndices[ai];
+        if (adjIdx < 0 || adjIdx >= ringAngles.length) continue;
+        var baseCenter = halfCirclePolarPoint(
+          cx,
+          focalY,
+          baseCenterDist,
+          ringAngles[adjIdx]
+        );
+        var dx = elevCenter.x - baseCenter.x;
+        var dy = elevCenter.y - baseCenter.y;
+        var centerGap = Math.sqrt(dx * dx + dy * dy);
+        var edgeGap = centerGap - baseRingRadius - elevatedRadius;
+        if (edgeGap < minEdgeGap) minEdgeGap = edgeGap;
+      }
+
+      if (minEdgeGap >= gapPx) hi = mid;
+      else lo = mid;
+    }
+
+    return hi;
+  }
+
+  function appendRadialFanElevatedRings(
+    parentGroup,
+    idPrefix,
+    cx,
+    focalY,
+    arcRadius,
+    baseRingRadius,
+    ringAngles,
+    stroke,
+    strokeWidth
+  ) {
+    if (!ringAngles || ringAngles.length < 5 || baseRingRadius <= 0) return;
+
+    var scale =
+      typeof RADIAL_FAN_ELEVATED_RING_SCALE !== "undefined"
+        ? RADIAL_FAN_ELEVATED_RING_SCALE
+        : 1.2;
+    var gapPx =
+      typeof RADIAL_FAN_ELEVATED_RING_GAP_PX !== "undefined"
+        ? RADIAL_FAN_ELEVATED_RING_GAP_PX
+        : 8;
+    var elevatedRadius = baseRingRadius * scale;
+    var pairSpecs = [
+      { leftIdx: 0, rightIdx: 1, adjacentIndices: [0, 1] },
+      { leftIdx: 3, rightIdx: 4, adjacentIndices: [3, 4] },
+    ];
+    var pi;
+
+    for (pi = 0; pi < pairSpecs.length; pi++) {
+      var leftIdx = pairSpecs[pi].leftIdx;
+      var rightIdx = pairSpecs[pi].rightIdx;
+      var adjacentIndices = pairSpecs[pi].adjacentIndices;
+      if (rightIdx >= ringAngles.length) continue;
+
+      var midAngle = (ringAngles[leftIdx] + ringAngles[rightIdx]) * 0.5;
+      var centerDist = getRadialFanElevatedCenterDist(
+        cx,
+        focalY,
+        arcRadius,
+        baseRingRadius,
+        midAngle,
+        elevatedRadius,
+        adjacentIndices,
+        ringAngles,
+        gapPx
+      );
+      var center = halfCirclePolarPoint(cx, focalY, centerDist, midAngle);
+      appendRadialFanRingSet(
+        parentGroup,
+        idPrefix,
+        "elevated-" + pi,
+        center.x,
+        center.y,
+        elevatedRadius,
+        stroke,
+        strokeWidth
+      );
+    }
+  }
+
+  function appendRadialFanThirdArcRings(
+    parentGroup,
+    idPrefix,
+    cx,
+    focalY,
+    arcRadius,
+    startAngle,
+    endAngle,
+    ringCount,
+    ringRadius,
+    stroke,
+    strokeWidth
+  ) {
+    if (ringCount < 1 || ringRadius <= 0) return;
+
+    var ringAngles = getRadialFanThirdArcRingAngles(
+      arcRadius,
+      ringRadius,
+      startAngle,
+      endAngle,
+      ringCount
+    );
+    var ri;
+    for (ri = 0; ri < ringAngles.length; ri++) {
+      var center = halfCirclePolarPoint(
+        cx,
+        focalY,
+        arcRadius + ringRadius,
+        ringAngles[ri]
+      );
+      appendRadialFanRingSet(
+        parentGroup,
+        idPrefix,
+        String(ri),
+        center.x,
+        center.y,
+        ringRadius,
+        stroke,
+        strokeWidth
+      );
+    }
+
+    appendRadialFanElevatedRings(
+      parentGroup,
+      idPrefix,
+      cx,
+      focalY,
+      arcRadius,
+      ringRadius,
+      ringAngles,
+      stroke,
+      strokeWidth
+    );
+  }
+
+  function appendRadialFanInnerArcBandXMarks(
+    parentGroup,
+    cx,
+    focalY,
+    innerRadius,
+    outerRadius,
+    endpoints,
+    stroke,
+    strokeWidth
+  ) {
+    if (!endpoints || endpoints.length < 2) return;
+
+    var gi;
+    for (gi = 0; gi < endpoints.length - 1; gi++) {
+      var leftAngle = endpoints[gi].a;
+      var rightAngle = endpoints[gi + 1].a;
+      var pointA = halfCirclePolarPoint(cx, focalY, innerRadius, leftAngle);
+      var pointB = halfCirclePolarPoint(cx, focalY, innerRadius, rightAngle);
+      var pointC = halfCirclePolarPoint(cx, focalY, outerRadius, rightAngle);
+      var pointD = halfCirclePolarPoint(cx, focalY, outerRadius, leftAngle);
+
+      var diag1 = elSvg("line");
+      diag1.setAttribute("x1", String(pointA.x));
+      diag1.setAttribute("y1", String(pointA.y));
+      diag1.setAttribute("x2", String(pointC.x));
+      diag1.setAttribute("y2", String(pointC.y));
+      diag1.setAttribute("stroke", stroke);
+      diag1.setAttribute("stroke-width", String(strokeWidth));
+      parentGroup.appendChild(diag1);
+
+      var diag2 = elSvg("line");
+      diag2.setAttribute("x1", String(pointB.x));
+      diag2.setAttribute("y1", String(pointB.y));
+      diag2.setAttribute("x2", String(pointD.x));
+      diag2.setAttribute("y2", String(pointD.y));
+      diag2.setAttribute("stroke", stroke);
+      diag2.setAttribute("stroke-width", String(strokeWidth));
+      parentGroup.appendChild(diag2);
+    }
+  }
+
+  function appendRadialFanSixthArcDiagonalLine(
+    parentGroup,
+    idPrefix,
+    sideSuffix,
+    cx,
+    focalY,
+    fanRadius,
+    innerRadius,
+    startAngle,
+    endAngle,
+    stroke,
+    strokeWidth
+  ) {
+    var startPoint = halfCirclePolarPoint(cx, focalY, innerRadius, startAngle);
+    var endPoint = halfCirclePolarPoint(cx, focalY, fanRadius, endAngle);
+    var diagonal = elSvg("line");
+    diagonal.setAttribute(
+      "id",
+      "radial-fan-sixth-arc-diagonal-" + idPrefix + sideSuffix
+    );
+    diagonal.setAttribute("x1", String(startPoint.x));
+    diagonal.setAttribute("y1", String(startPoint.y));
+    diagonal.setAttribute("x2", String(endPoint.x));
+    diagonal.setAttribute("y2", String(endPoint.y));
+    diagonal.setAttribute("stroke", stroke);
+    diagonal.setAttribute("stroke-width", String(strokeWidth));
+    parentGroup.appendChild(diagonal);
+  }
+
+  /**
+   * Mirrored pair on 6th inner arc: start corner fixed at 2nd rib cell edge,
+   * outer end at 3rd rib from each side.
+   */
+  /** Left base corner → outer arc at the Nth rib from the fan end (right side). */
+  function appendRadialFanBaseLeftDiagonal(
+    parentGroup,
+    idPrefix,
+    cx,
+    focalY,
+    fanRadius,
+    endpoints,
+    stroke,
+    strokeWidth
+  ) {
+    var ribFromEnd =
+      typeof RADIAL_FAN_BASE_LEFT_DIAGONAL_END_RIB_FROM_END !== "undefined"
+        ? RADIAL_FAN_BASE_LEFT_DIAGONAL_END_RIB_FROM_END
+        : 9;
+    if (!endpoints || endpoints.length < ribFromEnd + 1) return;
+
+    var startPoint = endpoints[0];
+    var endAngle = endpoints[endpoints.length - ribFromEnd].a;
+    var endPoint = halfCirclePolarPoint(cx, focalY, fanRadius, endAngle);
+    var diagonal = elSvg("line");
+    diagonal.setAttribute("id", "radial-fan-base-left-diagonal-" + idPrefix);
+    diagonal.setAttribute("x1", String(startPoint.x));
+    diagonal.setAttribute("y1", String(startPoint.y));
+    diagonal.setAttribute("x2", String(endPoint.x));
+    diagonal.setAttribute("y2", String(endPoint.y));
+    diagonal.setAttribute("stroke", stroke);
+    diagonal.setAttribute("stroke-width", String(strokeWidth));
+    parentGroup.appendChild(diagonal);
+  }
+
+  /** Right base corner → outer arc at the Nth rib from the fan start (left side). */
+  function appendRadialFanBaseRightDiagonal(
+    parentGroup,
+    idPrefix,
+    cx,
+    focalY,
+    fanRadius,
+    endpoints,
+    stroke,
+    strokeWidth
+  ) {
+    var ribFromStart =
+      typeof RADIAL_FAN_BASE_RIGHT_DIAGONAL_END_RIB_FROM_START !== "undefined"
+        ? RADIAL_FAN_BASE_RIGHT_DIAGONAL_END_RIB_FROM_START
+        : 9;
+    if (!endpoints || endpoints.length < ribFromStart) return;
+
+    var startPoint = endpoints[endpoints.length - 1];
+    var endAngle = endpoints[ribFromStart - 1].a;
+    var endPoint = halfCirclePolarPoint(cx, focalY, fanRadius, endAngle);
+    var diagonal = elSvg("line");
+    diagonal.setAttribute("id", "radial-fan-base-right-diagonal-" + idPrefix);
+    diagonal.setAttribute("x1", String(startPoint.x));
+    diagonal.setAttribute("y1", String(startPoint.y));
+    diagonal.setAttribute("x2", String(endPoint.x));
+    diagonal.setAttribute("y2", String(endPoint.y));
+    diagonal.setAttribute("stroke", stroke);
+    diagonal.setAttribute("stroke-width", String(strokeWidth));
+    parentGroup.appendChild(diagonal);
+  }
+
+  function appendRadialFanSixthArcDiagonals(
+    parentGroup,
+    idPrefix,
+    cx,
+    focalY,
+    fanRadius,
+    innerArcRadii,
+    endpoints,
+    stroke,
+    strokeWidth
+  ) {
+    var arcIndex =
+      typeof RADIAL_FAN_SIXTH_ARC_DIAGONAL_ARC_INDEX !== "undefined"
+        ? RADIAL_FAN_SIXTH_ARC_DIAGONAL_ARC_INDEX
+        : 5;
+    var startCornerRibIndex =
+      typeof RADIAL_FAN_SIXTH_ARC_DIAGONAL_START_CORNER_RIB_INDEX !==
+      "undefined"
+        ? RADIAL_FAN_SIXTH_ARC_DIAGONAL_START_CORNER_RIB_INDEX
+        : typeof RADIAL_FAN_SIXTH_ARC_DIAGONAL_RIB_INDEX !== "undefined"
+          ? RADIAL_FAN_SIXTH_ARC_DIAGONAL_RIB_INDEX
+          : 1;
+    var endRibIndex =
+      typeof RADIAL_FAN_SIXTH_ARC_DIAGONAL_END_RIB_INDEX !== "undefined"
+        ? RADIAL_FAN_SIXTH_ARC_DIAGONAL_END_RIB_INDEX
+        : 2;
+    if (
+      !innerArcRadii ||
+      arcIndex < 0 ||
+      arcIndex >= innerArcRadii.length ||
+      !endpoints ||
+      startCornerRibIndex < 1 ||
+      endRibIndex < 1
+    ) {
+      return;
+    }
+
+    var innerRadius = innerArcRadii[arcIndex];
+    var endpointCount = endpoints.length;
+
+    if (startCornerRibIndex < endpointCount && endRibIndex < endpointCount) {
+      appendRadialFanSixthArcDiagonalLine(
+        parentGroup,
+        idPrefix,
+        "-start",
+        cx,
+        focalY,
+        fanRadius,
+        innerRadius,
+        endpoints[startCornerRibIndex - 1].a,
+        endpoints[endRibIndex].a,
+        stroke,
+        strokeWidth
+      );
+    }
+
+    if (
+      endpointCount - startCornerRibIndex >= 0 &&
+      endpointCount - 1 - endRibIndex >= 0
+    ) {
+      appendRadialFanSixthArcDiagonalLine(
+        parentGroup,
+        idPrefix,
+        "-end",
+        cx,
+        focalY,
+        fanRadius,
+        innerRadius,
+        endpoints[endpointCount - startCornerRibIndex].a,
+        endpoints[endpointCount - 1 - endRibIndex].a,
+        stroke,
+        strokeWidth
+      );
+    }
+  }
+
+  /** Clip path in the same fan group so top/bottom mirror transforms stay aligned. */
+  function appendRadialFanSectorClipPath(parentGroup, idPrefix, sectorPath) {
+    var clipId = "radial-fan-sector-clip-" + idPrefix;
+    var clip = elSvg("clipPath");
+    clip.setAttribute("id", clipId);
+    var path = elSvg("path");
+    path.setAttribute("d", sectorPath);
+    clip.appendChild(path);
+    parentGroup.appendChild(clip);
+    return clipId;
+  }
+
+  function appendRadialBaseFan(
+    parentGroup,
+    idPrefix,
+    cx,
+    focalY,
+    r,
+    ribs,
+    visiblePetals,
+    anchor
+  ) {
+    var radialRibs = getRadialFanRibCount();
+    var layout = buildHalfCircleVisibleFanLayout(
+      cx,
+      focalY,
+      r,
+      radialRibs,
+      visiblePetals,
+      anchor || "left"
+    );
+    var endpoints = layout.endpoints;
+    if (!endpoints.length) return;
+
+    var sectorPath = halfCircleSectorPath(
+      cx,
+      focalY,
+      r,
+      layout.startAngle,
+      layout.endAngle
+    );
+    var fullLayout = buildHalfCircleVisibleFanLayout(
+      cx,
+      focalY,
+      r,
+      radialRibs,
+      radialRibs - 1,
+      anchor || "left"
+    );
+
+    if (idPrefix === "top" && designSvg) {
+      var defs = designSvg.querySelector("defs");
+      if (defs) {
+        var existingClip = defs.querySelector("#half-circle-clip");
+        if (existingClip && existingClip.parentNode) {
+          existingClip.parentNode.removeChild(existingClip);
+        }
+
+        var halfCircleClip = elSvg("clipPath");
+        halfCircleClip.setAttribute("id", "half-circle-clip");
+        var clipPath = elSvg("path");
+        clipPath.setAttribute("d", sectorPath);
+        halfCircleClip.appendChild(clipPath);
+        defs.appendChild(halfCircleClip);
+      }
+    }
+
+    var fanStroke = sheetColor("D1");
+    var strokeWidth = getRadialFanStrokeWidth();
+
+    var bgFill = elSvg("path");
+    bgFill.setAttribute("id", "radial-fan-background-" + idPrefix);
+    bgFill.setAttribute("d", sectorPath);
+    bgFill.setAttribute("fill", sheetColor("A2"));
+    bgFill.setAttribute("stroke", "none");
+    parentGroup.appendChild(bgFill);
+
+    var baseLine = elSvg("line");
+    baseLine.setAttribute("id", "radial-fan-base-" + idPrefix);
+    baseLine.setAttribute("x1", String(endpoints[0].x));
+    baseLine.setAttribute("y1", String(endpoints[0].y));
+    baseLine.setAttribute("x2", String(endpoints[endpoints.length - 1].x));
+    baseLine.setAttribute("y2", String(endpoints[endpoints.length - 1].y));
+    baseLine.setAttribute("stroke", fanStroke);
+    baseLine.setAttribute("stroke-width", String(strokeWidth));
+    parentGroup.appendChild(baseLine);
+
+    var arcFrame = elSvg("path");
+    arcFrame.setAttribute("id", "radial-fan-arc-" + idPrefix);
+    arcFrame.setAttribute(
+      "d",
+      halfCircleFocalArcPath(cx, focalY, r, layout.startAngle, layout.endAngle)
+    );
+    arcFrame.setAttribute("fill", "none");
+    arcFrame.setAttribute("stroke", fanStroke);
+    arcFrame.setAttribute("stroke-width", String(strokeWidth));
+    parentGroup.appendChild(arcFrame);
+
+    var innerArcRadii = getRadialFanEvenInnerArcRadii(idPrefix, r);
+    var innerArcsGroup = elSvg("g");
+    innerArcsGroup.setAttribute("id", "radial-fan-inner-arcs-" + idPrefix);
+    var ai;
+    for (ai = 0; ai < innerArcRadii.length; ai++) {
+      appendHalfCircleFocalArcStroke(
+        innerArcsGroup,
+        "radial-fan-inner-arc-" + idPrefix + "-" + ai,
+        cx,
+        focalY,
+        innerArcRadii[ai],
+        layout.startAngle,
+        layout.endAngle,
+        fanStroke,
+        strokeWidth
+      );
+    }
+    parentGroup.appendChild(innerArcsGroup);
+
+    var ribsGroup = elSvg("g");
+    ribsGroup.setAttribute("id", "radial-fan-ribs-" + idPrefix);
+    var i;
+    for (i = 0; i < endpoints.length; i++) {
+      var rib = elSvg("line");
+      rib.setAttribute("x1", String(cx));
+      rib.setAttribute("y1", String(focalY));
+      rib.setAttribute("x2", String(endpoints[i].x));
+      rib.setAttribute("y2", String(endpoints[i].y));
+      rib.setAttribute("stroke", fanStroke);
+      rib.setAttribute("stroke-width", String(strokeWidth));
+      ribsGroup.appendChild(rib);
+    }
+    parentGroup.appendChild(ribsGroup);
+
+    appendRadialFanSixthArcDiagonals(
+      parentGroup,
+      idPrefix,
+      cx,
+      focalY,
+      r,
+      innerArcRadii,
+      endpoints,
+      fanStroke,
+      strokeWidth
+    );
+
+    appendRadialFanBaseLeftDiagonal(
+      parentGroup,
+      idPrefix,
+      cx,
+      focalY,
+      r,
+      endpoints,
+      fanStroke,
+      strokeWidth
+    );
+
+    appendRadialFanBaseRightDiagonal(
+      parentGroup,
+      idPrefix,
+      cx,
+      focalY,
+      r,
+      endpoints,
+      fanStroke,
+      strokeWidth
+    );
+
+    if (innerArcRadii.length >= 2) {
+      var xMarksGroup = elSvg("g");
+      xMarksGroup.setAttribute("id", "radial-fan-inner-arc-x-marks-" + idPrefix);
+      appendRadialFanInnerArcBandXMarks(
+        xMarksGroup,
+        cx,
+        focalY,
+        innerArcRadii[0],
+        innerArcRadii[1],
+        endpoints,
+        fanStroke,
+        strokeWidth
+      );
+      parentGroup.appendChild(xMarksGroup);
+    }
+
+    var thirdArcIndex =
+      typeof RADIAL_FAN_THIRD_ARC_RING_ARC_INDEX !== "undefined"
+        ? RADIAL_FAN_THIRD_ARC_RING_ARC_INDEX
+        : 2;
+    if (innerArcRadii.length > thirdArcIndex) {
+      var ringCount =
+        typeof RADIAL_FAN_THIRD_ARC_RING_COUNT !== "undefined"
+          ? RADIAL_FAN_THIRD_ARC_RING_COUNT
+          : 3;
+      var ringRadius =
+        typeof RADIAL_FAN_THIRD_ARC_RING_RADIUS !== "undefined"
+          ? RADIAL_FAN_THIRD_ARC_RING_RADIUS
+          : 20;
+      var ringsGroup = elSvg("g");
+      ringsGroup.setAttribute("id", "radial-fan-third-arc-rings-" + idPrefix);
+      var ringsClipId = appendRadialFanSectorClipPath(
+        parentGroup,
+        idPrefix,
+        sectorPath
+      );
+      ringsGroup.setAttribute("clip-path", "url(#" + ringsClipId + ")");
+      appendRadialFanThirdArcRings(
+        ringsGroup,
+        idPrefix,
+        cx,
+        focalY,
+        innerArcRadii[thirdArcIndex],
+        fullLayout.startAngle,
+        fullLayout.endAngle,
+        ringCount,
+        ringRadius,
+        fanStroke,
+        strokeWidth
+      );
+      parentGroup.appendChild(ringsGroup);
     }
   }
 
@@ -13789,10 +14529,15 @@
       return;
     }
 
+    var radialType =
+      typeof FAN_TYPE_RADIAL !== "undefined" ? FAN_TYPE_RADIAL : "radial";
+    var appendFan =
+      getFanType() === radialType ? appendRadialBaseFan : appendHalfCircleFan;
+
     if (showTop && topVisiblePetals > 0) {
       var topG = elSvg("g");
       topG.setAttribute("id", "half-circle-top");
-      appendHalfCircleFan(
+      appendFan(
         topG,
         "top",
         cx,
@@ -13808,7 +14553,7 @@
       var bottomG = elSvg("g");
       bottomG.setAttribute("id", "half-circle-bottom");
       bottomG.setAttribute("transform", getHalfCircleVerticalMirrorTransform());
-      appendHalfCircleFan(
+      appendFan(
         bottomG,
         "bottom",
         cx,
@@ -13922,44 +14667,6 @@
       var starStrengthMarks = getActiveStrengthMarks();
       if (starStrengthMarks.length) {
         patternLayer.appendChild(strengthMarksToGroup(starStrengthMarks));
-      }
-      renderAngerDiamondTrianglesLayer();
-      return;
-    }
-
-    if (isGirihGrid()) {
-      renderDiamondFillsLayer();
-      renderHollowDiamondFillsLayer();
-      while (patternLayer.firstChild) {
-        patternLayer.removeChild(patternLayer.firstChild);
-      }
-      patternLayer.appendChild(
-        segmentsToGroup(getVisibleSegments(cachedAllSegments))
-      );
-      var girihPatternGroup = patternLayer.lastElementChild;
-      if (girihPatternGroup) {
-        girihPatternGroup.setAttribute("stroke-linecap", "round");
-        girihPatternGroup.setAttribute("stroke-linejoin", "round");
-      }
-      var girihHelplessnessMarks = getActiveHelplessnessMarks();
-      if (girihHelplessnessMarks.length) {
-        patternLayer.appendChild(helplessnessToGroup(girihHelplessnessMarks));
-      }
-      var girihCircles = getActiveCircles();
-      if (girihCircles.length) {
-        patternLayer.appendChild(circlesToGroup(girihCircles));
-      }
-      var girihLongingCircles = getActiveLongingCircles();
-      if (girihLongingCircles.length) {
-        patternLayer.appendChild(longingCirclesToGroup(girihLongingCircles));
-      }
-      var girihGriefCircles = getActiveGriefCircles();
-      if (girihGriefCircles.length) {
-        patternLayer.appendChild(griefCirclesToGroup(girihGriefCircles));
-      }
-      var girihStrengthMarks = getActiveStrengthMarks();
-      if (girihStrengthMarks.length) {
-        patternLayer.appendChild(strengthMarksToGroup(girihStrengthMarks));
       }
       renderAngerDiamondTrianglesLayer();
       return;
@@ -14130,128 +14837,6 @@
     renderPatternLayer();
     renderHalfCircleLayer();
     renderGridMaskLayer("render");
-    renderStippleDotsLayer();
-    applyMergeReveal();
-    renderAutoMergeFillsLayer();
-    updateGridBoundaryRect();
-    updateColorDivisionsLayer();
-    layoutStage();
-    updateHopeResetButton();
-  }
-
-  /**
-   * Girih grid: pattern, Hope stipple, merge mask, border, Anger lines, Pride auto-merge.
-   */
-  function renderGirihGrid() {
-    applyAlternateGridLayerVisibility();
-    updateInnerContentTransformForGridType();
-
-    var girihLayout = getGirihLayout();
-    var actualEdge =
-      typeof GirihGeometry !== "undefined" && GirihGeometry.roundCoord
-        ? GirihGeometry.roundCoord(girihLayout.edgeLength)
-        : Math.round(girihLayout.edgeLength * 100) / 100;
-
-    var info = document.getElementById("tile-info");
-    if (info) {
-      info.textContent =
-        girihLayout.densityN +
-        " density · " +
-        actualEdge +
-        " px edge · " +
-        cachedGirihTileCount +
-        " tiles";
-    }
-
-    var borderSideOut = document.getElementById("border-side-segments-out");
-    if (borderSideOut) {
-      borderSideOut.textContent = borderSideThicknessLabel(
-        getBorderSideThicknessColumns()
-      );
-    }
-    syncBorderSideWhiteFillOutput();
-
-    var angerLengthOut = document.getElementById("anger-vertical-length-out");
-    if (angerLengthOut) {
-      angerLengthOut.textContent = String(getAngerVerticalLengthPercent()) + "%";
-    }
-    syncAnxietyVerticalStrokeOutput();
-
-    var circleSig = buildCircleLayoutSignature();
-    if (circleSig !== lastCircleLayoutSignature) {
-      lastCircleLayoutSignature = circleSig;
-      syncCircleSelection(true);
-    }
-    if (circleSig !== lastLongingCircleLayoutSignature) {
-      lastLongingCircleLayoutSignature = circleSig;
-      syncLongingCircleSelection(true);
-    }
-    if (circleSig !== lastGriefCircleLayoutSignature) {
-      lastGriefCircleLayoutSignature = circleSig;
-      syncGriefCircleSelection(true);
-    }
-    syncStrengthCircleLayoutOnSignatureChange(circleSig);
-    var helplessnessSig = buildHelplessnessLayoutSignature();
-    if (helplessnessSig !== lastHelplessnessLayoutSignature) {
-      lastHelplessnessLayoutSignature = helplessnessSig;
-      syncHelplessnessSelection(true);
-    }
-
-    var diamondSig = buildDiamondLayoutSignature();
-    if (diamondSig !== lastDiamondLayoutSignature) {
-      lastDiamondLayoutSignature = diamondSig;
-      syncDiamondFill(false);
-      syncGuiltShameDiamondFill(false);
-      syncAngerTriangleSelection(false);
-    }
-
-    var densityOut = document.getElementById("circle-density-out");
-    if (densityOut) densityOut.textContent = String(getCircleDensity()) + "%";
-
-    var longingDensityOut = document.getElementById("longing-circle-density-out");
-    if (longingDensityOut) {
-      longingDensityOut.textContent = String(getLongingCircleDensity()) + "%";
-    }
-
-    var griefDensityOut = document.getElementById("grief-circle-density-out");
-    if (griefDensityOut) {
-      griefDensityOut.textContent = String(getGriefCircleDensity()) + "%";
-    }
-    updateStrengthDensityOutput();
-
-    var helplessnessOut = document.getElementById("helplessness-percent-out");
-    if (helplessnessOut) {
-      helplessnessOut.textContent = String(getHelplessnessPercent()) + "%";
-    }
-
-    var prideFillOut = document.getElementById("pride-fill-percent-out");
-    if (prideFillOut) {
-      prideFillOut.textContent = String(getPrideFillPercent()) + "%";
-    }
-
-    var guiltShameFillOut = document.getElementById("guilt-shame-fill-percent-out");
-    if (guiltShameFillOut) {
-      guiltShameFillOut.textContent = String(getGuiltShameFillPercent()) + "%";
-    }
-
-    var angerTriangleOut = document.getElementById("anger-triangle-density-out");
-    if (angerTriangleOut) {
-      angerTriangleOut.textContent = String(getAngerTriangleDensity()) + "%";
-    }
-
-    var fill = designSvg.querySelector("#canvas-background-fill");
-    if (fill) fill.setAttribute("fill", getCanvasBackgroundColor());
-
-    updateAutoMergeIntensityOutput();
-
-    refreshBorderFrameAndLabelBars();
-    syncVerticalGridLines(false);
-    renderVerticalGridLayer();
-    renderBackgroundLayer();
-    renderPatternLayer();
-    renderHalfCircleLayer();
-    renderGridMaskLayer("render");
-    renderStippleDotsLayer();
     applyMergeReveal();
     renderAutoMergeFillsLayer();
     updateGridBoundaryRect();
@@ -14288,11 +14873,6 @@
 
     if (isStarGrid()) {
       renderStarGrid();
-      return;
-    }
-
-    if (isGirihGrid()) {
-      renderGirihGrid();
       return;
     }
 
@@ -14401,7 +14981,6 @@
     applySheetPaletteToDom();
     renderBackgroundLayer();
     renderGridMaskLayer("render");
-    renderStippleDotsLayer();
     applyMergeReveal();
     syncVerticalGridLines(false);
     renderVerticalGridLayer();
@@ -14429,17 +15008,6 @@
   }
 
   function renderAfterSliderChange() {
-    if (isGirihGrid()) {
-      var outN = document.getElementById("octagons-n-out");
-      var slider = document.getElementById("octagons-n");
-      if (outN && slider) outN.textContent = String(slider.value);
-      if (girihSliderRenderTimer) clearTimeout(girihSliderRenderTimer);
-      girihSliderRenderTimer = setTimeout(function () {
-        girihSliderRenderTimer = null;
-        renderAfterSliderChangeNow();
-      }, 250);
-      return;
-    }
     renderAfterSliderChangeNow();
   }
 
@@ -14619,7 +15187,6 @@
     renderAutoMergeFillsLayer();
     if (isAlternateGrid()) {
       renderGridMaskLayer("applyFeelingsControlState");
-      renderStippleDotsLayer();
     }
   }
 
@@ -14847,7 +15414,7 @@
     hopeDotsVectorLines
   ) {
     var lines = [];
-    var gridBounds = getGridBoundaryDisplayBounds();
+    var gridBoundaryLayout = getGridBoundaryCanvasLayout();
     lines.push('<?xml version="1.0" encoding="UTF-8"?>');
     lines.push(
       '<svg xmlns="' +
@@ -15127,27 +15694,24 @@
 
     pushAngerTriangleExportLines(lines);
 
+    if (isFrameInsetOverlayVisibleOnCanvas()) {
+      pushFrameInsetOverlayExportLines(lines, { nestedInInnerContent: true });
+    }
+
     pushHalfCircleExportLines(lines);
 
     lines.push("</g>");
     lines.push("</g>");
     pushColorDivisionsExportLines(lines);
-    pushBorderDivisionOverlayExportLines(lines);
+    lines.push('<g id="layer-grid-boundary">');
+    pushGridBoundaryExportBars(lines, gridBoundaryLayout);
     lines.push("</g>");
-    lines.push(
-      '<g id="layer-grid-boundary" transform="' +
-        getInnerContentTransformAttr() +
-        '">'
-    );
-    pushGridBoundaryExportLine(lines, gridBounds);
+    pushBorderDivisionOverlayExportLines(lines);
     lines.push("</g>");
     lines.push('<g id="layer-edge-brown-bars">');
     pushCanvasEdgeBrownBarExportLines(lines);
     lines.push("</g>");
     pushCanvasEdgeSerialExport(lines);
-    if (isFrameInsetOverlayVisibleOnCanvas()) {
-      pushFrameInsetOverlayExportLines(lines);
-    }
     lines.push("</svg>");
     return lines.join("\n");
   }
@@ -15524,12 +16088,6 @@
       slider.max = String(OCTAGONS_N_MAX);
       slider.value = String(OCTAGONS_N_DEFAULT);
       slider.addEventListener("input", renderAfterSliderChange);
-      slider.addEventListener("change", function () {
-        if (!isGirihGrid()) return;
-        if (girihSliderRenderTimer) clearTimeout(girihSliderRenderTimer);
-        girihSliderRenderTimer = null;
-        renderAfterSliderChangeNow();
-      });
     }
 
     var innerSlider = document.getElementById("inner-scale");
@@ -15657,6 +16215,7 @@
       });
     }
     bindFanTuningSliders();
+    bindFanTypeToggle();
 
     var halfCircleInnerArcPosition = document.getElementById(
       "half-circle-inner-arc-position"
@@ -15977,7 +16536,7 @@
     })();
     updateAutoMergeIntensityOutput();
 
-    loadHopeStippleImage();
+    loadHopeStippleSvg();
 
     initSheetPaletteAutoRefresh();
 

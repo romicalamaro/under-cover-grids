@@ -221,14 +221,6 @@
               >
                 Star grid
               </button>
-              <button
-                type="button"
-                id="grid-choose-girih-btn"
-                class="sidebar__grid-btn"
-                aria-pressed="false"
-              >
-                Girih
-              </button>
             </div>
             <div class="sidebar__grid-choose-sliders">
               <div class="sidebar__grid-density sidebar__grid-density--long-label">
@@ -482,6 +474,31 @@
               <div class="sidebar__wear-autonomy-sliders">
                 <div class="sidebar__fan-tuning-group">
                   <span class="sidebar__grid-density-label">Both fans</span>
+                  <div class="sidebar__fan-tuning-row">
+                    <span class="sidebar__fan-tuning-label">Fan type</span>
+                    <div
+                      class="sidebar__toggle sidebar__fan-type-toggle"
+                      role="group"
+                      aria-label="Fan type — original or radial"
+                    >
+                      <button
+                        type="button"
+                        id="fan-type-original-btn"
+                        class="sidebar__toggle-btn"
+                        aria-pressed="false"
+                      >
+                        Original
+                      </button>
+                      <button
+                        type="button"
+                        id="fan-type-radial-btn"
+                        class="sidebar__toggle-btn is-active"
+                        aria-pressed="true"
+                      >
+                        Radial
+                      </button>
+                    </div>
+                  </div>
                   <div class="sidebar__fan-tuning-row">
                     <span class="sidebar__fan-tuning-label">Leaves</span>
                     <div class="sidebar__grid-density-control sidebar__wear-control-range">
@@ -905,7 +922,6 @@
     <script defer src="js/opentype.min.js"></script>
     <script defer src="js/topkapiGeometry.js"></script>
     <script defer src="js/nestedStarOctagonsGeometry.js"></script>
-    <script defer src="js/girihGeometry.js"></script>
     <script defer src="js/identityControls.js"></script>
     <script defer src="js/app.js?v=20260604-sheet-reload"></script>
   </body>

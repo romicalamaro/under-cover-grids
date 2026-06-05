@@ -273,7 +273,7 @@
           Dot size
           <output id="dot-size-out" for="dot-size">2px</output>
         </span>
-        <input id="dot-size" type="range" min="1" max="6" value="2" step="1" />
+        <input id="dot-size" type="range" min="1" max="48" value="2" step="1" />
       </label>
 
       <label class="field">
@@ -285,7 +285,7 @@
           id="dot-spacing"
           type="range"
           min="0"
-          max="4"
+          max="20"
           value="1"
           step="1"
         />
@@ -309,6 +309,28 @@
             aria-pressed="false"
           >
             Color
+          </button>
+        </div>
+      </div>
+
+      <div class="field">
+        <span>Mark shape</span>
+        <div class="toggle" role="group" aria-label="Mark shape">
+          <button
+            type="button"
+            id="shape-dots"
+            class="toggle__btn is-active"
+            aria-pressed="true"
+          >
+            Dots
+          </button>
+          <button
+            type="button"
+            id="shape-x"
+            class="toggle__btn"
+            aria-pressed="false"
+          >
+            X
           </button>
         </div>
       </div>
@@ -350,6 +372,7 @@
         var srcH = 0;
         var generationId = 0;
         var colorMode = "bw";
+        var shapeMode = "dots";
         var lastExport = null;
 
         var panel = document.getElementById("panel");
@@ -363,6 +386,8 @@
         var dotSpacingOut = document.getElementById("dot-spacing-out");
         var modeBwBtn = document.getElementById("mode-bw");
         var modeColorBtn = document.getElementById("mode-color");
+        var shapeDotsBtn = document.getElementById("shape-dots");
+        var shapeXBtn = document.getElementById("shape-x");
         var generateBtn = document.getElementById("generate-btn");
         var downloadBtn = document.getElementById("download-btn");
         var downloadSvgBtn = document.getElementById("download-svg-btn");
@@ -596,17 +621,51 @@
           }
         }
 
-        function drawRowDots(
+        function markColor(samples, i, isColor) {
+          return isColor
+            ? "rgb(" +
+                Math.round(samples.r[i]) +
+                "," +
+                Math.round(samples.g[i]) +
+                "," +
+                Math.round(samples.b[i]) +
+                ")"
+            : "#000000";
+        }
+
+        function drawMark(ctx, cx, cy, dotSize, color, useX) {
+          if (useX) {
+            var half = dotSize / 2;
+            var strokeW = Math.max(1, dotSize / 3);
+            ctx.strokeStyle = color;
+            ctx.lineWidth = strokeW;
+            ctx.lineCap = "square";
+            ctx.beginPath();
+            ctx.moveTo(cx - half, cy - half);
+            ctx.lineTo(cx + half, cy + half);
+            ctx.moveTo(cx + half, cy - half);
+            ctx.lineTo(cx - half, cy + half);
+            ctx.stroke();
+            return;
+          }
+          ctx.fillStyle = color;
+          ctx.beginPath();
+          ctx.arc(cx, cy, dotSize / 2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        function drawRowMarks(
           ctx,
           y,
           gridCols,
           pitch,
-          dotRadius,
+          dotSize,
           place,
           samples,
           isColor,
           outW,
-          outH
+          outH,
+          useX
         ) {
           for (var x = 0; x < gridCols; x++) {
             var i = y * gridCols + x;
@@ -616,21 +675,7 @@
             var cy = y * pitch + pitch / 2;
             if (cx >= outW || cy >= outH) continue;
 
-            if (isColor) {
-              ctx.fillStyle =
-                "rgb(" +
-                Math.round(samples.r[i]) +
-                "," +
-                Math.round(samples.g[i]) +
-                "," +
-                Math.round(samples.b[i]) +
-                ")";
-            } else {
-              ctx.fillStyle = "#000000";
-            }
-            ctx.beginPath();
-            ctx.arc(cx, cy, dotRadius, 0, Math.PI * 2);
-            ctx.fill();
+            drawMark(ctx, cx, cy, dotSize, markColor(samples, i, isColor), useX);
           }
         }
 
@@ -660,6 +705,7 @@
           var gridCols = Math.ceil(outW / pitch);
           var gridRows = Math.ceil(outH / pitch);
           var isColor = colorMode === "color";
+          var useX = shapeMode === "x";
           var jobId = ++generationId;
 
           setBusy(true);
@@ -719,17 +765,18 @@
                   threshold
                 );
               }
-              drawRowDots(
+              drawRowMarks(
                 ctx,
                 y,
                 gridCols,
                 pitch,
-                dotRadius,
+                dotSize,
                 place,
                 samples,
                 isColor,
                 outW,
-                outH
+                outH,
+                useX
               );
             }
 
@@ -746,12 +793,14 @@
                 outW: outW,
                 outH: outH,
                 pitch: pitch,
+                dotSize: dotSize,
                 dotRadius: dotRadius,
                 gridCols: gridCols,
                 gridRows: gridRows,
                 place: place,
                 samples: samples,
                 isColor: isColor,
+                useX: useX,
               };
               setDownloadEnabled(true);
               fileMeta.textContent =
@@ -811,6 +860,22 @@
           modeBwBtn.setAttribute("aria-pressed", "false");
         });
 
+        shapeDotsBtn.addEventListener("click", function () {
+          shapeMode = "dots";
+          shapeDotsBtn.classList.add("is-active");
+          shapeDotsBtn.setAttribute("aria-pressed", "true");
+          shapeXBtn.classList.remove("is-active");
+          shapeXBtn.setAttribute("aria-pressed", "false");
+        });
+
+        shapeXBtn.addEventListener("click", function () {
+          shapeMode = "x";
+          shapeXBtn.classList.add("is-active");
+          shapeXBtn.setAttribute("aria-pressed", "true");
+          shapeDotsBtn.classList.remove("is-active");
+          shapeDotsBtn.setAttribute("aria-pressed", "false");
+        });
+
         generateBtn.addEventListener("click", function () {
           generationId++;
           runGeneration();
@@ -841,7 +906,9 @@
           ];
           var place = exportData.place;
           var pitch = exportData.pitch;
+          var dotSize = exportData.dotSize;
           var dotRadius = exportData.dotRadius;
+          var useX = exportData.useX;
           var gridCols = exportData.gridCols;
           var gridRows = exportData.gridRows;
           var outW = exportData.outW;
@@ -868,17 +935,45 @@
                   ")"
                 : "#000000";
 
-              parts.push(
-                '<circle cx="' +
-                  cx +
-                  '" cy="' +
-                  cy +
-                  '" r="' +
-                  dotRadius +
-                  '" fill="' +
-                  fill +
-                  '"/>'
-              );
+              if (useX) {
+                var half = dotSize / 2;
+                var strokeW = Math.max(1, dotSize / 3);
+                parts.push(
+                  '<path d="M' +
+                    (cx - half) +
+                    " " +
+                    (cy - half) +
+                    " L" +
+                    (cx + half) +
+                    " " +
+                    (cy + half) +
+                    " M" +
+                    (cx + half) +
+                    " " +
+                    (cy - half) +
+                    " L" +
+                    (cx - half) +
+                    " " +
+                    (cy + half) +
+                    '" fill="none" stroke="' +
+                    fill +
+                    '" stroke-width="' +
+                    strokeW +
+                    '" stroke-linecap="square"/>'
+                );
+              } else {
+                parts.push(
+                  '<circle cx="' +
+                    cx +
+                    '" cy="' +
+                    cy +
+                    '" r="' +
+                    dotRadius +
+                    '" fill="' +
+                    fill +
+                    '"/>'
+                );
+              }
             }
           }
 
