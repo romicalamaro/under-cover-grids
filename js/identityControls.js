@@ -1,10 +1,14 @@
 (function () {
   "use strict";
 
-  /** @type {null | boolean} true = Yes (IN IRAN); false = No (OUTSIDE IRAN) */
+  /** @type {null | boolean} true = Yes; false = No */
   var livingInIranChoice = true;
   /** @type {((choice: null | boolean) => void) | null} */
   var onLivingInIranChange = null;
+  /** @type {"smallPart" | "partOfLife" | "mostAll"} */
+  var livingDurationChoice = "partOfLife";
+  /** @type {((choice: "smallPart" | "partOfLife" | "mostAll") => void) | null} */
+  var onLivingDurationChange = null;
   /** @type {string} */
   var ageValue =
     typeof LABEL_BAR_AGE_DEFAULT !== "undefined"
@@ -75,6 +79,9 @@
     var yesBtn = document.getElementById("living-in-btn");
     var noBtn = document.getElementById("living-outside-btn");
     var leavingYearField = document.getElementById("identity-leaving-year-field");
+    var livingDurationField = document.getElementById(
+      "identity-living-duration-field"
+    );
     if (!yesBtn || !noBtn) return;
 
     function applyUi(choice) {
@@ -87,6 +94,13 @@
           leavingYearField.removeAttribute("hidden");
         } else {
           leavingYearField.setAttribute("hidden", "");
+        }
+      }
+      if (livingDurationField) {
+        if (choice === true) {
+          livingDurationField.removeAttribute("hidden");
+        } else {
+          livingDurationField.setAttribute("hidden", "");
         }
       }
     }
@@ -267,6 +281,45 @@
     );
   }
 
+  function initLivingDurationPicker() {
+    var buttons = document.querySelectorAll("[data-living-duration]");
+    if (!buttons.length) return;
+
+    function applyUi(choice) {
+      var i;
+      for (i = 0; i < buttons.length; i++) {
+        var btn = buttons[i];
+        var value = btn.getAttribute("data-living-duration");
+        var isActive = value === choice;
+        btn.classList.toggle("is-active", isActive);
+        btn.setAttribute("aria-pressed", String(isActive));
+      }
+    }
+
+    function setChoice(choice) {
+      livingDurationChoice = choice;
+      applyUi(livingDurationChoice);
+      if (onLivingDurationChange) onLivingDurationChange(livingDurationChoice);
+    }
+
+    applyUi(livingDurationChoice);
+
+    for (var j = 0; j < buttons.length; j++) {
+      (function (btn) {
+        btn.addEventListener("click", function () {
+          var value = btn.getAttribute("data-living-duration");
+          if (
+            value === "smallPart" ||
+            value === "partOfLife" ||
+            value === "mostAll"
+          ) {
+            setChoice(value);
+          }
+        });
+      })(buttons[j]);
+    }
+  }
+
   function initHomeAtPicker() {
     var buttons = document.querySelectorAll("[data-home-at]");
     if (!buttons.length) return;
@@ -308,6 +361,7 @@
 
   function init() {
     initLivingInIranToggle();
+    initLivingDurationPicker();
     initAgeInput();
     initLeavingYearInput();
     initNameInput();
@@ -324,6 +378,14 @@
     /** @param {(choice: null | boolean) => void} fn */
     setOnLivingInIranChange: function (fn) {
       onLivingInIranChange = fn;
+    },
+    /** @returns {"smallPart" | "partOfLife" | "mostAll"} */
+    getLivingDuration: function () {
+      return livingDurationChoice;
+    },
+    /** @param {(choice: "smallPart" | "partOfLife" | "mostAll") => void} fn */
+    setOnLivingDurationChange: function (fn) {
+      onLivingDurationChange = fn;
     },
     /** @returns {string} */
     getAge: function () {

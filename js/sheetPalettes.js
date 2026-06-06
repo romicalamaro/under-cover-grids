@@ -175,6 +175,7 @@
   /** Incremented on every load so JSONP script URLs stay unique (avoids stale gviz cache). */
   var sheetLoadGeneration = 0;
   var GVIZ_SCRIPT_ATTR = "data-sheet-palette-gviz";
+  var ACTIVE_PALETTE_STORAGE_KEY = "undercover.activeSheetPalette";
 
   function normalizeHex(value) {
     if (!value || typeof value !== "string") return null;
@@ -439,9 +440,30 @@
     return true;
   }
 
+  function rememberActivePalette(key) {
+    try {
+      if (global.sessionStorage) {
+        global.sessionStorage.setItem(ACTIVE_PALETTE_STORAGE_KEY, key);
+      }
+    } catch (e) {
+      /* ignore */
+    }
+  }
+
+  function getRememberedActivePalette() {
+    try {
+      if (!global.sessionStorage) return null;
+      var saved = global.sessionStorage.getItem(ACTIVE_PALETTE_STORAGE_KEY);
+      return PALETTE_KEYS.indexOf(saved) !== -1 ? saved : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
   function setActivePalette(key) {
     if (PALETTE_KEYS.indexOf(key) === -1) return false;
     activePalette = key;
+    rememberActivePalette(key);
     syncBorderGlobals();
     updatePaletteButtonStates();
     return true;
@@ -513,6 +535,17 @@
     }
   }
 
+  function formatPaletteKeyLabel(key) {
+    var match = key && key.match(/^palette(\d+)$/);
+    return match ? "Palette " + match[1] : key || "—";
+  }
+
+  function updateActivePaletteLabel() {
+    var label = document.getElementById("sheet-palette-active-label");
+    if (!label) return;
+    label.textContent = formatPaletteKeyLabel(activePalette);
+  }
+
   function updatePaletteButtonStates() {
     var container = document.getElementById("sheet-palette-buttons");
     if (!container) return;
@@ -524,6 +557,7 @@
       btn.classList.toggle("sidebar__palette-btn--active", isActive);
       btn.setAttribute("aria-pressed", isActive ? "true" : "false");
     }
+    updateActivePaletteLabel();
   }
 
   function notifyPalettesLoaded() {
@@ -539,11 +573,108 @@
     }
   }
 
-  function applyParsedPalettes(text, sourceKey, sourceLabel) {
-    if (!text || !isValidPaletteCsvHeader(text)) {
-      throw new Error("Invalid CSV response");
+  /** Fill empty palette slots in `into` from `from` (never overwrites existing hex). */
+  function mergePaletteGaps(into, from) {
+    if (!into || !from) return into;
+    var pi;
+    var key;
+    var slot;
+    for (pi = 0; pi < PALETTE_KEYS.length; pi++) {
+      key = PALETTE_KEYS[pi];
+      if (!from[key]) continue;
+      if (!into[key]) into[key] = {};
+      for (slot in from[key]) {
+        if (!Object.prototype.hasOwnProperty.call(from[key], slot)) continue;
+        if (!into[key][slot]) into[key][slot] = from[key][slot];
+      }
     }
-    palettes = parseCsv(text);
+    if (from.default) {
+      if (!into.default) into.default = {};
+      for (slot in from.default) {
+        if (!Object.prototype.hasOwnProperty.call(from.default, slot)) continue;
+        if (!into.default[slot]) into.default[slot] = from.default[slot];
+      }
+    }
+    return syncPaletteFallbacks(into);
+  }
+
+  function countMissingPaletteSlots(parsed, paletteKey) {
+    var palette = (parsed && parsed[paletteKey]) || {};
+    var reference = (parsed && parsed.palette1) || {};
+    var missing = [];
+    var slot;
+    for (slot in reference) {
+      if (!Object.prototype.hasOwnProperty.call(reference, slot)) continue;
+      if (!palette[slot]) missing.push(slot);
+    }
+    return missing;
+  }
+
+  function warnIfPaletteIncomplete(parsed) {
+    if (typeof console === "undefined" || !console.warn) return;
+    var missing8 = countMissingPaletteSlots(parsed, "palette8");
+    if (missing8.length) {
+      console.warn(
+        "SheetPalettes: palette8 is incomplete (" +
+          missing8.length +
+          " missing slots). Canvas may show palette1 fallbacks for: " +
+          missing8.slice(0, 12).join(", ") +
+          (missing8.length > 12 ? "…" : "")
+      );
+    }
+  }
+
+  function getEmbeddedLocalPaletteCsvText() {
+    if (
+      global.EMBEDDED_PALETTE_CSV_TEXT &&
+      typeof global.EMBEDDED_PALETTE_CSV_TEXT === "string" &&
+      global.EMBEDDED_PALETTE_CSV_TEXT.length
+    ) {
+      return global.EMBEDDED_PALETTE_CSV_TEXT;
+    }
+    return null;
+  }
+
+  /** file:// blocks fetch(); fall back to js/embeddedPaletteCsv.js when needed. */
+  function resolveLocalPaletteCsvText() {
+    return fetchLocalCsv()
+      .catch(function (fetchErr) {
+        var embedded = getEmbeddedLocalPaletteCsvText();
+        if (embedded) return embedded;
+        throw fetchErr;
+      });
+  }
+
+  function finalizeParsedPalettes(parsed, sourceKey, sourceLabel) {
+    return resolveLocalPaletteCsvText()
+      .then(function (localText) {
+        var localParsed = tryParsePaletteCsv(localText);
+        var usedEmbedded = localText === getEmbeddedLocalPaletteCsvText();
+        if (localParsed) {
+          mergePaletteGaps(parsed, localParsed);
+          if (sourceKey === "google") {
+            sourceLabel += usedEmbedded ? " + embedded gaps" : " + local gaps";
+          }
+        }
+        warnIfPaletteIncomplete(parsed);
+        return applyParsedPaletteData(parsed, sourceKey, sourceLabel);
+      })
+      .catch(function (resolveErr) {
+        var embedded = getEmbeddedLocalPaletteCsvText();
+        var embeddedParsed = embedded ? tryParsePaletteCsv(embedded) : null;
+        if (embeddedParsed) {
+          mergePaletteGaps(parsed, embeddedParsed);
+          if (sourceKey === "google") {
+            sourceLabel += " + embedded gaps (fetch failed)";
+          }
+        }
+        warnIfPaletteIncomplete(parsed);
+        return applyParsedPaletteData(parsed, sourceKey, sourceLabel);
+      });
+  }
+
+  function applyParsedPaletteData(parsed, sourceKey, sourceLabel) {
+    palettes = syncPaletteFallbacks(parsed || emptyPalettes());
     loaded = true;
     lastLoadSource = sourceKey;
     syncBorderGlobals();
@@ -552,6 +683,66 @@
     }
     notifyPalettesLoaded();
     return palettes;
+  }
+
+  function applyParsedPalettes(text, sourceKey, sourceLabel) {
+    if (!text || !isValidPaletteCsvHeader(text)) {
+      throw new Error("Invalid CSV response");
+    }
+    return applyParsedPaletteData(parseCsv(text), sourceKey, sourceLabel);
+  }
+
+  function tryParsePaletteCsv(text) {
+    if (!text || !isValidPaletteCsvHeader(text)) return null;
+    try {
+      return parseCsv(text);
+    } catch (e) {
+      if (typeof console !== "undefined" && console.warn) {
+        console.warn("SheetPalettes: palette CSV parse failed.", e);
+      }
+      return null;
+    }
+  }
+
+  /**
+   * Google gviz JSONP often omits Palette 8 text cells; CSV export is complete.
+   * Merge every available source so empty slots do not fall back to palette 1.
+   */
+  function loadParsedPalettesFromGoogleSources() {
+    return Promise.allSettled([
+      fetchGoogleSheetViaGviz(),
+      fetchGoogleSheetCsv(),
+    ]).then(function (results) {
+      var gvizText =
+        results[0].status === "fulfilled" ? results[0].value : null;
+      var csvText =
+        results[1].status === "fulfilled" ? results[1].value : null;
+      var gvizParsed = tryParsePaletteCsv(gvizText);
+      var csvParsed = tryParsePaletteCsv(csvText);
+      var merged = null;
+      var sourceLabel = "Google Sheet";
+
+      if (csvParsed) {
+        merged = csvParsed;
+        sourceLabel = gvizParsed
+          ? "Google Sheet (csv primary)"
+          : "Google Sheet (csv)";
+      } else if (gvizParsed) {
+        merged = gvizParsed;
+        sourceLabel = "Google Sheet (gviz)";
+        if (typeof console !== "undefined" && console.warn) {
+          console.warn(
+            "SheetPalettes: CSV export failed; palette8 may be incomplete until local CSV fills gaps."
+          );
+        }
+      }
+
+      if (!merged) {
+        throw new Error("Google Sheet palette data unavailable");
+      }
+
+      return finalizeParsedPalettes(merged, "google", sourceLabel);
+    });
   }
 
   function gvizCellValue(cell) {
@@ -732,36 +923,7 @@
   }
 
   function loadFromGoogleSheet() {
-    var applyCsv = function (text) {
-      return applyParsedPalettes(text, "google", "Google Sheet (csv)");
-    };
-    var applyGviz = function (text) {
-      return applyParsedPalettes(text, "google", "Google Sheet (gviz)");
-    };
-
-    if (isFileProtocol()) {
-      return fetchGoogleSheetViaGviz().then(applyGviz).catch(function (gvizErr) {
-        if (typeof console !== "undefined" && console.warn) {
-          console.warn(
-            "SheetPalettes: gviz load failed, trying CSV export.",
-            gvizErr
-          );
-        }
-        return fetchGoogleSheetCsv().then(applyCsv);
-      });
-    }
-
-    return fetchGoogleSheetCsv()
-      .then(applyCsv)
-      .catch(function (csvErr) {
-        if (typeof console !== "undefined" && console.warn) {
-          console.warn(
-            "SheetPalettes: CSV export failed, trying gviz.",
-            csvErr
-          );
-        }
-        return fetchGoogleSheetViaGviz().then(applyGviz);
-      });
+    return loadParsedPalettesFromGoogleSources();
   }
 
   /**
@@ -779,13 +941,12 @@
             err
           );
         }
-        return fetchLocalCsv()
+        return resolveLocalPaletteCsvText()
           .then(function (text) {
-            return applyParsedPalettes(
-              text,
-              "local",
-              "data/sheet-palette-colors.csv (offline fallback)"
-            );
+            var label = getEmbeddedLocalPaletteCsvText() === text
+              ? "embedded palette CSV (offline fallback)"
+              : "data/sheet-palette-colors.csv (offline fallback)";
+            return applyParsedPalettes(text, "local", label);
           })
           .catch(function (localErr) {
             if (typeof console !== "undefined" && console.warn) {
@@ -827,6 +988,7 @@
     setSlotColor: setSlotColor,
     setActivePalette: setActivePalette,
     getActivePaletteKey: getActivePaletteKey,
+    getRememberedActivePalette: getRememberedActivePalette,
     toggleSheetPalette: toggleSheetPalette,
     pickRandomPalette: pickRandomPalette,
     syncBorderGlobals: syncBorderGlobals,

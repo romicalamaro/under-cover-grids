@@ -1130,8 +1130,11 @@
     fillRegions,
     allSegments,
     baselineFaces,
-    removedSet
+    removedSet,
+    options
   ) {
+    options = options || {};
+    var skipOctagonSquareChecks = options.skipOctagonSquareChecks === true;
     var merged = getMergedPolygonRegions(allSegments, removedSet);
     var out = fillRegions.slice();
     var mi;
@@ -1145,8 +1148,10 @@
       if (countBaselineFacesInsideCurrentFace(region, baselineFaces) <= 1) {
         continue;
       }
-      if (isOctagonOnlyMergedRegion(region, baselineFaces)) continue;
-      if (!mergedRegionIncludesSquareCell(region, baselineFaces)) continue;
+      if (!skipOctagonSquareChecks) {
+        if (isOctagonOnlyMergedRegion(region, baselineFaces)) continue;
+        if (!mergedRegionIncludesSquareCell(region, baselineFaces)) continue;
+      }
 
       c = polygonCentroid(region.points);
       dup = false;
@@ -1697,6 +1702,7 @@
    * @param {number[]} clusterFaceIndices
    * @param {string[]} clusterEdgeKeys
    * @param {Set<string>} [autoMergeRemovedSet]
+   * @param {{ skipOctagonSquareChecks?: boolean }} [options]
    * @returns {{ points: { x: number, y: number }[] } | null}
    */
   function getClusterFillRegion(
@@ -1704,8 +1710,11 @@
     baselineFaces,
     clusterFaceIndices,
     clusterEdgeKeys,
-    autoMergeRemovedSet
+    autoMergeRemovedSet,
+    options
   ) {
+    options = options || {};
+    var skipOctagonSquareChecks = options.skipOctagonSquareChecks === true;
     if (!clusterFaceIndices.length) return null;
 
     var removedKeys = clusterEdgeKeys.slice();
@@ -1752,8 +1761,10 @@
         }
       }
       if (!allInside) continue;
-      if (isOctagonOnlyMergedRegion(face, baselineFaces)) continue;
-      if (!mergedRegionIncludesSquareCell(face, baselineFaces)) continue;
+      if (!skipOctagonSquareChecks) {
+        if (isOctagonOnlyMergedRegion(face, baselineFaces)) continue;
+        if (!mergedRegionIncludesSquareCell(face, baselineFaces)) continue;
+      }
       if (
         countBaselineFacesInsideCurrentFace(face, baselineFaces) <
         clusterFaceIndices.length
@@ -1775,8 +1786,10 @@
       var rc;
       for (mi = 0; mi < mergedCandidates.length; mi++) {
         var candidate = mergedCandidates[mi];
-        if (isOctagonOnlyMergedRegion(candidate, baselineFaces)) continue;
-        if (!mergedRegionIncludesSquareCell(candidate, baselineFaces)) continue;
+        if (!skipOctagonSquareChecks) {
+          if (isOctagonOnlyMergedRegion(candidate, baselineFaces)) continue;
+          if (!mergedRegionIncludesSquareCell(candidate, baselineFaces)) continue;
+        }
         if (
           countBaselineFacesInsideCurrentFace(candidate, baselineFaces) <
           clusterFaceIndices.length

@@ -1,7 +1,7 @@
 @font-face {
-  font-family: "OT2049";
-  src: url("../fonts/OT2049-Regular.otf") format("opentype");
-  font-weight: 400;
+  font-family: "DIN Condensed";
+  src: url("../fonts/DIN Condensed Bold.ttf") format("truetype");
+  font-weight: 700;
   font-style: normal;
 }
 
@@ -189,11 +189,13 @@ body {
   width: 100%;
 }
 
-.sidebar__identity-home-toggle {
+.sidebar__identity-home-toggle,
+.sidebar__identity-living-duration-toggle {
   width: 100%;
 }
 
-.sidebar__identity-home-toggle .sidebar__toggle-btn {
+.sidebar__identity-home-toggle .sidebar__toggle-btn,
+.sidebar__identity-living-duration-toggle .sidebar__toggle-btn {
   font-size: 0.625rem;
   line-height: 1.25;
   padding: 0.4rem 0.3rem;
@@ -494,6 +496,11 @@ body {
   margin-bottom: 0.75rem;
 }
 
+.sidebar__label-tag-row {
+  margin-top: 0.85rem;
+  margin-bottom: 0;
+}
+
 .sidebar__sheet-palette-buttons {
   display: flex;
   flex-wrap: wrap;
@@ -530,6 +537,18 @@ body {
   min-width: auto;
   padding-left: 0.65rem;
   padding-right: 0.65rem;
+  white-space: nowrap;
+}
+
+.sidebar__palette-shuffle-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.sidebar__palette-active-label {
+  font-size: 0.85rem;
+  color: rgba(0, 0, 0, 0.65);
   white-space: nowrap;
 }
 

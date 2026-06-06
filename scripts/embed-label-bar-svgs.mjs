@@ -10,12 +10,11 @@ const outPath = path.join(root, "js", "labelBarSvgAssets.js");
 
 const TAG_ALIASES = {
   "tag/lion.svg": "lion.svg",
-  "tag/scissors.svg": "scissors.svg",
-  "tag/tag01.svg": "tag01.svg",
+  "tag/tag01.2.svg": "tag01.2.svg",
   "tag/tag02.svg": "tag02.svg",
   "tag/tag03.svg": "tag03.svg",
   "tag/tag04.svg": "tag04.svg",
-  "tag/tag05.svg": "tag05.svg",
+  "tag/tag05.2.svg": "tag05.2.svg",
 };
 
 function readAssetList() {

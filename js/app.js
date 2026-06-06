@@ -20,6 +20,14 @@
   var cachedStarFills = [];
   /** @type {{ outline: {x:number,y:number}[] }[]} */
   var cachedStarRhombusFills = [];
+  /** @type {{ id: string, cx: number, cy: number, r: number }[]} */
+  var cachedStructuralCircles = [];
+  /** Chord keys for structural ellipse outlines (Circles grid merge hit-test). */
+  var cachedCirclesGridEllipseChordKeySet = null;
+  var cachedCirclesGridChordKeyToCircleId = {};
+  /** Pride outline arcs: tessellation-scale ellipses (may differ from display inner scale). */
+  var cachedPrideOutlineStructuralCircles = [];
+  var lastPrideOutlineCirclesSig = "";
   var cachedVerticalGridLines = [];
   var lastVerticalGridLayoutSignature = "";
 
@@ -31,6 +39,18 @@
   var autoMergeFillRegions = null;
   var dragPath = [];
   var isDragging = false;
+  /** Hope merge drag: rAF-throttled grid-line preview only (full render on pointer up). */
+  var hopeMergeDragRenderScheduled = false;
+  var hopeMergeDragHadEdgeChanges = false;
+  /** Main grid sliders: rAF-throttled preview during drag; light commit on change. */
+  var sliderRenderScheduled = false;
+  var sliderRenderPending = false;
+  var sliderRenderGeneration = 0;
+  var sliderPreviewRendered = false;
+  var hopeMergeStateVersion = 0;
+  /** @type {{ points: { x: number, y: number }[] }[] | null} */
+  var hopeMergeRegionsRenderCache = null;
+  var hopeMergeRegionsCacheVersion = -1;
 
   var circleSelectedIds = new Set();
   var lastCircleLayoutSignature = "";
@@ -111,7 +131,7 @@
   /** Cached inline SVG assets for the dynamic label bar. */
   var labelBarSvgCache = {};
   var labelBarSvgLoadPromises = {};
-  /** End-cap tag SVG picked once per page load (sequential rotation from svg/tag/). */
+  /** End-cap tag SVG — advances one step in svg/tag/ pool on each page load. */
   var labelBarEndCapSvgFile = null;
 
   var magnifierCenterX = CANVAS_W / 2;
@@ -817,6 +837,9 @@
   function getOctagonsN() {
     var slider = document.getElementById("octagons-n");
     var v = slider ? Number(slider.value) : OCTAGONS_N_DEFAULT;
+    if (isCirclesGrid()) {
+      return CirclesGridGeometry.snapCirclesGridN(v);
+    }
     return Math.min(
       getOctagonsNMaxForActiveGrid(),
       Math.max(OCTAGONS_N_MIN, Math.round(v))
@@ -827,16 +850,146 @@
     return gridType === GRID_TYPE_STAR;
   }
 
+  function isCirclesGrid() {
+    return gridType === GRID_TYPE_CIRCLES;
+  }
+
   function isOctagonGrid() {
     return gridType === GRID_TYPE_OCTAGON;
   }
 
-  /** Octagon + star grids share the same junction-diamond catalog (top/right/bottom/left). */
+  /** Octagon + star + circles grids share junction-diamond catalog semantics. */
   function supportsAngerDiamondTriangles() {
-    return isOctagonGrid() || isStarGrid();
+    return isOctagonGrid() || isStarGrid() || isCirclesGrid();
+  }
+
+  function getAngerTriangleDensityMaxForActiveGrid() {
+    if (
+      isCirclesGrid() &&
+      typeof CIRCLES_GRID_ANGER_TRIANGLE_DENSITY_MAX !== "undefined"
+    ) {
+      return CIRCLES_GRID_ANGER_TRIANGLE_DENSITY_MAX;
+    }
+    return typeof ANGER_TRIANGLE_DENSITY_MAX !== "undefined"
+      ? ANGER_TRIANGLE_DENSITY_MAX
+      : 30;
+  }
+
+  function getPrideFillPercentMaxForActiveGrid() {
+    if (
+      isCirclesGrid() &&
+      typeof CIRCLES_GRID_PRIDE_FILL_PERCENT_MAX !== "undefined"
+    ) {
+      return CIRCLES_GRID_PRIDE_FILL_PERCENT_MAX;
+    }
+    return typeof PRIDE_FILL_PERCENT_MAX !== "undefined"
+      ? PRIDE_FILL_PERCENT_MAX
+      : 30;
+  }
+
+  function getGuiltShameFillPercentMaxForActiveGrid() {
+    if (
+      isCirclesGrid() &&
+      typeof CIRCLES_GRID_GUILT_SHAME_FILL_PERCENT_MAX !== "undefined"
+    ) {
+      return CIRCLES_GRID_GUILT_SHAME_FILL_PERCENT_MAX;
+    }
+    return typeof GUILT_SHAME_FILL_PERCENT_MAX !== "undefined"
+      ? GUILT_SHAME_FILL_PERCENT_MAX
+      : 30;
+  }
+
+  function getJunctionEmotionDensityMaxForActiveGrid() {
+    if (
+      isCirclesGrid() &&
+      typeof CIRCLES_GRID_JUNCTION_EMOTION_DENSITY_MAX !== "undefined"
+    ) {
+      return CIRCLES_GRID_JUNCTION_EMOTION_DENSITY_MAX;
+    }
+    return typeof CIRCLE_DENSITY_MAX !== "undefined" ? CIRCLE_DENSITY_MAX : 30;
+  }
+
+  function getHelplessnessPercentMaxForActiveGrid() {
+    if (
+      isCirclesGrid() &&
+      typeof CIRCLES_GRID_JUNCTION_EMOTION_DENSITY_MAX !== "undefined"
+    ) {
+      return CIRCLES_GRID_JUNCTION_EMOTION_DENSITY_MAX;
+    }
+    return typeof HELPLESSNESS_PERCENT_MAX !== "undefined"
+      ? HELPLESSNESS_PERCENT_MAX
+      : 30;
+  }
+
+  function syncFeelingsSteppedSliderRange(sliderId, min, max) {
+    var slider = document.getElementById(sliderId);
+    if (!slider) return;
+    var steps = getFeelingsSliderSteps();
+    var stepSize = steps < 2 ? 1 : (max - min) / (steps - 1);
+    slider.min = String(min);
+    slider.max = String(max);
+    slider.step = String(stepSize);
+    var snapped = snapFeelingsSliderValue(Number(slider.value), min, max);
+    if (Number(slider.value) !== snapped) {
+      slider.value = String(snapped);
+    }
+  }
+
+  function syncAngerPainGuiltSliderRangesForGridType() {
+    syncFeelingsSteppedSliderRange(
+      "anger-triangle-density",
+      typeof ANGER_TRIANGLE_DENSITY_MIN !== "undefined"
+        ? ANGER_TRIANGLE_DENSITY_MIN
+        : 0,
+      getAngerTriangleDensityMaxForActiveGrid()
+    );
+    syncFeelingsSteppedSliderRange(
+      "pride-fill-percent",
+      PRIDE_FILL_PERCENT_MIN,
+      getPrideFillPercentMaxForActiveGrid()
+    );
+    syncFeelingsSteppedSliderRange(
+      "guilt-shame-fill-percent",
+      typeof GUILT_SHAME_FILL_PERCENT_MIN !== "undefined"
+        ? GUILT_SHAME_FILL_PERCENT_MIN
+        : 0,
+      getGuiltShameFillPercentMaxForActiveGrid()
+    );
+  }
+
+  function syncJunctionEmotionSliderRangesForGridType() {
+    var circleMax = getJunctionEmotionDensityMaxForActiveGrid();
+    syncFeelingsSteppedSliderRange(
+      "longing-circle-density",
+      CIRCLE_DENSITY_MIN,
+      circleMax
+    );
+    syncFeelingsSteppedSliderRange(
+      "grief-circle-density",
+      CIRCLE_DENSITY_MIN,
+      circleMax
+    );
+    syncFeelingsSteppedSliderRange(
+      "strength-density",
+      typeof STRENGTH_DENSITY_MIN !== "undefined"
+        ? STRENGTH_DENSITY_MIN
+        : CIRCLE_DENSITY_MIN,
+      circleMax
+    );
+    syncFeelingsSteppedSliderRange(
+      "helplessness-percent",
+      typeof HELPLESSNESS_PERCENT_MIN !== "undefined"
+        ? HELPLESSNESS_PERCENT_MIN
+        : 0,
+      getHelplessnessPercentMaxForActiveGrid()
+    );
   }
 
   function isAlternateGrid() {
+    return isStarGrid();
+  }
+
+  function hidesInnerScaleSliderForGridType() {
     return isStarGrid();
   }
 
@@ -886,18 +1039,35 @@
       );
       slider.min = String(minN);
       slider.max = String(maxN);
+      slider.step = "1";
       if (Number(slider.value) > maxN) {
         slider.value = String(maxN);
       }
+    } else if (isCirclesGrid()) {
+      var circlesMin =
+        typeof CIRCLES_GRID_N_MIN !== "undefined"
+          ? CirclesGridGeometry.snapCirclesGridN(CIRCLES_GRID_N_MIN)
+          : CirclesGridGeometry.snapCirclesGridN(OCTAGONS_N_MIN);
+      var circlesMax = CirclesGridGeometry.snapCirclesGridN(OCTAGONS_N_MAX);
+      var circlesStep =
+        typeof CIRCLES_GRID_N_STEP !== "undefined" ? CIRCLES_GRID_N_STEP : 2;
+      slider.min = String(circlesMin);
+      slider.max = String(circlesMax);
+      slider.step = String(circlesStep);
+      slider.value = String(
+        CirclesGridGeometry.snapCirclesGridN(Number(slider.value))
+      );
     } else {
       slider.min = String(OCTAGONS_N_MIN);
       slider.max = String(OCTAGONS_N_MAX);
+      slider.step = "1";
     }
   }
 
   function syncGridTypeButtons() {
     var octBtn = document.getElementById("grid-choose-octagon-btn");
     var starBtn = document.getElementById("grid-choose-star-btn");
+    var circlesBtn = document.getElementById("grid-choose-circles-btn");
     if (octBtn) {
       octBtn.classList.toggle("is-active", isOctagonGrid());
       octBtn.setAttribute("aria-pressed", String(isOctagonGrid()));
@@ -905,6 +1075,10 @@
     if (starBtn) {
       starBtn.classList.toggle("is-active", isStarGrid());
       starBtn.setAttribute("aria-pressed", String(isStarGrid()));
+    }
+    if (circlesBtn) {
+      circlesBtn.classList.toggle("is-active", isCirclesGrid());
+      circlesBtn.setAttribute("aria-pressed", String(isCirclesGrid()));
     }
   }
 
@@ -915,7 +1089,7 @@
     innerScaleWrap =
       innerScaleWrap &&
       innerScaleWrap.closest(".sidebar__grid-density");
-    if (innerScaleWrap) innerScaleWrap.hidden = isAlternateGrid();
+    if (innerScaleWrap) innerScaleWrap.hidden = hidesInnerScaleSliderForGridType();
   }
 
   /** Star grid: layers not used yet (gradient overlay, etc.). */
@@ -976,7 +1150,11 @@
   }
 
   function setGridType(nextType) {
-    if (nextType !== GRID_TYPE_OCTAGON && nextType !== GRID_TYPE_STAR) {
+    if (
+      nextType !== GRID_TYPE_OCTAGON &&
+      nextType !== GRID_TYPE_STAR &&
+      nextType !== GRID_TYPE_CIRCLES
+    ) {
       return;
     }
     if (gridType === nextType) return;
@@ -992,15 +1170,25 @@
     }
     syncGridTypeButtons();
     syncGridSlidersForGridType();
-    if (supportsAngerDiamondTriangles() && getAngerTriangleDensity() > 0) {
-      syncAngerShapes();
+    syncAngerPainGuiltSliderRangesForGridType();
+    syncJunctionEmotionSliderRangesForGridType();
+    syncFeelingsSliderOutputs();
+    syncLongingCircleSelection(false);
+    syncGriefCircleSelection(false);
+    syncStrengthSelection(false);
+    syncHelplessnessSelection(false);
+    if (supportsAngerDiamondTriangles()) {
+      syncAngerTriangleSelection(false);
     }
+    syncDiamondFill(false);
+    syncGuiltShameDiamondFill(false);
     render();
   }
 
   function initGridTypeButtons() {
     var octBtn = document.getElementById("grid-choose-octagon-btn");
     var starBtn = document.getElementById("grid-choose-star-btn");
+    var circlesBtn = document.getElementById("grid-choose-circles-btn");
     if (octBtn) {
       octBtn.addEventListener("click", function () {
         setGridType(GRID_TYPE_OCTAGON);
@@ -1009,6 +1197,11 @@
     if (starBtn) {
       starBtn.addEventListener("click", function () {
         setGridType(GRID_TYPE_STAR);
+      });
+    }
+    if (circlesBtn) {
+      circlesBtn.addEventListener("click", function () {
+        setGridType(GRID_TYPE_CIRCLES);
       });
     }
     syncGridTypeButtons();
@@ -1078,7 +1271,11 @@
     slider.value = String(snapFeelingsSliderValue(defaultValue, min, max));
 
     slider.addEventListener("input", function () {
-      var snapped = snapFeelingsSliderValue(Number(slider.value), min, max);
+      var snapped = snapFeelingsSliderValue(
+        Number(slider.value),
+        Number(slider.min),
+        Number(slider.max)
+      );
       if (Number(slider.value) !== snapped) {
         slider.value = String(snapped);
       }
@@ -1106,7 +1303,11 @@
     var slider = document.getElementById("longing-circle-density");
     var v = slider ? Number(slider.value) : CIRCLE_DENSITY_DEFAULT;
     return Math.round(
-      snapFeelingsSliderValue(v, CIRCLE_DENSITY_MIN, CIRCLE_DENSITY_MAX)
+      snapFeelingsSliderValue(
+        v,
+        CIRCLE_DENSITY_MIN,
+        getJunctionEmotionDensityMaxForActiveGrid()
+      )
     );
   }
 
@@ -1114,7 +1315,11 @@
     var slider = document.getElementById("grief-circle-density");
     var v = slider ? Number(slider.value) : CIRCLE_DENSITY_DEFAULT;
     return Math.round(
-      snapFeelingsSliderValue(v, CIRCLE_DENSITY_MIN, CIRCLE_DENSITY_MAX)
+      snapFeelingsSliderValue(
+        v,
+        CIRCLE_DENSITY_MIN,
+        getJunctionEmotionDensityMaxForActiveGrid()
+      )
     );
   }
 
@@ -1128,10 +1333,7 @@
       typeof STRENGTH_DENSITY_MIN !== "undefined"
         ? STRENGTH_DENSITY_MIN
         : CIRCLE_DENSITY_MIN;
-    var max =
-      typeof STRENGTH_DENSITY_MAX !== "undefined"
-        ? STRENGTH_DENSITY_MAX
-        : CIRCLE_DENSITY_MAX;
+    var max = getJunctionEmotionDensityMaxForActiveGrid();
     var v = slider ? Number(slider.value) : def;
     return Math.round(snapFeelingsSliderValue(v, min, max));
   }
@@ -1146,10 +1348,7 @@
       typeof HELPLESSNESS_PERCENT_MIN !== "undefined"
         ? HELPLESSNESS_PERCENT_MIN
         : 0;
-    var max =
-      typeof HELPLESSNESS_PERCENT_MAX !== "undefined"
-        ? HELPLESSNESS_PERCENT_MAX
-        : 30;
+    var max = getHelplessnessPercentMaxForActiveGrid();
     var v = slider ? Number(slider.value) : def;
     return Math.round(snapFeelingsSliderValue(v, min, max));
   }
@@ -1192,7 +1391,11 @@
     var slider = document.getElementById("pride-fill-percent");
     var v = slider ? Number(slider.value) : PRIDE_FILL_PERCENT_DEFAULT;
     return Math.round(
-      snapFeelingsSliderValue(v, PRIDE_FILL_PERCENT_MIN, PRIDE_FILL_PERCENT_MAX)
+      snapFeelingsSliderValue(
+        v,
+        PRIDE_FILL_PERCENT_MIN,
+        getPrideFillPercentMaxForActiveGrid()
+      )
     );
   }
 
@@ -1206,12 +1409,10 @@
       typeof ANGER_TRIANGLE_DENSITY_MIN !== "undefined"
         ? ANGER_TRIANGLE_DENSITY_MIN
         : 0;
-    var max =
-      typeof ANGER_TRIANGLE_DENSITY_MAX !== "undefined"
-        ? ANGER_TRIANGLE_DENSITY_MAX
-        : 30;
     var v = slider ? Number(slider.value) : def;
-    return Math.round(snapFeelingsSliderValue(v, min, max));
+    return Math.round(
+      snapFeelingsSliderValue(v, min, getAngerTriangleDensityMaxForActiveGrid())
+    );
   }
 
   function getGuiltShameFillPercent() {
@@ -1224,12 +1425,10 @@
       typeof GUILT_SHAME_FILL_PERCENT_MIN !== "undefined"
         ? GUILT_SHAME_FILL_PERCENT_MIN
         : 0;
-    var max =
-      typeof GUILT_SHAME_FILL_PERCENT_MAX !== "undefined"
-        ? GUILT_SHAME_FILL_PERCENT_MAX
-        : 30;
     var v = slider ? Number(slider.value) : def;
-    return Math.round(snapFeelingsSliderValue(v, min, max));
+    return Math.round(
+      snapFeelingsSliderValue(v, min, getGuiltShameFillPercentMaxForActiveGrid())
+    );
   }
 
   function getAutoMergeIntensity() {
@@ -1265,6 +1464,15 @@
           CANVAS_H
         ).tileSize;
       }
+    }
+    if (isCirclesGrid()) {
+      var circlesRefN =
+        typeof CIRCLES_GRID_PRIDE_REFERENCE_N !== "undefined"
+          ? CIRCLES_GRID_PRIDE_REFERENCE_N
+          : typeof CIRCLES_GRID_N_MIN !== "undefined"
+            ? CIRCLES_GRID_N_MIN
+            : OCTAGONS_N_DEFAULT;
+      return CirclesGridGeometry.tileSizeFromN(circlesRefN, CANVAS_W);
     }
     var octRefN =
       typeof PRIDE_AUTO_MERGE_REFERENCE_N_OCTAGON !== "undefined"
@@ -1304,6 +1512,8 @@
 
   /** Fast Pride path: skip dangling prune, orphan fills, midpoint segment tests. */
   function shouldUseSimplePrideAutoMergeMode() {
+    // Circles grid needs orphan fills at every density; simple mode removes almost all Pride areas when dense.
+    if (isCirclesGrid()) return false;
     var threshold =
       typeof PRIDE_AUTO_MERGE_SIMPLE_MODE_DENSITY_RATIO !== "undefined"
         ? PRIDE_AUTO_MERGE_SIMPLE_MODE_DENSITY_RATIO
@@ -1366,13 +1576,15 @@
       if (edgesPerAreaMax < edgesPerAreaMin) edgesPerAreaMax = edgesPerAreaMin;
     }
 
-    var densityEdgeScale = getPrideAutoMergeDensityEdgeScale();
-    if (densityEdgeScale < 1) {
-      edgesPerAreaMin = Math.max(2, Math.round(edgesPerAreaMin * densityEdgeScale));
-      edgesPerAreaMax = Math.max(
-        edgesPerAreaMin,
-        Math.round(edgesPerAreaMax * densityEdgeScale)
-      );
+    if (!isCirclesGrid()) {
+      var densityEdgeScale = getPrideAutoMergeDensityEdgeScale();
+      if (densityEdgeScale < 1) {
+        edgesPerAreaMin = Math.max(2, Math.round(edgesPerAreaMin * densityEdgeScale));
+        edgesPerAreaMax = Math.max(
+          edgesPerAreaMin,
+          Math.round(edgesPerAreaMax * densityEdgeScale)
+        );
+      }
     }
 
     return {
@@ -1403,8 +1615,42 @@
     return GRID_STROKE_WIDTH_DEFAULT;
   }
 
+  /**
+   * Frame horizontal division count: 3-step slider (1 = low, 2 = default, 3 = high).
+   * @returns {1|2|3}
+   */
+  function getBorderFrameDivisionsStep() {
+    var slider = document.getElementById("border-frame-divisions");
+    var v = slider ? Number(slider.value) : 2;
+    var clamped = Math.min(3, Math.max(1, Math.round(v)));
+    return /** @type {1|2|3} */ (clamped);
+  }
+
   function getBorderLeftRightSegments() {
-    return BORDER_LEFT_RIGHT_SEGMENTS_DEFAULT;
+    var step = getBorderFrameDivisionsStep();
+    if (step === 1) {
+      return typeof BORDER_LEFT_RIGHT_SEGMENTS_LOW !== "undefined"
+        ? BORDER_LEFT_RIGHT_SEGMENTS_LOW
+        : 8;
+    }
+    if (step === 3) {
+      return typeof BORDER_LEFT_RIGHT_SEGMENTS_HIGH !== "undefined"
+        ? BORDER_LEFT_RIGHT_SEGMENTS_HIGH
+        : 18;
+    }
+    return typeof BORDER_LEFT_RIGHT_SEGMENTS_DEFAULT !== "undefined"
+      ? BORDER_LEFT_RIGHT_SEGMENTS_DEFAULT
+      : 12;
+  }
+
+  /**
+   * @param {1|2|3} step
+   * @returns {"Minimum"|"Medium"|"Maximum"}
+   */
+  function borderFrameDivisionsLabel(step) {
+    if (step === 1) return "Minimum";
+    if (step === 3) return "Maximum";
+    return "Medium";
   }
 
   /**
@@ -1468,7 +1714,7 @@
     var cap =
       typeof BORDER_SIDE_WHITE_CAP_PERCENT !== "undefined"
         ? BORDER_SIDE_WHITE_CAP_PERCENT
-        : 40;
+        : 50;
     var sliderMax =
       typeof BORDER_SIDE_WHITE_FILL_MAX !== "undefined"
         ? BORDER_SIDE_WHITE_FILL_MAX
@@ -2361,16 +2607,395 @@
     );
   }
 
+  function getAutoMergeRegionFillPathExportMarkup(pathD, fillColor) {
+    return (
+      '<path d="' +
+      pathD +
+      '" fill="' +
+      fillColor +
+      '" stroke="' +
+      getAutoMergeOutlineColor() +
+      '" stroke-width="' +
+      getAutoMergeOutlineWidth() +
+      '" stroke-linejoin="round" stroke-linecap="round"/>'
+    );
+  }
+
+  /** Effective inner scale for Pride tessellation (never full 1 — corner cells required). */
+  function getCirclesGridPrideTessellationInnerScale() {
+    var innerMin =
+      typeof INNER_SCALE_MIN !== "undefined" ? INNER_SCALE_MIN : 0.3;
+    var innerMax =
+      typeof INNER_SCALE_MAX !== "undefined" ? INNER_SCALE_MAX : 1;
+    var prideMax =
+      typeof CIRCLES_GRID_PRIDE_TESSELLATION_INNER_SCALE_MAX !== "undefined"
+        ? CIRCLES_GRID_PRIDE_TESSELLATION_INNER_SCALE_MAX
+        : 0.92;
+    var inner = getInnerScale();
+    inner = Math.min(innerMax, Math.max(innerMin, inner));
+    return Math.min(inner, prideMax);
+  }
+
+  /** Corner quarter-circle radius for circles-grid Pride outlines (matches corner cell width). */
+  function getCirclesGridPrideCornerArcRadius() {
+    var tile = lastTileSize;
+    if (!tile || tile <= 0) return 0;
+    var inner = getCirclesGridPrideTessellationInnerScale();
+    return tile * (1 - inner);
+  }
+
+  function prideOutlineCoord(v) {
+    return Math.round(v * 100) / 100;
+  }
+
+  function pridePointNearEllipse(x, y, circle, eps) {
+    if (!circle || !circle.rx || !circle.ry) return false;
+    var dx = x - circle.cx;
+    var dy = y - circle.cy;
+    var dist =
+      (dx * dx) / (circle.rx * circle.rx) + (dy * dy) / (circle.ry * circle.ry);
+    return Math.abs(dist - 1) <= eps;
+  }
+
+  function getPrideOutlineStructuralCircles() {
+    if (!isCirclesGrid()) return [];
+    var sig =
+      lastOctagonsN +
+      "|" +
+      getCirclesGridPrideTessellationInnerScale() +
+      "|" +
+      CANVAS_W +
+      "|" +
+      CANVAS_H;
+    if (
+      sig !== lastPrideOutlineCirclesSig ||
+      !cachedPrideOutlineStructuralCircles.length
+    ) {
+      cachedPrideOutlineStructuralCircles =
+        CirclesGridGeometry.buildStructuralCircles(
+          lastOctagonsN,
+          CANVAS_W,
+          CANVAS_H,
+          getCirclesGridPrideTessellationInnerScale()
+        );
+      lastPrideOutlineCirclesSig = sig;
+    }
+    return cachedPrideOutlineStructuralCircles;
+  }
+
+  function getStructuralCircleForPrideEdge(p1, p2) {
+    var circles = getPrideOutlineStructuralCircles();
+    if (!circles.length) return null;
+    var eps =
+      typeof CIRCLES_GRID_PRIDE_ELLIPSE_EDGE_EPS !== "undefined"
+        ? CIRCLES_GRID_PRIDE_ELLIPSE_EDGE_EPS
+        : 0.12;
+    var i;
+    var c;
+    for (i = 0; i < circles.length; i++) {
+      c = circles[i];
+      if (
+        pridePointNearEllipse(p1.x, p1.y, c, eps) &&
+        pridePointNearEllipse(p2.x, p2.y, c, eps)
+      ) {
+        return c;
+      }
+    }
+    return null;
+  }
+
+  function structuralCirclesMatch(c1, c2) {
+    if (!c1 || !c2) return false;
+    if (c1.id && c2.id) return c1.id === c2.id;
+    return (
+      c1.cx === c2.cx &&
+      c1.cy === c2.cy &&
+      c1.rx === c2.rx &&
+      c1.ry === c2.ry
+    );
+  }
+
+  function prideEllipseSweepFlag(circle, from, to) {
+    var v1x = from.x - circle.cx;
+    var v1y = from.y - circle.cy;
+    var v2x = to.x - circle.cx;
+    var v2y = to.y - circle.cy;
+    var cross = v1x * v2y - v1y * v2x;
+    return cross < 0 ? 1 : 0;
+  }
+
+  function prideEllipseArcFlags(circle, from, to) {
+    var a1 = Math.atan2(
+      (from.y - circle.cy) / circle.ry,
+      (from.x - circle.cx) / circle.rx
+    );
+    var a2 = Math.atan2(
+      (to.y - circle.cy) / circle.ry,
+      (to.x - circle.cx) / circle.rx
+    );
+    var sweep = prideEllipseSweepFlag(circle, from, to);
+    var da = a2 - a1;
+    if (sweep === 1) {
+      if (da < 0) da += Math.PI * 2;
+    } else if (da > 0) {
+      da -= Math.PI * 2;
+    }
+    return {
+      sweep: sweep,
+      largeArc: Math.abs(da) > Math.PI ? 1 : 0,
+    };
+  }
+
+  function sampleEllipseArcPoints(circle, from, to, steps) {
+    var a1 = Math.atan2(
+      (from.y - circle.cy) / circle.ry,
+      (from.x - circle.cx) / circle.rx
+    );
+    var a2 = Math.atan2(
+      (to.y - circle.cy) / circle.ry,
+      (to.x - circle.cx) / circle.rx
+    );
+    var sweep = prideEllipseSweepFlag(circle, from, to);
+    var da = a2 - a1;
+    if (sweep === 1) {
+      if (da < 0) da += Math.PI * 2;
+    } else if (da > 0) {
+      da -= Math.PI * 2;
+    }
+    var pts = [];
+    var si;
+    var t;
+    var ang;
+    for (si = 1; si <= steps; si++) {
+      t = si / steps;
+      ang = a1 + da * t;
+      pts.push({
+        x: circle.cx + circle.rx * Math.cos(ang),
+        y: circle.cy + circle.ry * Math.sin(ang),
+      });
+    }
+    return pts;
+  }
+
+  function sampleCornerArcPoints(p1, p2, r, steps, acx, acy) {
+    var a1 = Math.atan2(p1.y - acy, p1.x - acx);
+    var a2 = Math.atan2(p2.y - acy, p2.x - acx);
+    var da = a2 - a1;
+    if (da < 0) da += Math.PI * 2;
+    var pts = [];
+    var si;
+    var t;
+    for (si = 1; si <= steps; si++) {
+      t = si / steps;
+      pts.push({
+        x: acx + r * Math.cos(a1 + da * t),
+        y: acy + r * Math.sin(a1 + da * t),
+      });
+    }
+    return pts;
+  }
+
+  /**
+   * @param {{ x: number, y: number }} prev
+   * @param {{ x: number, y: number }} corner
+   * @param {{ x: number, y: number }} next
+   * @param {number} arcRadius
+   * @returns {{ p1: {x:number,y:number}, p2: {x:number,y:number}, r: number } | null}
+   */
+  function getPrideCornerArcTrim(prev, corner, next, arcRadius) {
+    var dx1 = corner.x - prev.x;
+    var dy1 = corner.y - prev.y;
+    var dx2 = next.x - corner.x;
+    var dy2 = next.y - corner.y;
+    var len1 = Math.sqrt(dx1 * dx1 + dy1 * dy1);
+    var len2 = Math.sqrt(dx2 * dx2 + dy2 * dy2);
+    if (len1 < 1e-6 || len2 < 1e-6) return null;
+
+    var aligned =
+      (Math.abs(dx1) < 1e-4 && Math.abs(dy2) < 1e-4) ||
+      (Math.abs(dy1) < 1e-4 && Math.abs(dx2) < 1e-4);
+    var cross = dx1 * dy2 - dy1 * dx2;
+    if (!aligned || Math.abs(Math.abs(cross) - len1 * len2) > len1 * len2 * 0.2) {
+      return null;
+    }
+    if (cross <= 0) return null;
+
+    var r = Math.min(arcRadius, len1 * 0.49, len2 * 0.49);
+    if (r < 0.5) return null;
+
+    var ux1 = dx1 / len1;
+    var uy1 = dy1 / len1;
+    var ux2 = dx2 / len2;
+    var uy2 = dy2 / len2;
+    var trimStart = { x: corner.x - ux1 * r, y: corner.y - uy1 * r };
+    var trimEnd = { x: corner.x + ux2 * r, y: corner.y + uy2 * r };
+    return {
+      p1: trimStart,
+      p2: trimEnd,
+      r: r,
+      acx: trimStart.x + ux2 * r,
+      acy: trimStart.y + uy2 * r,
+    };
+  }
+
+  /**
+   * Smooth SVG path for circles-grid Pride: elliptical arcs + rounded corners.
+   * @param {{ x: number, y: number }[]} points
+   * @returns {{ pathD: string, shadowPoints: { x: number, y: number }[] }}
+   */
+  function buildCirclesGridPrideOutline(points) {
+    if (!points || points.length < 3) {
+      return { pathD: "", shadowPoints: points ? points.slice() : [] };
+    }
+
+    var n = points.length;
+    var pathParts = [];
+    var shadowPts = [{ x: points[0].x, y: points[0].y }];
+    var cornerRadius = getCirclesGridPrideCornerArcRadius();
+    var shadowSteps =
+      typeof CIRCLES_GRID_PRIDE_SHADOW_ARC_STEPS !== "undefined"
+        ? CIRCLES_GRID_PRIDE_SHADOW_ARC_STEPS
+        : 10;
+    var cornerShadowSteps =
+      typeof CIRCLES_GRID_PRIDE_CORNER_ARC_STEPS !== "undefined"
+        ? CIRCLES_GRID_PRIDE_CORNER_ARC_STEPS
+        : 6;
+    var edgeIdx = 0;
+
+    pathParts.push(
+      "M" + prideOutlineCoord(points[0].x) + "," + prideOutlineCoord(points[0].y)
+    );
+
+    while (edgeIdx < n) {
+      var from = points[edgeIdx];
+      var toIdx = (edgeIdx + 1) % n;
+      var to = points[toIdx];
+      var circle = getStructuralCircleForPrideEdge(from, to);
+
+      if (circle) {
+        var endIdx = toIdx;
+        var chainGuard = 0;
+        while (chainGuard < n) {
+          chainGuard++;
+          var nextEnd = (endIdx + 1) % n;
+          if (
+            !structuralCirclesMatch(
+              circle,
+              getStructuralCircleForPrideEdge(points[endIdx], points[nextEnd])
+            )
+          ) {
+            break;
+          }
+          endIdx = nextEnd;
+          if (endIdx === edgeIdx) break;
+        }
+        var arcTo = points[endIdx];
+        var arcFlags = prideEllipseArcFlags(circle, from, arcTo);
+        pathParts.push(
+          "A" +
+            prideOutlineCoord(circle.rx) +
+            "," +
+            prideOutlineCoord(circle.ry) +
+            " 0 " +
+            arcFlags.largeArc +
+            " " +
+            arcFlags.sweep +
+            " " +
+            prideOutlineCoord(arcTo.x) +
+            "," +
+            prideOutlineCoord(arcTo.y)
+        );
+        shadowPts = shadowPts.concat(
+          sampleEllipseArcPoints(circle, from, arcTo, shadowSteps)
+        );
+        edgeIdx = endIdx;
+        if (edgeIdx === 0) break;
+        continue;
+      }
+
+      var afterIdx = (toIdx + 1) % n;
+      var cornerArc = getPrideCornerArcTrim(
+        from,
+        to,
+        points[afterIdx],
+        cornerRadius
+      );
+      if (cornerArc) {
+        pathParts.push(
+          "L" +
+            prideOutlineCoord(cornerArc.p1.x) +
+            "," +
+            prideOutlineCoord(cornerArc.p1.y)
+        );
+        var cornerSweep =
+          prideEllipseSweepFlag(
+            { cx: cornerArc.acx, cy: cornerArc.acy, rx: 1, ry: 1 },
+            cornerArc.p1,
+            cornerArc.p2
+          );
+        pathParts.push(
+          "A" +
+            prideOutlineCoord(cornerArc.r) +
+            "," +
+            prideOutlineCoord(cornerArc.r) +
+            " 0 0 " +
+            cornerSweep +
+            " " +
+            prideOutlineCoord(cornerArc.p2.x) +
+            "," +
+            prideOutlineCoord(cornerArc.p2.y)
+        );
+        shadowPts.push({ x: cornerArc.p1.x, y: cornerArc.p1.y });
+        shadowPts = shadowPts.concat(
+          sampleCornerArcPoints(
+            cornerArc.p1,
+            cornerArc.p2,
+            cornerArc.r,
+            cornerShadowSteps,
+            cornerArc.acx,
+            cornerArc.acy
+          )
+        );
+      } else {
+        pathParts.push(
+          "L" + prideOutlineCoord(to.x) + "," + prideOutlineCoord(to.y)
+        );
+        shadowPts.push({ x: to.x, y: to.y });
+      }
+
+      edgeIdx = toIdx;
+      if (edgeIdx === 0) break;
+    }
+
+    pathParts.push("Z");
+    return { pathD: pathParts.join(" "), shadowPoints: shadowPts };
+  }
+
   /**
    * @param {{ x: number, y: number }[]} pts
    * @param {string} fillColor
    * @returns {SVGElement}
    */
   function createAutoMergeRegionGroup(pts, fillColor) {
-    var pointsAttr = polygonPointsToAttr(pts);
     var g = elSvg("g");
-    appendAutoMergeFilteredShadowPolygon(g, pts);
 
+    if (isCirclesGrid()) {
+      var outline = buildCirclesGridPrideOutline(pts);
+      if (!outline.pathD) return g;
+      appendAutoMergeFilteredShadowPolygon(g, outline.shadowPoints);
+      var smoothPath = elSvg("path");
+      smoothPath.setAttribute("d", outline.pathD);
+      smoothPath.setAttribute("fill", fillColor);
+      smoothPath.setAttribute("stroke", getAutoMergeOutlineColor());
+      smoothPath.setAttribute("stroke-width", String(getAutoMergeOutlineWidth()));
+      smoothPath.setAttribute("stroke-linejoin", "round");
+      smoothPath.setAttribute("stroke-linecap", "round");
+      g.appendChild(smoothPath);
+      return g;
+    }
+
+    var pointsAttr = polygonPointsToAttr(pts);
+    appendAutoMergeFilteredShadowPolygon(g, pts);
     var poly = elSvg("polygon");
     poly.setAttribute("points", pointsAttr);
     poly.setAttribute("fill", fillColor);
@@ -2396,9 +3021,17 @@
     for (i = 0; i < autoMergeFillRegions.length; i++) {
       pts = autoMergeFillRegions[i].points;
       if (!pts.length) continue;
-      lines.push(
-        getAutoMergeShadowPolygonExportMarkup(polygonPointsToAttr(pts))
-      );
+      if (isCirclesGrid()) {
+        lines.push(
+          getAutoMergeShadowPolygonExportMarkup(
+            polygonPointsToAttr(buildCirclesGridPrideOutline(pts).shadowPoints)
+          )
+        );
+      } else {
+        lines.push(
+          getAutoMergeShadowPolygonExportMarkup(polygonPointsToAttr(pts))
+        );
+      }
     }
     lines.push("</g>");
   }
@@ -2418,6 +3051,15 @@
     for (i = 0; i < autoMergeFillRegions.length; i++) {
       pts = autoMergeFillRegions[i].points;
       if (!pts.length) continue;
+      if (isCirclesGrid()) {
+        lines.push(
+          getAutoMergeRegionFillPathExportMarkup(
+            buildCirclesGridPrideOutline(pts).pathD,
+            fillColor
+          )
+        );
+        continue;
+      }
       pointsAttr = "";
       for (p = 0; p < pts.length; p++) {
         if (p) pointsAttr += " ";
@@ -2610,6 +3252,13 @@
         1
       );
     }
+    if (isCirclesGrid()) {
+      return CirclesGridGeometry.buildJunctionCircleCatalog(
+        lastOctagonsN,
+        CANVAS_W,
+        CANVAS_H
+      );
+    }
     // Junction positions only; halfSide is for Strength marks — not tied to inner-scale slider.
     return TopkapiGeometry.buildUprightSquareCatalog(
       lastOctagonsN,
@@ -2617,6 +3266,33 @@
       CANVAS_H,
       1
     );
+  }
+
+  /** Circles grid: Sadness uses two-circle junction crosses only. */
+  function getSadnessCircleCatalog() {
+    if (isCirclesGrid()) {
+      return CirclesGridGeometry.buildAdjacentCircleJunctionCatalog(
+        lastOctagonsN,
+        CANVAS_W,
+        CANVAS_H
+      );
+    }
+    return getUprightSquareCatalog();
+  }
+
+  function syncSadnessCircleLayoutOnSignatureChange() {
+    var sig = isCirclesGrid()
+      ? "circles-sadness-adjacent|" +
+        lastOctagonsN +
+        "|" +
+        CANVAS_W +
+        "|" +
+        CANVAS_H
+      : buildCircleLayoutSignature();
+    if (sig !== lastCircleLayoutSignature) {
+      lastCircleLayoutSignature = sig;
+      syncCircleSelection(true);
+    }
   }
 
   function getHelplessnessJunctionCatalog() {
@@ -2629,6 +3305,13 @@
       }
       return NestedStarOctagonsGeometry.buildHelplessnessJunctionCatalog(
         getStarLayout(),
+        CANVAS_W,
+        CANVAS_H
+      );
+    }
+    if (isCirclesGrid()) {
+      return CirclesGridGeometry.buildHelplessnessCatalog(
+        lastOctagonsN,
         CANVAS_W,
         CANVAS_H
       );
@@ -2659,6 +3342,16 @@
         CANVAS_H
       );
     }
+    if (isCirclesGrid()) {
+      return (
+        "circles-hp|" +
+        lastOctagonsN +
+        "|" +
+        CANVAS_W +
+        "|" +
+        CANVAS_H
+      );
+    }
     return buildDiamondLayoutSignature() + "|" + getInnerScale();
   }
 
@@ -2676,6 +3369,13 @@
       }
       return NestedStarOctagonsGeometry.buildJunctionDiamondCatalog(
         getStarLayout(),
+        CANVAS_W,
+        CANVAS_H
+      );
+    }
+    if (isCirclesGrid()) {
+      return CirclesGridGeometry.buildJunctionDiamondCatalog(
+        lastOctagonsN,
         CANVAS_W,
         CANVAS_H
       );
@@ -2706,6 +3406,16 @@
         CANVAS_H +
         "|" +
         getInnerScale()
+      );
+    }
+    if (isCirclesGrid()) {
+      return (
+        "circles-quad-junction|" +
+        lastOctagonsN +
+        "|" +
+        CANVAS_W +
+        "|" +
+        CANVAS_H
       );
     }
     return lastOctagonsN + "|" + CANVAS_W + "|" + CANVAS_H;
@@ -2856,7 +3566,7 @@
 
     if (isEmotionLayerActive("sadness")) {
       circleSelectedIds.forEach(function (id) {
-        key = idToKey.get(id);
+        key = junctionKeyFromCatalogId(id);
         if (key) keys.add(key);
       });
     }
@@ -2963,7 +3673,7 @@
    * @param {boolean} forceReshuffle
    */
   function syncCircleSelection(forceReshuffle) {
-    var catalog = getUprightSquareCatalog();
+    var catalog = getSadnessCircleCatalog();
     var target = Math.round((catalog.length * getCircleDensity()) / 100);
     adjustCatalogSelection(circleSelectedIds, catalog, target, {
       forceReshuffle: forceReshuffle,
@@ -3269,7 +3979,7 @@
    */
   function getActiveCircles() {
     if (!isEmotionLayerActive("sadness")) return [];
-    var catalog = getUprightSquareCatalog();
+    var catalog = getSadnessCircleCatalog();
     var circles = [];
     for (var i = 0; i < catalog.length; i++) {
       var sq = catalog[i];
@@ -3327,7 +4037,7 @@
         marks.push({
           cx: sq.cx,
           cy: sq.cy,
-          r: sq.r,
+          r: halfSide,
           halfSide: halfSide,
         });
       }
@@ -3399,6 +4109,39 @@
       )
     );
     appendHelplessnessMarkLines(g, marks);
+    return g;
+  }
+
+  /**
+   * Structural pattern ellipses (Circles grid only) — outline, same stroke as grid lines.
+   * @param {{ cx: number, cy: number, rx: number, ry: number, r?: number }[]} circles
+   * @returns {SVGElement}
+   */
+  function structuralCirclesToGroup(circles) {
+    var g = elSvg("g");
+    g.setAttribute("id", "layer-structural-circles");
+    g.setAttribute("fill", "none");
+    g.setAttribute("stroke", getPatternStrokeColor());
+    g.setAttribute("stroke-width", String(getGridStrokeWidth()));
+    var i;
+    var c;
+    var shape;
+    for (i = 0; i < circles.length; i++) {
+      c = circles[i];
+      if (typeof c.rx === "number" && typeof c.ry === "number") {
+        shape = elSvg("ellipse");
+        shape.setAttribute("cx", String(c.cx));
+        shape.setAttribute("cy", String(c.cy));
+        shape.setAttribute("rx", String(c.rx));
+        shape.setAttribute("ry", String(c.ry));
+      } else {
+        shape = elSvg("circle");
+        shape.setAttribute("cx", String(c.cx));
+        shape.setAttribute("cy", String(c.cy));
+        shape.setAttribute("r", String(c.r));
+      }
+      g.appendChild(shape);
+    }
     return g;
   }
 
@@ -3533,6 +4276,8 @@
       var starLayout = getStarLayout();
       lastOctagonsN = starLayout.n;
       lastTileSize = starLayout.tileSize;
+    } else if (isCirclesGrid()) {
+      lastTileSize = CirclesGridGeometry.tileSizeFromN(lastOctagonsN, CANVAS_W);
     } else {
       lastTileSize = TopkapiGeometry.tileSizeFromN(lastOctagonsN, CANVAS_W);
     }
@@ -3547,6 +4292,7 @@
       ) {
         cachedStarFills = [];
         cachedStarRhombusFills = [];
+        cachedStructuralCircles = [];
         return [];
       }
       var pattern = NestedStarOctagonsGeometry.buildPattern(
@@ -3555,10 +4301,31 @@
       );
       cachedStarFills = pattern.starFills || [];
       cachedStarRhombusFills = pattern.starRhombusFills || [];
+      cachedStructuralCircles = [];
       return pattern.segments;
     }
     cachedStarFills = [];
     cachedStarRhombusFills = [];
+    if (isCirclesGrid()) {
+      var circlesInnerScale = getInnerScale();
+      cachedStructuralCircles = CirclesGridGeometry.buildStructuralCircles(
+        lastOctagonsN,
+        CANVAS_W,
+        CANVAS_H,
+        circlesInnerScale
+      );
+      rebuildCirclesGridEllipseChordKeyCache();
+      return CirclesGridGeometry.buildPatternSegments(
+        lastTileSize,
+        CANVAS_W,
+        CANVAS_H,
+        lastOctagonsN,
+        circlesInnerScale
+      );
+    }
+    cachedCirclesGridEllipseChordKeySet = null;
+    cachedCirclesGridChordKeyToCircleId = {};
+    cachedStructuralCircles = [];
     return TopkapiGeometry.buildPatternSegments(
       lastTileSize,
       CANVAS_W,
@@ -3604,6 +4371,98 @@
     return cachedStarFills.concat(cachedStarRhombusFills);
   }
 
+  /** True when a Pride region overlaps a structural circle (center, arc, or corner cells). */
+  function structuralCircleOverlapsMergeRegion(circle, regionPoints) {
+    if (!regionPoints || !regionPoints.length) return false;
+    if (hopePointInPolygon(circle.cx, circle.cy, regionPoints)) return true;
+
+    var ri;
+    var dx;
+    var dy;
+    for (ri = 0; ri < regionPoints.length; ri++) {
+      dx = regionPoints[ri].x - circle.cx;
+      dy = regionPoints[ri].y - circle.cy;
+      if (
+        (dx * dx) / (circle.rx * circle.rx) +
+          (dy * dy) / (circle.ry * circle.ry) <=
+        1.08
+      ) {
+        return true;
+      }
+    }
+
+    var samples = [0, Math.PI * 0.5, Math.PI, Math.PI * 1.5];
+    var px;
+    var py;
+    for (ri = 0; ri < samples.length; ri++) {
+      px = circle.cx + circle.rx * Math.cos(samples[ri]);
+      py = circle.cy + circle.ry * Math.sin(samples[ri]);
+      if (hopePointInPolygon(px, py, regionPoints)) return true;
+    }
+
+    return false;
+  }
+
+  /** How many structural circle blocks overlap a Pride auto-merge region. */
+  function countStructuralCirclesInsideMergeRegion(region) {
+    if (!cachedStructuralCircles.length || !region.points.length) return 0;
+    var count = 0;
+    var i;
+    for (i = 0; i < cachedStructuralCircles.length; i++) {
+      if (
+        structuralCircleOverlapsMergeRegion(
+          cachedStructuralCircles[i],
+          region.points
+        )
+      ) {
+        count++;
+      }
+    }
+    return count;
+  }
+
+  /** Circles grid: Pride adds fills only — never remove grid lines or structural ellipses. */
+  function shouldPreserveCirclesGridPatternUnderPride() {
+    return isCirclesGrid();
+  }
+
+  /** Circles grid: Pride fills render above emotion marks (same stacking as star grid). */
+  function shouldRenderPrideFillsBeforeCirclesGridPattern() {
+    return false;
+  }
+
+  /** Hide structural circles under Pride auto-merge (solid red replaces them). */
+  function getVisibleStructuralCirclesForPattern() {
+    if (!cachedStructuralCircles.length) return [];
+    if (shouldPreserveCirclesGridPatternUnderPride()) {
+      return cachedStructuralCircles;
+    }
+    if (
+      !isEmotionLayerActive("pride") ||
+      !autoMergeFillRegions ||
+      !autoMergeFillRegions.length
+    ) {
+      return cachedStructuralCircles;
+    }
+    var out = [];
+    var i;
+    var ri;
+    for (i = 0; i < cachedStructuralCircles.length; i++) {
+      for (ri = 0; ri < autoMergeFillRegions.length; ri++) {
+        if (
+          structuralCircleOverlapsMergeRegion(
+            cachedStructuralCircles[i],
+            autoMergeFillRegions[ri].points
+          )
+        ) {
+          break;
+        }
+      }
+      if (ri >= autoMergeFillRegions.length) out.push(cachedStructuralCircles[i]);
+    }
+    return out;
+  }
+
   /** Hide star cell fills under Pride auto-merge (solid red replaces them). */
   function getVisibleStarFillsForPattern() {
     if (!cachedStarFills.length) return [];
@@ -3630,66 +4489,197 @@
     return out;
   }
 
-  /** Line network for face tracing / merge (includes star fill boundaries on star grid). */
-  function getAllSegmentsForTracing() {
-    if (
-      !isStarGrid() ||
-      (!cachedStarFills.length && !cachedStarRhombusFills.length)
-    ) {
-      return cachedAllSegments;
+  function rebuildCirclesGridEllipseChordKeyCache() {
+    cachedCirclesGridEllipseChordKeySet = new Set();
+    cachedCirclesGridChordKeyToCircleId = {};
+    if (!cachedStructuralCircles.length) return;
+    var ci;
+    var circle;
+    var chords;
+    var i;
+    var key;
+    for (ci = 0; ci < cachedStructuralCircles.length; ci++) {
+      circle = cachedStructuralCircles[ci];
+      chords = CirclesGridGeometry.buildEllipseBoundarySegments([circle]);
+      for (i = 0; i < chords.length; i++) {
+        key = TopkapiGeometry.segmentKey(
+          chords[i].x1,
+          chords[i].y1,
+          chords[i].x2,
+          chords[i].y2
+        );
+        cachedCirclesGridEllipseChordKeySet.add(key);
+        cachedCirclesGridChordKeyToCircleId[key] = circle.id;
+      }
     }
-    var seen = new Set();
-    var out = [];
+  }
+
+  function isCirclesGridEllipseChordKey(key) {
+    return !!(
+      cachedCirclesGridEllipseChordKeySet &&
+      cachedCirclesGridEllipseChordKeySet.has(key)
+    );
+  }
+
+  function getStructuralCircleById(circleId) {
+    var i;
+    for (i = 0; i < cachedStructuralCircles.length; i++) {
+      if (cachedStructuralCircles[i].id === circleId) {
+        return cachedStructuralCircles[i];
+      }
+    }
+    return null;
+  }
+
+  /** True when every ellipse chord is still visible (smooth outline, not broken). */
+  function isStructuralCircleOutlineIntact(circle) {
+    if (!circle) return false;
+    var chords = CirclesGridGeometry.buildEllipseBoundarySegments([circle]);
+    var hopeMergeRegions = getHopeMergeCutoutRegionsForRendering();
     var i;
     var s;
     var key;
-    for (i = 0; i < cachedAllSegments.length; i++) {
-      s = cachedAllSegments[i];
+    for (i = 0; i < chords.length; i++) {
+      s = chords[i];
       key = TopkapiGeometry.segmentKey(s.x1, s.y1, s.x2, s.y2);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push(s);
+      if (isSegmentRemoved(key, s, hopeMergeRegions)) return false;
     }
-    var extra = starFillOutlineSegments(getStarGridFillOutlines());
-    for (i = 0; i < extra.length; i++) {
-      s = extra[i];
-      key = TopkapiGeometry.segmentKey(s.x1, s.y1, s.x2, s.y2);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push(s);
+    return true;
+  }
+
+  function getIntactStructuralCirclesForPattern() {
+    if (!cachedStructuralCircles.length) return [];
+    var out = [];
+    var i;
+    for (i = 0; i < cachedStructuralCircles.length; i++) {
+      if (isStructuralCircleOutlineIntact(cachedStructuralCircles[i])) {
+        out.push(cachedStructuralCircles[i]);
+      }
     }
     return out;
   }
 
   /**
-   * Hope merge: octagon grid uses coarse cell boundaries only (no inner diamond).
-   * Star grid keeps the full tracing network; false positives are filtered in
-   * filterHopeMergeRegionsForGridType.
+   * Circles grid display: grid lines + broken ellipse chords (intact → smooth SVG).
+   * @returns {{x1:number,y1:number,x2:number,y2:number}[]}
+   */
+  function getVisibleCirclesGridPatternSegments() {
+    var hopeMergeRegions = getHopeMergeCutoutRegionsForRendering();
+    var tracing = getAllSegmentsForTracing();
+    var visible = [];
+    var i;
+    var s;
+    var key;
+    var circle;
+    for (i = 0; i < tracing.length; i++) {
+      s = tracing[i];
+      key = TopkapiGeometry.segmentKey(s.x1, s.y1, s.x2, s.y2);
+      if (isSegmentRemoved(key, s, hopeMergeRegions)) continue;
+      if (isCirclesGridEllipseChordKey(key)) {
+        circle = getStructuralCircleById(
+          cachedCirclesGridChordKeyToCircleId[key]
+        );
+        if (isStructuralCircleOutlineIntact(circle)) continue;
+      }
+      visible.push(s);
+    }
+    return visible;
+  }
+
+  /**
+   * Structural ellipse outlines as chord segments (Circles grid tracing / merge).
+   * @returns {{x1:number,y1:number,x2:number,y2:number}[]}
+   */
+  function getCirclesGridEllipseOutlineSegments() {
+    if (!cachedStructuralCircles.length) return [];
+    return CirclesGridGeometry.buildEllipseBoundarySegments(
+      cachedStructuralCircles
+    );
+  }
+
+  /** Line network for face tracing / merge (star fills; circles ellipse arcs). */
+  function getAllSegmentsForTracing() {
+    var seen = new Set();
+    var out = [];
+    var i;
+    var s;
+    var key;
+
+    function pushSegment(segment) {
+      key = TopkapiGeometry.segmentKey(
+        segment.x1,
+        segment.y1,
+        segment.x2,
+        segment.y2
+      );
+      if (seen.has(key)) return;
+      seen.add(key);
+      out.push(segment);
+    }
+
+    for (i = 0; i < cachedAllSegments.length; i++) {
+      pushSegment(cachedAllSegments[i]);
+    }
+
+    if (
+      isStarGrid() &&
+      (cachedStarFills.length || cachedStarRhombusFills.length)
+    ) {
+      var extra = starFillOutlineSegments(getStarGridFillOutlines());
+      for (i = 0; i < extra.length; i++) {
+        pushSegment(extra[i]);
+      }
+      return out;
+    }
+
+    if (isCirclesGrid()) {
+      var ellipseSegments = getCirclesGridEllipseOutlineSegments();
+      for (i = 0; i < ellipseSegments.length; i++) {
+        pushSegment(ellipseSegments[i]);
+      }
+    }
+
+    return out;
+  }
+
+  /** Visible pattern line segments for render + export (grid + merge-hidden arcs). */
+  function getVisiblePatternSegments() {
+    if (isCirclesGrid()) return getVisibleCirclesGridPatternSegments();
+    return getVisibleSegments(getAllSegmentsForTracing());
+  }
+
+  /**
+   * Hope merge hit-test + dangling prune: full drawn line network so removed edge
+   * keys match rendered segments and inner structure can break apart.
    * @returns {{x1:number,y1:number,x2:number,y2:number}[]}
    */
   function getSegmentsForHopeMerge() {
-    if (isOctagonGrid()) {
-      return TopkapiGeometry.buildCoarseCellBoundarySegments(
-        lastTileSize,
+    return getAllSegmentsForTracing();
+  }
+
+  /**
+   * Merge cutout detection: full line network (inner diamonds included) so Hope
+   * holes follow intricate grid geometry; micro-faces filtered per grid type.
+   * Circles grid uses tessellation mesh (grid + structural ellipse arcs).
+   * @returns {{x1:number,y1:number,x2:number,y2:number}[]}
+   */
+  function getSegmentsForMergeRegionDetection() {
+    if (isCirclesGrid()) {
+      return CirclesGridGeometry.buildHopeMergeTessellationSegments(
+        lastOctagonsN,
         CANVAS_W,
         CANVAS_H,
-        lastOctagonsN
+        getInnerScale()
       );
     }
     return getAllSegmentsForTracing();
   }
 
   /**
-   * @returns {{x1:number,y1:number,x2:number,y2:number}[]}
-   */
-  function getSegmentsForMergeRegionDetection() {
-    return getSegmentsForHopeMerge();
-  }
-
-  /**
    * Pride auto-merge: coarse octagon + square mesh (no inner diamonds / star micro-faces).
    * Dense grids always use this simpler network for speed; octagon grid switches at
    * simple-mode density, star grid always uses its coarse mesh here.
+   * Circles grid uses inner-scale grid + structural ellipse arcs.
    * @returns {{x1:number,y1:number,x2:number,y2:number}[]}
    */
   function getSegmentsForPrideAutoMerge() {
@@ -3703,6 +4693,14 @@
         );
       }
       return getAllSegmentsForTracing();
+    }
+    if (isCirclesGrid()) {
+      return CirclesGridGeometry.buildPrideCircleTessellationSegments(
+        lastOctagonsN,
+        CANVAS_W,
+        CANVAS_H,
+        getCirclesGridPrideTessellationInnerScale()
+      );
     }
     if (!isStarGrid()) return getAllSegmentsForTracing();
     var layout = getStarLayout();
@@ -3720,8 +4718,11 @@
   }
 
   function isSegmentMidpointInsidePrideFill(s) {
+    if (shouldPreserveCirclesGridPatternUnderPride()) return false;
     if (shouldUseSimplePrideAutoMergeMode()) return false;
-    if (!isStarGrid() || !isEmotionLayerActive("pride")) return false;
+    if (!isStarGrid() || !isEmotionLayerActive("pride")) {
+      return false;
+    }
     if (!autoMergeFillRegions || !autoMergeFillRegions.length) return false;
     var mx = (s.x1 + s.x2) * 0.5;
     var my = (s.y1 + s.y2) * 0.5;
@@ -3732,6 +4733,112 @@
       }
     }
     return false;
+  }
+
+  function isSegmentMidpointInsideHopeMergeCutout(s, mergeRegions) {
+    if (!mergeRegions || !mergeRegions.length) return false;
+    var mx = (s.x1 + s.x2) * 0.5;
+    var my = (s.y1 + s.y2) * 0.5;
+    var ri;
+    for (ri = 0; ri < mergeRegions.length; ri++) {
+      if (hopePointInPolygon(mx, my, mergeRegions[ri].points)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function bumpHopeMergeState() {
+    hopeMergeStateVersion++;
+    hopeMergeRegionsRenderCache = null;
+    hopeMergeRegionsCacheVersion = -1;
+  }
+
+  function getHopeMergeCutoutRegionsForRendering() {
+    if (!removedEdges.size) return null;
+    if (
+      hopeMergeRegionsRenderCache !== null &&
+      hopeMergeRegionsCacheVersion === hopeMergeStateVersion
+    ) {
+      return hopeMergeRegionsRenderCache;
+    }
+    var regions = getMergedRegionsForMask();
+    hopeMergeRegionsRenderCache =
+      regions && regions.length ? regions : null;
+    hopeMergeRegionsCacheVersion = hopeMergeStateVersion;
+    return hopeMergeRegionsRenderCache;
+  }
+
+  function isHopeMergeDragActive() {
+    return isDragging && hopeInteractionMode === "merge";
+  }
+
+  /** Fast path while dragging: removed edge keys only (no traceFaces / cutout tests). */
+  function getVisibleSegmentsFast(segments) {
+    var visible = [];
+    var i;
+    var s;
+    var key;
+    for (i = 0; i < segments.length; i++) {
+      s = segments[i];
+      key = TopkapiGeometry.segmentKey(s.x1, s.y1, s.x2, s.y2);
+      if (removedEdges.has(key)) continue;
+      if (isEmotionLayerActive("pride") && autoMergeEdgeKeys.has(key)) continue;
+      if (isSegmentMidpointInsidePrideFill(s)) continue;
+      visible.push(s);
+    }
+    return visible;
+  }
+
+  function updatePatternGridLinesOnly() {
+    if (!designSvg) return;
+    var patternLayer = designSvg.querySelector("#layer-pattern");
+    if (!patternLayer) return;
+    var oldGroup = patternLayer.querySelector('[data-layer="grid-segments"]');
+    if (!oldGroup) {
+      renderPatternLayer();
+      return;
+    }
+    var visible;
+    if (isCirclesGrid()) {
+      visible = getVisibleCirclesGridPatternSegments();
+    } else {
+      var segments = isStarGrid()
+        ? getAllSegmentsForTracing()
+        : cachedAllSegments;
+      visible = getVisibleSegmentsFast(segments);
+    }
+    patternLayer.replaceChild(segmentsToGroup(visible), oldGroup);
+    if (isCirclesGrid()) {
+      var oldCircles = patternLayer.querySelector("#layer-structural-circles");
+      var intactCircles = getIntactStructuralCirclesForPattern();
+      if (!intactCircles.length) {
+        if (oldCircles) patternLayer.removeChild(oldCircles);
+      } else if (oldCircles) {
+        patternLayer.replaceChild(
+          structuralCirclesToGroup(intactCircles),
+          oldCircles
+        );
+      } else {
+        patternLayer.appendChild(structuralCirclesToGroup(intactCircles));
+      }
+    }
+  }
+
+  function scheduleHopeMergeDragPreview() {
+    if (hopeMergeDragRenderScheduled) return;
+    hopeMergeDragRenderScheduled = true;
+    requestAnimationFrame(function () {
+      hopeMergeDragRenderScheduled = false;
+      if (!isHopeMergeDragActive()) return;
+      updatePatternGridLinesOnly();
+    });
+  }
+
+  function finalizeHopeMergeDrag() {
+    bumpHopeMergeState();
+    if (applyDanglingPrune()) bumpHopeMergeState();
+    renderPatternAndVerticalLayers();
   }
 
   function hopePointInPolygon(px, py, points) {
@@ -3803,6 +4910,30 @@
     return tile * tile * frac;
   }
 
+  function getOctagonHopeMergeMinAreaPx() {
+    var tile = lastTileSize;
+    if (!tile || tile <= 0) {
+      tile = TopkapiGeometry.tileSizeFromN(lastOctagonsN, CANVAS_W, CANVAS_H);
+    }
+    var frac =
+      typeof OCTAGON_HOPE_MERGE_MIN_AREA_TILE_FRACTION !== "undefined"
+        ? OCTAGON_HOPE_MERGE_MIN_AREA_TILE_FRACTION
+        : 0.18;
+    return tile * tile * frac;
+  }
+
+  function getCirclesGridHopeMergeMinAreaPx() {
+    var tile = lastTileSize;
+    if (!tile || tile <= 0) {
+      tile = CirclesGridGeometry.tileSizeFromN(lastOctagonsN, CANVAS_W);
+    }
+    var frac =
+      typeof CIRCLES_GRID_HOPE_MERGE_MIN_AREA_TILE_FRACTION !== "undefined"
+        ? CIRCLES_GRID_HOPE_MERGE_MIN_AREA_TILE_FRACTION
+        : 0.45;
+    return tile * tile * frac;
+  }
+
   function hopeBaselineFaceIsOctagonUnit(face) {
     var n = face.points ? face.points.length : 0;
     return n >= 8;
@@ -3868,12 +4999,51 @@
       return out;
     }
 
+    if (isCirclesGrid()) {
+      var circlesBounds = getGridContentBounds();
+      var circlesMaxHoleArea =
+        circlesBounds.width * circlesBounds.height * 0.4;
+      var circlesMinArea = getCirclesGridHopeMergeMinAreaPx();
+      var circlesTile = lastTileSize;
+      if (!circlesTile || circlesTile <= 0) {
+        circlesTile = CirclesGridGeometry.tileSizeFromN(lastOctagonsN, CANVAS_W);
+      }
+      var singleBlockMaxFrac =
+        typeof CIRCLES_GRID_HOPE_SINGLE_BLOCK_MAX_AREA_TILE_FRACTION !==
+        "undefined"
+          ? CIRCLES_GRID_HOPE_SINGLE_BLOCK_MAX_AREA_TILE_FRACTION
+          : 0.75;
+      var singleBlockMaxArea = circlesTile * circlesTile * singleBlockMaxFrac;
+      var partialMaxArea = singleBlockMaxArea * 0.9;
+      var singleBlockBandMax = singleBlockMaxArea * 1.25;
+      var circlesOut = [];
+      var ci;
+      var circlesInside;
+      for (ci = 0; ci < regions.length; ci++) {
+        var circlesArea = polygonAreaAbs(regions[ci].points);
+        if (circlesArea < circlesMinArea) continue;
+        if (circlesArea > circlesMaxHoleArea) continue;
+        if (circlesArea <= singleBlockBandMax) {
+          circlesInside = countStructuralCirclesInsideMergeRegion(regions[ci]);
+          if (circlesInside === 1 && circlesArea < partialMaxArea) {
+            circlesOut.push(regions[ci]);
+          }
+          continue;
+        }
+        circlesOut.push(regions[ci]);
+      }
+      return circlesOut;
+    }
+
     var bounds = getGridContentBounds();
     var maxHoleArea = bounds.width * bounds.height * 0.4;
+    var minArea = getOctagonHopeMergeMinAreaPx();
     var octOut = [];
     var oi;
     for (oi = 0; oi < regions.length; oi++) {
-      if (polygonAreaAbs(regions[oi].points) > maxHoleArea) continue;
+      var area = polygonAreaAbs(regions[oi].points);
+      if (area < minArea) continue;
+      if (area > maxHoleArea) continue;
       octOut.push(regions[oi]);
     }
     if (shouldLimitPrideAutoMergeAtLowInnerScale()) {
@@ -3906,21 +5076,57 @@
     return out;
   }
 
-  function isSegmentRemoved(key, segment) {
+  /**
+   * Pride circles grid: keep multi-circle block merges only.
+   * @param {{ points: { x: number, y: number }[] }[]} regions
+   * @returns {{ points: { x: number, y: number }[] }[]}
+   */
+  function filterCirclesGridPrideAutoMergeRegions(regions) {
+    if (!isCirclesGrid() || !regions.length) return regions;
+    var minCircles =
+      typeof CIRCLES_GRID_PRIDE_MIN_CIRCLES_INSIDE !== "undefined"
+        ? CIRCLES_GRID_PRIDE_MIN_CIRCLES_INSIDE
+        : 2;
+
+    var out = [];
+    for (var i = 0; i < regions.length; i++) {
+      var region = regions[i];
+      var pts = region.points || [];
+      if (pts.length < 3) continue;
+
+      if (countStructuralCirclesInsideMergeRegion(region) < minCircles) continue;
+      out.push(region);
+    }
+    return out;
+  }
+
+  function isSegmentRemoved(key, segment, hopeMergeRegions) {
     if (removedEdges.has(key)) return true;
-    if (isEmotionLayerActive("pride") && autoMergeEdgeKeys.has(key)) {
+    if (
+      !shouldPreserveCirclesGridPatternUnderPride() &&
+      isEmotionLayerActive("pride") &&
+      autoMergeEdgeKeys.has(key)
+    ) {
       return true;
     }
     if (segment && isSegmentMidpointInsidePrideFill(segment)) return true;
+    if (
+      segment &&
+      hopeMergeRegions &&
+      isSegmentMidpointInsideHopeMergeCutout(segment, hopeMergeRegions)
+    ) {
+      return true;
+    }
     return false;
   }
 
   function getVisibleSegments(segments) {
+    var hopeMergeRegions = getHopeMergeCutoutRegionsForRendering();
     var visible = [];
     for (var i = 0; i < segments.length; i++) {
       var s = segments[i];
       var key = TopkapiGeometry.segmentKey(s.x1, s.y1, s.x2, s.y2);
-      if (!isSegmentRemoved(key, s)) visible.push(s);
+      if (!isSegmentRemoved(key, s, hopeMergeRegions)) visible.push(s);
     }
     return visible;
   }
@@ -3955,6 +5161,8 @@
   function clearMergeState() {
     removedEdges.clear();
     stickyMergedCutoutFaces = null;
+    hopeMergeDragHadEdgeChanges = false;
+    bumpHopeMergeState();
     updateHopeResetButton();
   }
 
@@ -4002,6 +5210,7 @@
    * @returns {boolean}
    */
   function shouldLimitPrideAutoMergeAtLowInnerScale() {
+    if (isCirclesGrid()) return false;
     var threshold =
       typeof PRIDE_LOW_INNER_SCALE_AUTO_MERGE_THRESHOLD !== "undefined"
         ? PRIDE_LOW_INNER_SCALE_AUTO_MERGE_THRESHOLD
@@ -4053,13 +5262,18 @@
     var ci;
     var fillRegion;
 
+    var circlesPrideFillOptions = isCirclesGrid()
+      ? { skipOctagonSquareChecks: true }
+      : null;
+
     for (ci = 0; ci < clusters.length; ci++) {
       fillRegion = TopkapiGeometry.getClusterFillRegion(
         prideSegments,
         baselineFaces,
         clusters[ci].faceIndices,
         clusters[ci].edgeKeys,
-        autoMergeEdgeKeys
+        autoMergeEdgeKeys,
+        circlesPrideFillOptions
       );
       if (fillRegion) fillRegions.push(fillRegion);
     }
@@ -4070,15 +5284,22 @@
         fillRegions,
         prideSegments,
         baselineFaces,
-        autoMergeEdgeKeys
+        autoMergeEdgeKeys,
+        circlesPrideFillOptions
       );
     }
 
-    autoMergeFillRegions = TopkapiGeometry.filterAutoMergeFillRegions(
-      fillRegions,
-      baselineFaces
-    );
-    autoMergeFillRegions = filterStarGridPrideAutoMergeRegions(autoMergeFillRegions);
+    if (isCirclesGrid()) {
+      autoMergeFillRegions = filterCirclesGridPrideAutoMergeRegions(fillRegions);
+    } else {
+      autoMergeFillRegions = TopkapiGeometry.filterAutoMergeFillRegions(
+        fillRegions,
+        baselineFaces
+      );
+      autoMergeFillRegions = filterStarGridPrideAutoMergeRegions(
+        autoMergeFillRegions
+      );
+    }
 
     renderPatternAndVerticalLayers();
     renderAutoMergeFillsLayer();
@@ -4091,6 +5312,7 @@
    */
   function segmentsToGroup(segments) {
     var g = elSvg("g");
+    g.setAttribute("data-layer", "grid-segments");
     g.setAttribute("fill", "none");
     g.setAttribute("stroke", getPatternStrokeColor());
     g.setAttribute("stroke-width", String(getGridStrokeWidth()));
@@ -4155,6 +5377,13 @@
         width: CANVAS_W,
         height: y1 - y0,
       };
+    }
+    if (isCirclesGrid()) {
+      return CirclesGridGeometry.getGridContentBounds(
+        lastOctagonsN,
+        CANVAS_W,
+        CANVAS_H
+      );
     }
     return TopkapiGeometry.getGridContentBounds(
       lastOctagonsN,
@@ -4860,6 +6089,16 @@
         getInnerScale()
       );
     }
+    if (isCirclesGrid()) {
+      return (
+        "circles|" +
+        lastOctagonsN +
+        "|" +
+        CANVAS_W +
+        "|" +
+        CANVAS_H
+      );
+    }
     return (
       lastOctagonsN +
       "|" +
@@ -4993,6 +6232,31 @@
   }
 
   /**
+   * Circles grid only: one extra Fear vertical halfway between each adjacent pair.
+   * @param {{ x: number, yTop: number, yBottom: number, topTrim: number, bottomTrim: number }[]} lines
+   * @param {number} yTop
+   * @param {number} yBottom
+   * @returns {typeof lines}
+   */
+  function insertCirclesGridFearMidpointLines(lines, yTop, yBottom) {
+    if (lines.length < 2) return lines;
+    var result = [];
+    var i;
+    var midLine;
+    var midX;
+
+    for (i = 0; i < lines.length; i++) {
+      result.push(lines[i]);
+      if (i + 1 < lines.length) {
+        midX = Math.round(((lines[i].x + lines[i + 1].x) / 2) * 10000) / 10000;
+        midLine = buildRandomizedVerticalLine(midX, yTop, yBottom);
+        if (midLine) result.push(midLine);
+      }
+    }
+    return result;
+  }
+
+  /**
    * @param {boolean} force
    */
   function syncVerticalGridLines(force) {
@@ -5002,7 +6266,13 @@
 
     var xs = isStarGrid()
       ? collectStarGridVerticalAnchorXCoords()
-      : TopkapiGeometry.collectUniqueGridXCoords(cachedAllSegments);
+      : isCirclesGrid()
+        ? CirclesGridGeometry.buildUniformVerticalLineXs(
+            lastOctagonsN,
+            CANVAS_W,
+            CANVAS_H
+          )
+        : TopkapiGeometry.collectUniqueGridXCoords(cachedAllSegments);
     var bounds = getGridContentBounds();
     // Fear verticals (anger-vertical-length slider under Fear heading).
     // Restrict verticals to the left third of the grid content area.
@@ -5028,6 +6298,10 @@
         lines.push(line);
         lastPlacedX = xs[i];
       }
+    }
+
+    if (isCirclesGrid()) {
+      lines = insertCirclesGridFearMidpointLines(lines, yTop, yBottom);
     }
 
     cachedVerticalGridLines = lines;
@@ -5078,6 +6352,39 @@
     while (layer.firstChild) layer.removeChild(layer.firstChild);
     if (!isEmotionLayerActive("fear")) return;
     appendVerticalGridLinesToLayer(layer);
+  }
+
+  /**
+   * @param {string[]} lines
+   */
+  function pushStructuralCirclesExportLines(lines) {
+    if (!isCirclesGrid()) return;
+    var circles = getIntactStructuralCirclesForPattern();
+    if (!circles.length) return;
+    lines.push(
+      '<g id="layer-structural-circles" fill="none" stroke="' +
+        getPatternStrokeColor() +
+        '" stroke-width="' +
+        getGridStrokeWidth() +
+        '">'
+    );
+    var i;
+    var c;
+    for (i = 0; i < circles.length; i++) {
+      c = circles[i];
+      lines.push(
+        '<ellipse cx="' +
+          c.cx +
+          '" cy="' +
+          c.cy +
+          '" rx="' +
+          c.rx +
+          '" ry="' +
+          c.ry +
+          '"/>'
+      );
+    }
+    lines.push("</g>");
   }
 
   /**
@@ -5142,13 +6449,18 @@
 
   function renderPatternAndVerticalLayers() {
     syncVerticalGridLines(false);
-    renderVerticalGridLayer();
     if (isAlternateGrid()) {
       renderBackgroundLayer();
     }
+    if (shouldRenderPrideFillsBeforeCirclesGridPattern()) {
+      renderAutoMergeFillsLayer();
+    }
+    renderVerticalGridLayer();
     renderPatternLayer();
     renderGridMaskLayer("renderPatternAndVerticalLayers");
-    renderAutoMergeFillsLayer();
+    if (!shouldRenderPrideFillsBeforeCirclesGridPattern()) {
+      renderAutoMergeFillsLayer();
+    }
     applyMergeReveal();
   }
 
@@ -7828,7 +9140,7 @@
   function getBrownBarBannerFontFamily() {
     return typeof BROWN_BAR_BANNER_FONT_FAMILY !== "undefined"
       ? BROWN_BAR_BANNER_FONT_FAMILY
-      : "OT2049";
+      : "DIN Condensed";
   }
 
   function getBrownBarBannerFill() {
@@ -7844,7 +9156,7 @@
   function applyBrownBarBannerTextAttrs(text, metrics, anchor) {
     text.setAttribute("fill", getBrownBarBannerFill());
     text.setAttribute("font-family", getBrownBarBannerFontFamily());
-    text.setAttribute("font-weight", "400");
+    text.setAttribute("font-weight", "700");
     text.setAttribute("font-size", String(metrics.fontSize));
     text.setAttribute("letter-spacing", String(getBrownBarBannerLetterSpacing()));
     text.setAttribute("text-anchor", anchor || "middle");
@@ -8075,12 +9387,11 @@
     if (embedded[filename]) return filename;
     var tagAliases = {
       "tag/lion.svg": "lion.svg",
-      "tag/scissors.svg": "scissors.svg",
-      "tag/tag01.svg": "tag01.svg",
+      "tag/tag01.2.svg": "tag01.2.svg",
       "tag/tag02.svg": "tag02.svg",
       "tag/tag03.svg": "tag03.svg",
       "tag/tag04.svg": "tag04.svg",
-      "tag/tag05.svg": "tag05.svg",
+      "tag/tag05.2.svg": "tag05.2.svg",
     };
     if (tagAliases[filename] && embedded[tagAliases[filename]]) {
       return tagAliases[filename];
@@ -8441,10 +9752,58 @@
     }
     return {
       x: layout.x,
-      y: getTopBrownBarMirroredCanvasY(segment.end, layout),
+      y: getBottomBrownBarCanvasY(segment.start, layout),
       width: layout.width,
       height: segment.height,
     };
+  }
+
+  /**
+   * Copy bottom-bar content bounds onto the top bar (same relative position on the bar).
+   * @param {ReturnType<typeof getLabelBarContentArea>} bottomArea
+   * @param {{ x: number, y: number, width: number, height: number }} bottomLayout
+   * @param {{ x: number, y: number, width: number, height: number }} topLayout
+   * @returns {ReturnType<typeof getLabelBarContentArea>}
+   */
+  function translateLabelBarContentAreaFromBottom(bottomArea, bottomLayout, topLayout) {
+    var relY = bottomArea.y - bottomLayout.y;
+    return {
+      x: bottomArea.x,
+      y: topLayout.y + relY,
+      width: bottomArea.width,
+      height: bottomArea.height,
+      innerWidth: bottomArea.innerWidth,
+      hInset: bottomArea.hInset,
+      vInset: bottomArea.vInset,
+    };
+  }
+
+  /**
+   * Canonical row content area on the bottom label bar.
+   * @param {{ x: number, y: number, width: number, height: number }} bottomLayout
+   * @param {number} segmentIndex
+   * @returns {ReturnType<typeof getLabelBarContentArea>}
+   */
+  function getLabelBarBottomInnerSegmentContentArea(bottomLayout, segmentIndex) {
+    var vInset = getLabelBarVerticalInsetPx();
+    var halfGap = getLabelBarAdjacentRowContentGapPx() / 2;
+    var shift = getLabelBarContentShiftTowardGridPx();
+    var topInset = vInset;
+    var bottomInset = vInset;
+
+    if (segmentIndex === 0) {
+      topInset = vInset + shift;
+      bottomInset = halfGap - shift;
+    } else if (segmentIndex === 1) {
+      topInset = halfGap + shift;
+      bottomInset = vInset - shift;
+    }
+
+    return getLabelBarContentArea(
+      getLabelBarSegmentCanvasBounds("bottom", bottomLayout, segmentIndex),
+      topInset,
+      bottomInset
+    );
   }
 
   /**
@@ -8454,30 +9813,15 @@
    * @returns {ReturnType<typeof getLabelBarContentArea>}
    */
   function getLabelBarInnerSegmentContentArea(edge, layout, segmentIndex) {
-    var vInset = getLabelBarVerticalInsetPx();
-    var halfGap = getLabelBarAdjacentRowContentGapPx() / 2;
-    var topInset = vInset;
-    var bottomInset = vInset;
-
-    // Row 1 = inner segment (index 0); row 2 = index 1. On the top bar, row 2 sits
-    // above row 1 in canvas Y, so the 5px gap belongs on seg0 top / seg1 bottom.
-    if (edge === "bottom") {
-      if (segmentIndex === 0) {
-        bottomInset = halfGap;
-      } else if (segmentIndex === 1) {
-        topInset = halfGap;
-      }
-    } else if (segmentIndex === 0) {
-      topInset = halfGap;
-    } else if (segmentIndex === 1) {
-      bottomInset = halfGap;
-    }
-
-    return getLabelBarContentArea(
-      getLabelBarSegmentCanvasBounds(edge, layout, segmentIndex),
-      topInset,
-      bottomInset
+    var bottomLayout = getCanvasEdgeBrownBarLayout("bottom");
+    var bottomArea = getLabelBarBottomInnerSegmentContentArea(
+      bottomLayout,
+      segmentIndex
     );
+    if (edge === "bottom") {
+      return bottomArea;
+    }
+    return translateLabelBarContentAreaFromBottom(bottomArea, bottomLayout, layout);
   }
 
   function getLabelBarEndCapRowSpan() {
@@ -8522,20 +9866,33 @@
     }
     return {
       x: layout.x,
-      y: getTopBrownBarMirroredCanvasY(span.end, layout),
+      y: getBottomBrownBarCanvasY(span.start, layout),
       width: layout.width,
       height: span.height,
     };
   }
 
   /**
-   * Lion end-cap placement area (2 rows minus 5px top/bottom inset, same as other label items).
+   * Lion end-cap canvas bounds (2 row segments); render band is aligned to row visual span.
    * @param {"top"|"bottom"} edge
    * @param {{ x: number, y: number, width: number, height: number }} layout
    * @returns {ReturnType<typeof getLabelBarContentArea>}
    */
   function getLabelBarEndCapContentArea(edge, layout) {
-    return getLabelBarContentArea(getLabelBarEndCapCanvasBounds(edge, layout));
+    var bottomLayout = getCanvasEdgeBrownBarLayout("bottom");
+    var bottomArea = getLabelBarContentArea(
+      getLabelBarEndCapCanvasBounds("bottom", bottomLayout)
+    );
+    if (edge === "bottom") {
+      return bottomArea;
+    }
+    return translateLabelBarContentAreaFromBottom(bottomArea, bottomLayout, layout);
+  }
+
+  function getLabelBarContentScale() {
+    return typeof LABEL_BAR_CONTENT_SCALE !== "undefined"
+      ? LABEL_BAR_CONTENT_SCALE
+      : 1;
   }
 
   function getLabelBarTextHeightRatio() {
@@ -8544,14 +9901,78 @@
       : 1;
   }
 
+  function getLabelBarTextTouchOverscale() {
+    return typeof LABEL_BAR_TEXT_TOUCH_OVERSCALE !== "undefined"
+      ? LABEL_BAR_TEXT_TOUCH_OVERSCALE
+      : 1;
+  }
+
+  function getLabelBarSvgLegacyVerticalInsetPx() {
+    return typeof LABEL_BAR_SVG_LEGACY_VERTICAL_INSET_PX !== "undefined"
+      ? LABEL_BAR_SVG_LEGACY_VERTICAL_INSET_PX
+      : 10;
+  }
+
+  function getLabelBarSvgRowTargetHeight(contentAreaHeight) {
+    return Math.max(
+      1,
+      (contentAreaHeight - getLabelBarSvgLegacyVerticalInsetPx()) *
+        getLabelBarContentScale()
+    );
+  }
+
+  function getLabelBarSvgEndCapTargetHeight(contentAreaHeight) {
+    return Math.max(
+      1,
+      (contentAreaHeight - getLabelBarSvgLegacyVerticalInsetPx() * 2) *
+        getLabelBarContentScale()
+    );
+  }
+
+  /**
+   * Vertical envelope of row SVG symbols only (row1 top → row2 bottom).
+   * Text may overscale slightly; end caps follow the symbol bands to stay inside rows.
+   * @param {ReturnType<typeof getLabelBarContentArea>} row1Area
+   * @param {ReturnType<typeof getLabelBarContentArea>} row2Area
+   * @returns {{ top: number, bottom: number, height: number }}
+   */
+  function getLabelBarTwoRowVisualSpan(row1Area, row2Area) {
+    var row1SvgH = getLabelBarSvgRowTargetHeight(row1Area.height);
+    var row2SvgH = getLabelBarSvgRowTargetHeight(row2Area.height);
+    var top = getLabelBarSvgPlacementY(row1Area, row1SvgH);
+    var bottom = getLabelBarSvgPlacementY(row2Area, row2SvgH) + row2SvgH;
+    return {
+      top: top,
+      bottom: bottom,
+      height: Math.max(1, bottom - top),
+    };
+  }
+
+  function getLabelBarEndCapRenderArea(endCapArea, row1Area, row2Area) {
+    var span = getLabelBarTwoRowVisualSpan(row1Area, row2Area);
+    return {
+      x: endCapArea.x,
+      y: span.top,
+      width: endCapArea.width,
+      height: span.height,
+      innerWidth: endCapArea.innerWidth,
+      hInset: endCapArea.hInset,
+      vInset: endCapArea.vInset,
+    };
+  }
+
+  function getLabelBarSvgPlacementY(area, specHeight) {
+    return area.y + (area.height - specHeight) / 2;
+  }
+
   function applyLabelBarTextAttrs(text, fontSize) {
     text.setAttribute("fill", getLabelBarContentColor());
     text.setAttribute("font-family", getBrownBarBannerFontFamily());
-    text.setAttribute("font-weight", "400");
+    text.setAttribute("font-weight", "700");
     text.setAttribute("font-size", String(fontSize));
     text.setAttribute("letter-spacing", String(getBrownBarBannerLetterSpacing()));
     text.setAttribute("text-anchor", "start");
-    /** Same cell as SVG icons: font-size = area.height, vertically centered on cell midline. */
+    /** Middle baseline; y is set so glyph bbox center matches the row midline. */
     text.setAttribute("dominant-baseline", "middle");
     text.setAttribute("alignment-baseline", "middle");
   }
@@ -8581,13 +10002,24 @@
       : 0;
   }
 
-  function getLabelBarTextY(area) {
-    return getLabelBarBandCenterY(area) + getLabelBarTextYOffsetPx();
+  function getLabelBarTextY(area, flipVertical) {
+    var offset = getLabelBarTextYOffsetPx();
+    if (flipVertical) {
+      offset = -offset;
+    }
+    return getLabelBarBandCenterY(area) + offset;
   }
 
-  /** Top bar label rows: rotate 180° vs the bottom bar (not mirrored). */
-  function labelBarEdgeContentFlippedVertically(edge) {
+  /** Top bar: entire label group is rotated 180° (see createLabelBarRowGroup). */
+  function labelBarEdgeUsesGroupRotate180(edge) {
     return edge === "top";
+  }
+
+  function getLabelBarLayoutRotate180Center(layout) {
+    return {
+      cx: layout.x + layout.width / 2,
+      cy: layout.y + layout.height / 2,
+    };
   }
 
   /**
@@ -8595,16 +10027,19 @@
    * @param {ReturnType<typeof getLabelBarContentArea>} contentArea
    * @returns {{ cx: number, cy: number }}
    */
-  function getLabelBarPlacementRotate180Center(placement, contentArea) {
+  function getLabelBarPlacementRotate180Center(placement, contentArea, flipVertical) {
     var spec = placement.spec;
     var cx = placement.x + spec.width / 2;
     var cy;
     if (spec.type === "text") {
-      cy = getLabelBarTextY(contentArea);
+      cy = getLabelBarBandCenterY(contentArea);
+    } else if (spec.type === "coordinatesBadge") {
+      cy = spec.rectY + spec.height / 2;
     } else if (spec.type === "square") {
       cy = getLabelBarSquareSepY(contentArea) + spec.height / 2;
     } else {
-      cy = contentArea.y + spec.height / 2;
+      cy =
+        getLabelBarSvgPlacementY(contentArea, spec.height) + spec.height / 2;
     }
     return { cx: cx, cy: cy };
   }
@@ -8651,29 +10086,86 @@
   }
 
   /**
-   * Text cell matches SVG icon placement: height = area.height, y centered on cell midline.
+   * Scale label text large, then center its glyph bbox on the row midline (matches SVG icons).
    * @param {string} text
    * @param {number} maxHeight area.height (same value passed to buildLabelBarSvgSpec)
    * @param {number} bandTopY area.y (same origin as SVG image y)
    * @param {number} bandBottomY area.y + area.height
-   * @returns {{ fontSize: number, width: number, height: number }}
+   * @returns {{ fontSize: number, width: number, height: number, textY: number }}
    */
   function fitLabelBarTextMetrics(text, maxHeight, bandTopY, bandBottomY) {
     var cellH = Math.max(1, maxHeight);
-    var fontSize = Math.max(1, maxHeight * getLabelBarTextHeightRatio());
+    var bandHeight =
+      typeof bandTopY === "number" && typeof bandBottomY === "number"
+        ? Math.max(1, bandBottomY - bandTopY)
+        : cellH;
+    var targetH = Math.max(1, bandHeight * getLabelBarContentScale());
+    var topY = typeof bandTopY === "number" ? bandTopY : 0;
+    var bandCenterY = topY + bandHeight / 2;
+    var ratio = getLabelBarTextHeightRatio();
+    var fontSize = Math.max(1, targetH * ratio);
     var measured;
+    var bbox;
+    var textY = bandCenterY;
 
     if (!text) {
-      return { fontSize: fontSize, width: cellH * 0.5, height: cellH };
+      return {
+        fontSize: fontSize,
+        width: cellH * 0.5,
+        height: targetH,
+        textY: textY,
+      };
     }
 
     measured = measureLabelBarTextAtCellSize(text, fontSize);
+    bbox = measured.bbox;
+    if (bbox && bbox.height > 0) {
+      fontSize = Math.max(1, (fontSize * targetH) / bbox.height);
+      fontSize = Math.max(1, fontSize * getLabelBarTextTouchOverscale());
+      measured = measureLabelBarTextAtCellSize(text, fontSize);
+      bbox = measured.bbox;
+    }
+    if (bbox) {
+      textY = bandCenterY - (bbox.y + bbox.height / 2);
+    }
 
     return {
       fontSize: fontSize,
       width: measured.width,
-      height: cellH,
+      height: targetH,
+      textY: textY,
     };
+  }
+
+  function getLabelBarKnockoutBadgeTextYOffsetPx() {
+    return typeof LABEL_BAR_KNOCKOUT_BADGE_TEXT_Y_OFFSET_PX !== "undefined"
+      ? LABEL_BAR_KNOCKOUT_BADGE_TEXT_Y_OFFSET_PX
+      : 1;
+  }
+
+  function getLabelBarTextPlacementY(placement, contentArea, flipVertical) {
+    var spec = placement && placement.spec;
+    var offset;
+    var badgeOffset;
+    if (
+      spec &&
+      (spec.type === "text" || spec.type === "coordinatesBadge") &&
+      typeof spec.textY === "number"
+    ) {
+      offset = getLabelBarTextYOffsetPx();
+      if (flipVertical) {
+        offset = -offset;
+      }
+      if (spec.type === "coordinatesBadge") {
+        badgeOffset = getLabelBarKnockoutBadgeTextYOffsetPx();
+        if (flipVertical) {
+          badgeOffset = -badgeOffset;
+        }
+        return spec.textY + offset + badgeOffset;
+      }
+      return spec.textY + offset;
+    }
+    return getLabelBarTextY(contentArea, flipVertical);
   }
 
   /**
@@ -8713,16 +10205,19 @@
           width: textMetrics.width,
           height: textMetrics.height,
           fontSize: textMetrics.fontSize,
+          textY: textMetrics.textY,
         });
       } else if (item.type === "svg" && item.svgFile) {
         var dims = getLabelBarSvgDimensions(item.svgFile);
+        var svgTargetH;
         if (!dims || !dims.height) continue;
-        var svgScale = segmentHeight / dims.height;
+        svgTargetH = getLabelBarSvgRowTargetHeight(segmentHeight);
+        var svgScale = svgTargetH / dims.height;
         specs.push({
           type: "svg",
           file: item.svgFile,
           width: dims.width * svgScale,
-          height: segmentHeight,
+          height: svgTargetH,
           scale: svgScale,
         });
       }
@@ -8746,6 +10241,16 @@
     return typeof LABEL_BAR_ADJACENT_ROW_CONTENT_GAP_PX !== "undefined"
       ? LABEL_BAR_ADJACENT_ROW_CONTENT_GAP_PX
       : 5;
+  }
+
+  function getLabelBarContentShiftTowardGridPx() {
+    var shift =
+      typeof LABEL_BAR_CONTENT_SHIFT_TOWARD_GRID_PX !== "undefined"
+        ? LABEL_BAR_CONTENT_SHIFT_TOWARD_GRID_PX
+        : 0;
+    var vInset = getLabelBarVerticalInsetPx();
+    var halfGap = getLabelBarAdjacentRowContentGapPx() / 2;
+    return Math.max(0, Math.min(shift, vInset, halfGap));
   }
 
   /**
@@ -8775,13 +10280,13 @@
   function getLabelBarItemGapPx() {
     return typeof LABEL_BAR_ITEM_GAP_PX !== "undefined"
       ? LABEL_BAR_ITEM_GAP_PX
-      : 5;
+      : 8;
   }
 
   function getLabelBarClusterInternalGapPx() {
     return typeof LABEL_BAR_CLUSTER_INTERNAL_GAP_PX !== "undefined"
       ? LABEL_BAR_CLUSTER_INTERNAL_GAP_PX
-      : 10;
+      : 7;
   }
 
   function getLabelBarSymbolSeparatorSizePx() {
@@ -8794,8 +10299,15 @@
     return getLabelBarContentColor();
   }
 
+  function getLabelBarScaledSymbolSeparatorSizePx() {
+    return Math.max(
+      1,
+      getLabelBarSymbolSeparatorSizePx() * getLabelBarContentScale()
+    );
+  }
+
   function buildLabelBarSquareSepSpec() {
-    var size = getLabelBarSymbolSeparatorSizePx();
+    var size = getLabelBarScaledSymbolSeparatorSizePx();
     return {
       type: "square",
       width: size,
@@ -8804,35 +10316,51 @@
   }
 
   function getLabelBarSquareSepY(area) {
-    var size = getLabelBarSymbolSeparatorSizePx();
+    var size = getLabelBarScaledSymbolSeparatorSizePx();
     return getLabelBarBandCenterY(area) - size / 2;
   }
 
   /**
-   * Cluster = symbol + optional caption locked with a fixed internal gap (10px).
+   * Sum cluster width from laid-out items (fixed internal gap + each spec width).
+   * @param {{ spec: object }[]} items
+   * @returns {number}
+   */
+  function measureLabelBarClusterItemsWidth(items) {
+    var pairGap = getLabelBarClusterInternalGapPx();
+    var width = 0;
+    var i;
+    var item;
+    if (!items || !items.length) return 0;
+    for (i = 0; i < items.length; i++) {
+      item = items[i];
+      if (!item || !item.spec) continue;
+      if (width > 0) width += pairGap;
+      width += item.spec.width;
+    }
+    return width;
+  }
+
+  /**
+   * Cluster = symbol + optional caption locked with a fixed internal gap.
    * @param {({ spec: object, svgArea?: object, ageOverlayText?: string } | null)[]} parts
    * @returns {{ width: number, items: object[] } | null}
    */
   function buildLabelBarCluster(parts) {
-    var pairGap = getLabelBarClusterInternalGapPx();
     var items = [];
-    var width = 0;
     var i;
     var part;
     if (!parts) return null;
     for (i = 0; i < parts.length; i++) {
       part = parts[i];
       if (!part || !part.spec) continue;
-      if (items.length) width += pairGap;
-      width += part.spec.width;
       items.push(part);
     }
     if (!items.length) return null;
-    return { width: width, items: items };
+    return { width: measureLabelBarClusterItemsWidth(items), items: items };
   }
 
   /**
-   * Row layout units: clusters (10px inside) and 5×5 squares only between clusters.
+   * Row layout units: clusters (fixed internal gap) and square separators only between clusters.
    * @param {({ width: number, items: object[] } | null)[]} clusters
    * @param {ReturnType<typeof getLabelBarContentArea>} defaultSvgArea
    * @returns {({ type: "cluster", width: number, items: object[] } | { type: "square", width: number, spec: object, svgArea: object })[]}
@@ -8873,7 +10401,7 @@
       }
       units.push({
         type: "cluster",
-        width: cluster.width,
+        width: measureLabelBarClusterItemsWidth(clusterItems),
         items: clusterItems,
       });
       hasGroup = true;
@@ -8882,7 +10410,7 @@
   }
 
   /**
-   * Spread groups across the full content span; 10px fixed gap inside each group.
+   * Spread groups across the full content span; fixed internal gap inside each group.
    * @param {({ width: number, items: object[] } | null)[]} clusters
    * @param {number} spanStart
    * @param {number} spanEnd
@@ -8998,34 +10526,106 @@
     return positions;
   }
 
-  function pickLabelBarEndCapSvgFile() {
-    var pool =
-      typeof LABEL_BAR_TAG_SVGS !== "undefined" && LABEL_BAR_TAG_SVGS.length
-        ? LABEL_BAR_TAG_SVGS
-        : [
-            typeof LABEL_BAR_END_CAP_SVG !== "undefined"
-              ? LABEL_BAR_END_CAP_SVG
-              : "tag/lion.svg",
-          ];
-    var storageKey =
-      typeof LABEL_BAR_TAG_ROTATION_STORAGE_KEY !== "undefined"
-        ? LABEL_BAR_TAG_ROTATION_STORAGE_KEY
-        : "undercover.labelBarTagIndex";
+  function getLabelBarTagSvgPool() {
+    if (typeof LABEL_BAR_TAG_SVGS !== "undefined" && LABEL_BAR_TAG_SVGS.length) {
+      return LABEL_BAR_TAG_SVGS.slice();
+    }
+    return [
+      typeof LABEL_BAR_END_CAP_SVG !== "undefined"
+        ? LABEL_BAR_END_CAP_SVG
+        : "tag/lion.svg",
+    ];
+  }
+
+  function getLabelBarTagStorageKey() {
+    return typeof LABEL_BAR_TAG_ROTATION_STORAGE_KEY !== "undefined"
+      ? LABEL_BAR_TAG_ROTATION_STORAGE_KEY
+      : "undercover.labelBarTagIndex";
+  }
+
+  function getLabelBarTagDisplayLabel(svgFile) {
+    var base;
+    if (!svgFile) return "—";
+    base = svgFile.replace(/^tag\//, "").replace(/\.svg$/i, "");
+    if (base === "lion") return "Lion";
+    if (/^tag0?(\d+(?:\.\d+)?)$/i.test(base)) {
+      return "Tag " + base.replace(/^tag0?/i, "");
+    }
+    return base;
+  }
+
+  function getSavedLabelBarTagIndex() {
+    var pool = getLabelBarTagSvgPool();
     var index = 0;
     try {
-      index = parseInt(localStorage.getItem(storageKey), 10);
+      index = parseInt(localStorage.getItem(getLabelBarTagStorageKey()), 10);
       if (isNaN(index) || index < 0) index = 0;
     } catch (e) {}
-    var file = pool[index % pool.length];
+    return index % pool.length;
+  }
+
+  function saveLabelBarTagIndex(index) {
     try {
-      localStorage.setItem(storageKey, String((index + 1) % pool.length));
+      localStorage.setItem(getLabelBarTagStorageKey(), String(index));
     } catch (e) {}
-    return file;
+  }
+
+  function loadLabelBarEndCapSvgFile() {
+    var pool = getLabelBarTagSvgPool();
+    var index = 0;
+    var raw;
+    if (!pool.length) return null;
+    try {
+      raw = localStorage.getItem(getLabelBarTagStorageKey());
+      if (raw === null) {
+        index = 0;
+      } else {
+        index = ((parseInt(raw, 10) || 0) + 1) % pool.length;
+      }
+    } catch (e) {
+      index = 0;
+    }
+    saveLabelBarTagIndex(index);
+    return pool[index];
+  }
+
+  function setLabelBarEndCapSvgByIndex(index) {
+    var pool = getLabelBarTagSvgPool();
+    var normalized;
+    if (!pool.length) return null;
+    normalized = ((index % pool.length) + pool.length) % pool.length;
+    labelBarEndCapSvgFile = pool[normalized];
+    saveLabelBarTagIndex(normalized);
+    updateLabelBarTagControlLabel();
+    refreshLabelBarContent();
+    return labelBarEndCapSvgFile;
+  }
+
+  function toggleLabelBarEndCapTag() {
+    var pool = getLabelBarTagSvgPool();
+    if (pool.length < 2) return getLabelBarEndCapSvgFile();
+    return setLabelBarEndCapSvgByIndex(getSavedLabelBarTagIndex() + 1);
+  }
+
+  function updateLabelBarTagControlLabel() {
+    var label = document.getElementById("label-bar-tag-active-label");
+    if (!label) return;
+    label.textContent = getLabelBarTagDisplayLabel(getLabelBarEndCapSvgFile());
+  }
+
+  function initLabelBarTagControls() {
+    var btn = document.getElementById("label-bar-tag-toggle-btn");
+    if (btn) {
+      btn.addEventListener("click", function () {
+        toggleLabelBarEndCapTag();
+      });
+    }
+    updateLabelBarTagControlLabel();
   }
 
   function getLabelBarEndCapSvgFile() {
     if (labelBarEndCapSvgFile === null) {
-      labelBarEndCapSvgFile = pickLabelBarEndCapSvgFile();
+      labelBarEndCapSvgFile = loadLabelBarEndCapSvgFile();
     }
     return labelBarEndCapSvgFile;
   }
@@ -9040,6 +10640,24 @@
     return typeof LABEL_BAR_LIVING_OUTSIDE_IRAN_SVG !== "undefined"
       ? LABEL_BAR_LIVING_OUTSIDE_IRAN_SVG
       : "OUTSIDE IRAN.svg";
+  }
+
+  function getLabelBarLivingNeverInIranSvgFile() {
+    return typeof LABEL_BAR_LIVING_NEVER_IN_IRAN_SVG !== "undefined"
+      ? LABEL_BAR_LIVING_NEVER_IN_IRAN_SVG
+      : "Did you ever live in Iran?/no.svg";
+  }
+
+  function getLabelBarLivingDurationSvgFiles() {
+    var map =
+      typeof LABEL_BAR_LIVING_DURATION_SVGS !== "undefined"
+        ? LABEL_BAR_LIVING_DURATION_SVGS
+        : {
+            smallPart: "Did you ever live in Iran?/small part of my life.svg",
+            partOfLife: "Did you ever live in Iran?/part of my life.svg",
+            mostAll: "Did you ever live in Iran?/Yes, most : all of my life.svg",
+          };
+    return [map.smallPart, map.partOfLife, map.mostAll];
   }
 
   function getLabelBarHomeAtSvgFiles() {
@@ -9102,6 +10720,12 @@
       : "Union.svg";
   }
 
+  function getLabelBarUnionSmallSvgFile() {
+    return typeof LABEL_BAR_UNION_SMALL_SVG !== "undefined"
+      ? LABEL_BAR_UNION_SMALL_SVG
+      : "Unionsmall.svg";
+  }
+
   function getLabelBarLeftSvgFile() {
     return typeof LABEL_BAR_LEFT_SVG !== "undefined"
       ? LABEL_BAR_LEFT_SVG
@@ -9139,6 +10763,53 @@
     return String(window.IdentityControls.getNowIn() || "").trim();
   }
 
+  /** Row 1: coordinates from Profile → “most at home” + Now in (replaces Union.svg). */
+  function getProfileCoordinatesText() {
+    if (
+      typeof window.LocationCoordinates === "undefined" ||
+      !window.LocationCoordinates.getFormatted
+    ) {
+      return "";
+    }
+    return String(window.LocationCoordinates.getFormatted() || "").trim();
+  }
+
+  function getLocationCoordinatesContext() {
+    var homeAt = "inIran";
+    var nowIn = "";
+    if (typeof window.IdentityControls !== "undefined") {
+      if (window.IdentityControls.getHomeAt) {
+        homeAt = window.IdentityControls.getHomeAt();
+      }
+      if (window.IdentityControls.getNowIn) {
+        nowIn = window.IdentityControls.getNowIn();
+      }
+    }
+    return { homeAt: homeAt, nowIn: nowIn };
+  }
+
+  function refreshLocationCoordinates() {
+    if (
+      typeof window.LocationCoordinates === "undefined" ||
+      !window.LocationCoordinates.updateFromContext
+    ) {
+      return;
+    }
+    window.LocationCoordinates.updateFromContext(getLocationCoordinatesContext());
+  }
+
+  function scheduleLocationCoordinates() {
+    if (
+      typeof window.LocationCoordinates === "undefined" ||
+      !window.LocationCoordinates.scheduleUpdateFromContext
+    ) {
+      return;
+    }
+    window.LocationCoordinates.scheduleUpdateFromContext(
+      getLocationCoordinatesContext()
+    );
+  }
+
   /** Name on row 2 — between sun sign and undercover english (mode from Profile → Name). */
   function getProfileNameText() {
     if (
@@ -9164,9 +10835,13 @@
   }
 
   function getLabelBarLeftLionInnerRow1SvgFile() {
-    return typeof LABEL_BAR_LEFT_LION_INNER_ROW1_SVG !== "undefined"
-      ? LABEL_BAR_LEFT_LION_INNER_ROW1_SVG
-      : "logo placeholder.svg";
+    if (
+      typeof LABEL_BAR_LEFT_LION_INNER_ROW1_SVG !== "undefined" &&
+      LABEL_BAR_LEFT_LION_INNER_ROW1_SVG
+    ) {
+      return LABEL_BAR_LEFT_LION_INNER_ROW1_SVG;
+    }
+    return "";
   }
 
   function getLabelBarLeftLionInnerRow1SunSvgFile() {
@@ -9213,9 +10888,10 @@
    * @param {ReturnType<typeof getLabelBarContentArea>} contentArea
    * @returns {{ x: number, y: number, fontSize: number }}
    */
-  function getLabelBarAgeOverlayTextMetrics(placement, contentArea) {
+  function getLabelBarAgeOverlayTextMetrics(placement, contentArea, flipVertical) {
     var dims = getLabelBarSvgDimensions(getLabelBarAgeSvgFile());
     var spec = placement.spec;
+    var yOffset = getLabelBarAgeOverlayYOffsetPx();
     var cxRatio =
       dims && dims.width
         ? (typeof LABEL_BAR_AGE_CIRCLE_CX !== "undefined"
@@ -9235,9 +10911,13 @@
             : 27.0816) / dims.height
         : 0.33;
     var circleR = spec.height * rRatio;
+    if (flipVertical) {
+      yOffset = -yOffset;
+    }
+    var svgY = getLabelBarSvgPlacementY(contentArea, spec.height);
     return {
       x: placement.x + spec.width * cxRatio,
-      y: contentArea.y + spec.height * cyRatio + getLabelBarAgeOverlayYOffsetPx(),
+      y: svgY + spec.height * cyRatio + yOffset,
       fontSize: circleR * 2 * getLabelBarAgeOverlayFontSizeRatio(),
     };
   }
@@ -9245,7 +10925,7 @@
   function applyLabelBarAgeOverlayTextAttrs(text, fontSize) {
     text.setAttribute("fill", getLabelBarAgeOverlayFill());
     text.setAttribute("font-family", getBrownBarBannerFontFamily());
-    text.setAttribute("font-weight", "400");
+    text.setAttribute("font-weight", "700");
     text.setAttribute("font-size", String(fontSize));
     text.setAttribute("letter-spacing", String(getBrownBarBannerLetterSpacing()));
     text.setAttribute("text-anchor", "middle");
@@ -9253,12 +10933,12 @@
     text.setAttribute("alignment-baseline", "middle");
   }
 
-  function appendLabelBarAgeOverlayText(container, placement, contentArea) {
+  function appendLabelBarAgeOverlayText(container, placement, contentArea, flipVertical) {
     var overlayText = placement.ageOverlayText;
     var metrics;
     var text;
     if (overlayText === undefined || !overlayText) return;
-    metrics = getLabelBarAgeOverlayTextMetrics(placement, contentArea);
+    metrics = getLabelBarAgeOverlayTextMetrics(placement, contentArea, flipVertical);
     text = elSvg("text");
     text.setAttribute("x", String(metrics.x));
     text.setAttribute("y", String(metrics.y));
@@ -9395,14 +11075,20 @@
     return new XMLSerializer().serializeToString(el);
   }
 
-  function pushLabelBarTextPlacementExport(edgeLines, placement, contentArea) {
+  function pushLabelBarTextPlacementExport(
+    edgeLines,
+    placement,
+    contentArea,
+    flipVertical
+  ) {
     var spec = placement.spec;
     var textEl;
     var pathEl;
+    var textY = getLabelBarTextPlacementY(placement, contentArea, flipVertical);
     if (!spec || !spec.text) return;
     textEl = elSvg("text");
     textEl.setAttribute("x", String(placement.x));
-    textEl.setAttribute("y", String(getLabelBarTextY(contentArea)));
+    textEl.setAttribute("y", String(textY));
     applyLabelBarTextAttrs(textEl, spec.fontSize);
     textEl.textContent = spec.text;
     if (cachedExportOpentypeFont) {
@@ -9416,12 +11102,12 @@
       '<text x="' +
         placement.x +
         '" y="' +
-        getLabelBarTextY(contentArea) +
+        textY +
         '" fill="' +
         getBrownBarBannerFill() +
         '" font-family="' +
         getBrownBarBannerFontFamily() +
-        '" font-weight="400" font-size="' +
+        '" font-weight="700" font-size="' +
         spec.fontSize +
         '" letter-spacing="' +
         getBrownBarBannerLetterSpacing() +
@@ -9431,13 +11117,108 @@
     );
   }
 
-  function pushLabelBarAgeOverlayTextExport(edgeLines, placement, contentArea) {
+  function pushLabelBarCoordinatesBadgeExport(
+    edgeLines,
+    placement,
+    contentArea,
+    flipVertical
+  ) {
+    var spec = placement.spec;
+    var badgeX = placement.x;
+    var badgeY = spec.rectY;
+    var textX = badgeX + spec.padX;
+    var textY = getLabelBarTextPlacementY(placement, contentArea, flipVertical);
+    var maskId = nextLabelBarCoordsMaskId();
+    var textEl;
+    var pathEl;
+    if (!spec || !spec.text) return;
+
+    edgeLines.push(
+      '<mask id="' +
+        maskId +
+        '" maskUnits="userSpaceOnUse" x="' +
+        badgeX +
+        '" y="' +
+        badgeY +
+        '" width="' +
+        spec.width +
+        '" height="' +
+        spec.height +
+        '">'
+    );
+    edgeLines.push(
+      '<rect x="' +
+        badgeX +
+        '" y="' +
+        badgeY +
+        '" width="' +
+        spec.width +
+        '" height="' +
+        spec.height +
+        '" fill="#ffffff"/>'
+    );
+
+    textEl = elSvg("text");
+    textEl.setAttribute("x", String(textX));
+    textEl.setAttribute("y", String(textY));
+    applyLabelBarTextAttrs(textEl, spec.fontSize);
+    textEl.setAttribute("fill", "#000000");
+    textEl.textContent = spec.text;
+    if (cachedExportOpentypeFont) {
+      pathEl = convertSvgTextElementToPath(textEl, cachedExportOpentypeFont);
+      if (pathEl) {
+        pathEl.setAttribute("fill", "#000000");
+        edgeLines.push(serializeSvgElement(pathEl));
+      } else {
+        edgeLines.push(serializeSvgElement(textEl));
+      }
+    } else {
+      edgeLines.push(
+        '<text x="' +
+          textX +
+          '" y="' +
+          textY +
+          '" fill="#000000" font-family="' +
+          getBrownBarBannerFontFamily() +
+          '" font-weight="700" font-size="' +
+          spec.fontSize +
+          '" letter-spacing="' +
+          getBrownBarBannerLetterSpacing() +
+          '" text-anchor="start" dominant-baseline="middle" alignment-baseline="middle">' +
+          spec.text +
+          "</text>"
+      );
+    }
+    edgeLines.push("</mask>");
+    edgeLines.push(
+      '<rect x="' +
+        badgeX +
+        '" y="' +
+        badgeY +
+        '" width="' +
+        spec.width +
+        '" height="' +
+        spec.height +
+        '" fill="' +
+        getLabelBarContentColor() +
+        '" mask="url(#' +
+        maskId +
+        ')"/>'
+    );
+  }
+
+  function pushLabelBarAgeOverlayTextExport(
+    edgeLines,
+    placement,
+    contentArea,
+    flipVertical
+  ) {
     var overlayText = placement.ageOverlayText;
     var metrics;
     var textEl;
     var pathEl;
     if (overlayText === undefined || !overlayText) return;
-    metrics = getLabelBarAgeOverlayTextMetrics(placement, contentArea);
+    metrics = getLabelBarAgeOverlayTextMetrics(placement, contentArea, flipVertical);
     textEl = elSvg("text");
     textEl.setAttribute("x", String(metrics.x));
     textEl.setAttribute("y", String(metrics.y));
@@ -9459,7 +11240,7 @@
         getLabelBarAgeOverlayFill() +
         '" font-family="' +
         getBrownBarBannerFontFamily() +
-        '" font-weight="400" font-size="' +
+        '" font-weight="700" font-size="' +
         metrics.fontSize +
         '" letter-spacing="' +
         getBrownBarBannerLetterSpacing() +
@@ -9470,9 +11251,13 @@
   }
 
   function getLabelBarRightLionInnerRow2SvgFile() {
-    return typeof LABEL_BAR_RIGHT_LION_INNER_ROW2_SVG !== "undefined"
-      ? LABEL_BAR_RIGHT_LION_INNER_ROW2_SVG
-      : "logo placeholder.svg";
+    if (
+      typeof LABEL_BAR_RIGHT_LION_INNER_ROW2_SVG !== "undefined" &&
+      LABEL_BAR_RIGHT_LION_INNER_ROW2_SVG
+    ) {
+      return LABEL_BAR_RIGHT_LION_INNER_ROW2_SVG;
+    }
+    return "";
   }
 
   function getLabelBarLostInnerSvgFile() {
@@ -9506,18 +11291,35 @@
     ];
   }
 
-  /** Sign from Profile “Have I lived in Iran?” — only after Yes/No is chosen. */
-  function getLivingIranLabelSvgFile() {
+  /** Sign from Profile “Did you ever live in Iran?” — placed right of profile name (row 2). */
+  function getLivingDurationLabelSvgFile() {
+    var choice;
+    var duration;
+    var map;
     if (
       typeof window.IdentityControls === "undefined" ||
       !window.IdentityControls.getLivingInIran
     ) {
-      return null;
+      return getLabelBarLivingNeverInIranSvgFile();
     }
-    var choice = window.IdentityControls.getLivingInIran();
-    if (choice === true) return getLabelBarLivingInIranSvgFile();
-    if (choice === false) return getLabelBarLivingOutsideIranSvgFile();
-    return null;
+    choice = window.IdentityControls.getLivingInIran();
+    if (choice !== true) {
+      return getLabelBarLivingNeverInIranSvgFile();
+    }
+    duration =
+      window.IdentityControls.getLivingDuration &&
+      window.IdentityControls.getLivingDuration();
+    map =
+      typeof LABEL_BAR_LIVING_DURATION_SVGS !== "undefined"
+        ? LABEL_BAR_LIVING_DURATION_SVGS
+        : {
+            smallPart: "Did you ever live in Iran?/small part of my life.svg",
+            partOfLife: "Did you ever live in Iran?/part of my life.svg",
+            mostAll: "Did you ever live in Iran?/Yes, most : all of my life.svg",
+          };
+    if (duration === "smallPart") return map.smallPart;
+    if (duration === "mostAll") return map.mostAll;
+    return map.partOfLife;
   }
 
   function filterLabelBarCenterItems(items) {
@@ -9528,6 +11330,7 @@
     var nowInFile = getLabelBarNowInSvgFile();
     var circleFile = getLabelBarCircleSvgFile();
     var unionFile = getLabelBarUnionSvgFile();
+    var unionSmallFile = getLabelBarUnionSmallSvgFile();
     var leftSignFile = getLabelBarLeftSvgFile();
     var womenFile = getLabelBarWomenSvgFile();
     var leftWord = getLabelBarLeftLionInnerRow1SvgFile();
@@ -9536,16 +11339,20 @@
     var rightWord = getLabelBarRightLionInnerRow2SvgFile();
     var lostFiles = getLabelBarLostSvgFiles();
     var homeAtFiles = getLabelBarHomeAtSvgFiles();
+    var livingDurationFiles = getLabelBarLivingDurationSvgFiles();
+    var livingNeverFile = getLabelBarLivingNeverInIranSvgFile();
     return items.filter(function (item) {
       return !(
         item.type === "svg" &&
         (item.svgFile === cap ||
           item.svgFile === inIran ||
           item.svgFile === outsideIran ||
+          item.svgFile === livingNeverFile ||
           item.svgFile === fromFile ||
           item.svgFile === nowInFile ||
           item.svgFile === circleFile ||
           item.svgFile === unionFile ||
+          item.svgFile === unionSmallFile ||
           item.svgFile === leftSignFile ||
           item.svgFile === womenFile ||
           item.svgFile === leftWord ||
@@ -9553,7 +11360,8 @@
           item.svgFile === ageFile ||
           item.svgFile === rightWord ||
           lostFiles.indexOf(item.svgFile) >= 0 ||
-          homeAtFiles.indexOf(item.svgFile) >= 0)
+          homeAtFiles.indexOf(item.svgFile) >= 0 ||
+          livingDurationFiles.indexOf(item.svgFile) >= 0)
       );
     });
   }
@@ -9578,22 +11386,7 @@
   }
 
   function buildLabelBarLostLabelSpec(area) {
-    var label = (getLabelBarLostLabelText() || "").trim();
-    var textMetrics;
-    if (!label) return null;
-    textMetrics = fitLabelBarTextMetrics(
-      label,
-      area.height,
-      area.y,
-      area.y + area.height
-    );
-    return {
-      type: "text",
-      text: label,
-      width: textMetrics.width,
-      height: textMetrics.height,
-      fontSize: textMetrics.fontSize,
-    };
+    return buildLabelBarCoordinatesBadgeSpec(getLabelBarLostLabelText(), area);
   }
 
   function getLabelBarAgeLabelText() {
@@ -9618,6 +11411,7 @@
       width: textMetrics.width,
       height: textMetrics.height,
       fontSize: textMetrics.fontSize,
+      textY: textMetrics.textY,
     };
   }
 
@@ -9637,6 +11431,50 @@
       width: textMetrics.width,
       height: textMetrics.height,
       fontSize: textMetrics.fontSize,
+      textY: textMetrics.textY,
+    };
+  }
+
+  function getLabelBarCoordinatesBadgePadXPx() {
+    return typeof LABEL_BAR_COORDINATES_BADGE_PAD_X_PX !== "undefined"
+      ? LABEL_BAR_COORDINATES_BADGE_PAD_X_PX
+      : 7;
+  }
+
+  function getLabelBarCoordinatesBadgePadYPx() {
+    return typeof LABEL_BAR_COORDINATES_BADGE_PAD_Y_PX !== "undefined"
+      ? LABEL_BAR_COORDINATES_BADGE_PAD_Y_PX
+      : 3;
+  }
+
+  function buildLabelBarCoordinatesBadgeSpec(text, contentArea) {
+    var label = (text || "").trim();
+    var textMetrics;
+    var padX = getLabelBarCoordinatesBadgePadXPx();
+    var padY = getLabelBarCoordinatesBadgePadYPx();
+    var badgeHeight;
+    var rectY;
+    if (!label) return null;
+    textMetrics = fitLabelBarTextMetrics(
+      label,
+      contentArea.height,
+      contentArea.y,
+      contentArea.y + contentArea.height
+    );
+    badgeHeight = Math.min(
+      contentArea.height,
+      Math.max(1, textMetrics.height + padY * 2)
+    );
+    rectY = contentArea.y + (contentArea.height - badgeHeight) / 2;
+    return {
+      type: "coordinatesBadge",
+      text: label,
+      width: textMetrics.width + padX * 2,
+      height: badgeHeight,
+      fontSize: textMetrics.fontSize,
+      textY: textMetrics.textY,
+      padX: padX,
+      rectY: rectY,
     };
   }
 
@@ -9650,36 +11488,48 @@
   function computeLabelBarPlacements(area, endCapArea, row2Area, items) {
     var placements = [];
     var gap = getLabelBarItemGapPx();
+    var livingRowArea = row2Area || area;
+    var endCapSpan = getLabelBarTwoRowVisualSpan(area, livingRowArea);
+    var endCapRenderArea = getLabelBarEndCapRenderArea(
+      endCapArea,
+      area,
+      livingRowArea
+    );
     var lionSpec = buildLabelBarSvgSpec(
       getLabelBarEndCapSvgFile(),
-      endCapArea.height
+      endCapSpan.height
     );
     var leftWordSpec = buildLabelBarSvgSpec(
       getLabelBarLeftLionInnerRow1SvgFile(),
-      area.height
+      getLabelBarSvgRowTargetHeight(area.height)
     );
-    var ageSpec = buildLabelBarSvgSpec(getLabelBarAgeSvgFile(), area.height);
+    var ageSpec = buildLabelBarSvgSpec(
+      getLabelBarAgeSvgFile(),
+      getLabelBarSvgRowTargetHeight(area.height)
+    );
     var ageLabelSpec = ageSpec ? buildLabelBarAgeLabelSpec(area) : null;
     var rightWordSpec = buildLabelBarSvgSpec(
       getLabelBarRightLionInnerRow2SvgFile(),
-      row2Area ? row2Area.height : area.height
+      getLabelBarSvgRowTargetHeight(row2Area ? row2Area.height : area.height)
     );
-    var livingRowArea = row2Area || area;
-    var livingFile = getLivingIranLabelSvgFile();
-    var livingSpec = livingFile
-      ? buildLabelBarSvgSpec(livingFile, livingRowArea.height)
+    var livingSpec = buildLabelBarSvgSpec(
+      getLabelBarLivingOutsideIranSvgFile(),
+      getLabelBarSvgRowTargetHeight(livingRowArea.height)
+    );
+    var livingDurationFile = getLivingDurationLabelSvgFile();
+    var livingDurationSpec = livingDurationFile
+      ? buildLabelBarSvgSpec(
+          livingDurationFile,
+          getLabelBarSvgRowTargetHeight(livingRowArea.height)
+        )
       : null;
     var fromSpec = buildLabelBarSvgSpec(
       getLabelBarFromSvgFile(),
-      livingRowArea.height
+      getLabelBarSvgRowTargetHeight(livingRowArea.height)
     );
     var fromTextSpec = buildLabelBarProfileFieldTextSpec(
       getProfileFromText(),
       livingRowArea
-    );
-    var nowInSpec = buildLabelBarSvgSpec(
-      getLabelBarNowInSvgFile(),
-      livingRowArea.height
     );
     var nowInTextSpec = buildLabelBarProfileFieldTextSpec(
       getProfileNowInText(),
@@ -9687,28 +11537,42 @@
     );
     var circleSpec = buildLabelBarSvgSpec(
       getLabelBarCircleSvgFile(),
-      livingRowArea.height
+      getLabelBarSvgRowTargetHeight(livingRowArea.height)
     );
-    var unionSpec = buildLabelBarSvgSpec(
-      getLabelBarUnionSvgFile(),
-      area.height
+    var unionCoordinatesSpec = buildLabelBarCoordinatesBadgeSpec(
+      getProfileCoordinatesText(),
+      area
+    );
+    var unionSmallRow1Spec = buildLabelBarSvgSpec(
+      getLabelBarUnionSmallSvgFile(),
+      getLabelBarSvgRowTargetHeight(area.height)
+    );
+    var unionSmallRow2Spec = buildLabelBarSvgSpec(
+      getLabelBarUnionSmallSvgFile(),
+      getLabelBarSvgRowTargetHeight(livingRowArea.height)
     );
     var leftSignSpec = buildLabelBarSvgSpec(
       getLabelBarLeftSvgFile(),
-      area.height
+      getLabelBarSvgRowTargetHeight(area.height)
     );
     var womenSpec = buildLabelBarSvgSpec(
       getLabelBarWomenSvgFile(),
-      area.height
+      getLabelBarSvgRowTargetHeight(livingRowArea.height)
     );
     var lostFile = getLostLabelSvgFile();
     var lostSpec = lostFile
-      ? buildLabelBarSvgSpec(lostFile, area.height)
+      ? buildLabelBarSvgSpec(
+          lostFile,
+          getLabelBarSvgRowTargetHeight(area.height)
+        )
       : null;
     var lostLabelSpec = lostSpec ? buildLabelBarLostLabelSpec(area) : null;
     var homeAtFile = getHomeAtLabelSvgFile();
     var homeAtSpec = homeAtFile
-      ? buildLabelBarSvgSpec(homeAtFile, area.height)
+      ? buildLabelBarSvgSpec(
+          homeAtFile,
+          getLabelBarSvgRowTargetHeight(area.height)
+        )
       : null;
     var centerSpecs = buildLabelBarItemSpecs(
       filterLabelBarCenterItems(items),
@@ -9778,15 +11642,10 @@
       row1Clusters,
       buildLabelBarCluster([
         homeAtSpec ? { spec: homeAtSpec, svgArea: area } : null,
+        unionCoordinatesSpec
+          ? { spec: unionCoordinatesSpec, svgArea: area }
+          : null,
       ])
-    );
-    pushRowCluster(
-      row1Clusters,
-      buildLabelBarCluster([unionSpec ? { spec: unionSpec, svgArea: area } : null])
-    );
-    pushRowCluster(
-      row1Clusters,
-      buildLabelBarCluster([womenSpec ? { spec: womenSpec, svgArea: area } : null])
     );
     pushRowCluster(
       row1Clusters,
@@ -9814,34 +11673,38 @@
         lostSpec ? { spec: lostSpec, svgArea: area } : null,
       ])
     );
+    if (unionSmallRow1Spec) {
+      row1Clusters.unshift(
+        buildLabelBarCluster([{ spec: unionSmallRow1Spec, svgArea: area }])
+      );
+    }
 
     row2Clusters = [];
     pushRowCluster(
       row2Clusters,
-      buildLabelBarCluster([{ spec: livingSpec, svgArea: livingRowArea }])
+      buildLabelBarCluster([circleSpec ? { spec: circleSpec, svgArea: livingRowArea } : null])
     );
     pushRowCluster(
       row2Clusters,
       buildLabelBarCluster([
-        fromSpec ? { spec: fromSpec, svgArea: livingRowArea } : null,
+        livingDurationSpec
+          ? { spec: livingDurationSpec, svgArea: livingRowArea }
+          : null,
         fromTextSpec ? { spec: fromTextSpec, svgArea: livingRowArea } : null,
-      ])
-    );
-    pushRowCluster(
-      row2Clusters,
-      buildLabelBarCluster([
-        nowInSpec ? { spec: nowInSpec, svgArea: livingRowArea } : null,
+        fromSpec ? { spec: fromSpec, svgArea: livingRowArea } : null,
         nowInTextSpec ? { spec: nowInTextSpec, svgArea: livingRowArea } : null,
       ])
-    );
-    pushRowCluster(
-      row2Clusters,
-      buildLabelBarCluster([circleSpec ? { spec: circleSpec, svgArea: livingRowArea } : null])
     );
     var nameText = getProfileNameText();
     var nameTextSpec = nameText
       ? buildLabelBarProfileFieldTextSpec(nameText, livingRowArea)
       : null;
+    pushRowCluster(
+      row2Clusters,
+      buildLabelBarCluster([
+        womenSpec ? { spec: womenSpec, svgArea: livingRowArea } : null,
+      ])
+    );
     if (nameTextSpec) {
       pushRowCluster(
         row2Clusters,
@@ -9851,15 +11714,31 @@
     pushRowCluster(
       row2Clusters,
       buildLabelBarCluster([
-        { spec: rightWordSpec, svgArea: row2Area || area, mirror: true },
+        livingSpec ? { spec: livingSpec, svgArea: livingRowArea } : null,
       ])
     );
+    if (rightWordSpec) {
+      pushRowCluster(
+        row2Clusters,
+        buildLabelBarCluster([
+          { spec: rightWordSpec, svgArea: row2Area || area, mirror: true },
+        ])
+      );
+    }
+    if (unionSmallRow2Spec) {
+      pushRowCluster(
+        row2Clusters,
+        buildLabelBarCluster([
+          { spec: unionSmallRow2Spec, svgArea: livingRowArea },
+        ])
+      );
+    }
 
     placements.push({
       spec: lionSpec,
       x: leftX,
       mirror: false,
-      svgArea: endCapArea,
+      svgArea: endCapRenderArea,
     });
     placements = placements.concat(
       layoutLabelBarRowClusters(row1Clusters, rowSpanStart, rowSpanEnd, area)
@@ -9876,7 +11755,7 @@
       spec: lionSpec,
       x: rightX,
       mirror: true,
-      svgArea: endCapArea,
+      svgArea: endCapRenderArea,
     });
     return placements;
   }
@@ -9890,9 +11769,11 @@
     var child;
     var ix;
     var scaleX;
+    var svgY;
     if (!tintedMarkup) return false;
 
     ix = placement.x;
+    svgY = getLabelBarSvgPlacementY(area, spec.height);
     scaleX = mirror ? -spec.scale : spec.scale;
     g = elSvg("g");
     g.setAttribute(
@@ -9900,7 +11781,7 @@
       "translate(" +
         (mirror ? ix + spec.width : ix) +
         "," +
-        area.y +
+        svgY +
         ") scale(" +
         scaleX +
         "," +
@@ -9923,6 +11804,7 @@
     var spec = placement.spec;
     var ix = placement.x;
     var mirror = placement.mirror;
+    var svgY = getLabelBarSvgPlacementY(area, spec.height);
     var img;
     var wrap;
 
@@ -9931,7 +11813,7 @@
         wrap = elSvg("g");
         wrap.setAttribute(
           "transform",
-          "translate(" + (ix + spec.width) + "," + area.y + ") scale(-1, 1)"
+          "translate(" + (ix + spec.width) + "," + svgY + ") scale(-1, 1)"
         );
         img = elSvg("image");
         img.setAttribute("x", "0");
@@ -9940,7 +11822,7 @@
         wrap = container;
         img = elSvg("image");
         img.setAttribute("x", String(ix));
-        img.setAttribute("y", String(area.y));
+        img.setAttribute("y", String(svgY));
       }
       setSvgImageHref(img, getLabelBarSvgHref(spec.file));
       img.setAttribute("width", String(spec.width));
@@ -9959,7 +11841,7 @@
       wrap = elSvg("g");
       wrap.setAttribute(
         "transform",
-        "translate(" + (ix + spec.width) + "," + area.y + ") scale(-1, 1)"
+        "translate(" + (ix + spec.width) + "," + svgY + ") scale(-1, 1)"
       );
       img = elSvg("image");
       img.setAttribute("x", "0");
@@ -9968,7 +11850,7 @@
       wrap = container;
       img = elSvg("image");
       img.setAttribute("x", String(ix));
-      img.setAttribute("y", String(area.y));
+      img.setAttribute("y", String(svgY));
     }
 
     setSvgImageHref(img, getLabelBarSvgHref(spec.file));
@@ -9980,6 +11862,81 @@
     if (mirror) container.appendChild(wrap);
   }
 
+  var labelBarCoordsMaskId = 0;
+
+  function nextLabelBarCoordsMaskId() {
+    labelBarCoordsMaskId += 1;
+    return "label-bar-coords-mask-" + labelBarCoordsMaskId;
+  }
+
+  function createLabelBarCoordinatesMaskTextEl(
+    spec,
+    textX,
+    textY,
+    forKnockout
+  ) {
+    var text = elSvg("text");
+    text.setAttribute("x", String(textX));
+    text.setAttribute("y", String(textY));
+    applyLabelBarTextAttrs(text, spec.fontSize);
+    if (forKnockout) {
+      text.setAttribute("fill", "#000000");
+    }
+    text.textContent = spec.text;
+    return text;
+  }
+
+  function appendLabelBarCoordinatesBadgePlacement(
+    container,
+    placement,
+    contentArea,
+    flipVertical
+  ) {
+    var spec = placement.spec;
+    var badgeX = placement.x;
+    var badgeY = spec.rectY;
+    var textX = badgeX + spec.padX;
+    var textY = getLabelBarTextPlacementY(placement, contentArea, flipVertical);
+    var maskId = nextLabelBarCoordsMaskId();
+    var mask = elSvg("mask");
+    var maskRect;
+    var maskText;
+    var fillRect;
+
+    mask.setAttribute("id", maskId);
+    mask.setAttribute("maskUnits", "userSpaceOnUse");
+    mask.setAttribute("x", String(badgeX));
+    mask.setAttribute("y", String(badgeY));
+    mask.setAttribute("width", String(spec.width));
+    mask.setAttribute("height", String(spec.height));
+
+    maskRect = elSvg("rect");
+    maskRect.setAttribute("x", String(badgeX));
+    maskRect.setAttribute("y", String(badgeY));
+    maskRect.setAttribute("width", String(spec.width));
+    maskRect.setAttribute("height", String(spec.height));
+    maskRect.setAttribute("fill", "#ffffff");
+    mask.appendChild(maskRect);
+
+    maskText = createLabelBarCoordinatesMaskTextEl(
+      spec,
+      textX,
+      textY,
+      true
+    );
+    mask.appendChild(maskText);
+    container.appendChild(mask);
+
+    fillRect = elSvg("rect");
+    fillRect.setAttribute("x", String(badgeX));
+    fillRect.setAttribute("y", String(badgeY));
+    fillRect.setAttribute("width", String(spec.width));
+    fillRect.setAttribute("height", String(spec.height));
+    fillRect.setAttribute("fill", getLabelBarContentColor());
+    fillRect.setAttribute("mask", "url(#" + maskId + ")");
+    container.appendChild(fillRect);
+  }
+
   function appendLabelBarPlacement(rowG, placement, defaultArea, flipVertical) {
     var spec = placement.spec;
     var contentArea = placement.svgArea || defaultArea;
@@ -9988,16 +11945,26 @@
     var mount = itemG;
 
     itemG.setAttribute("class", "label-bar-item");
-    if (spec.type === "text") {
+    if (spec.type === "coordinatesBadge") {
+      appendLabelBarCoordinatesBadgePlacement(
+        itemG,
+        placement,
+        contentArea,
+        flipVertical
+      );
+    } else if (spec.type === "text") {
       text = elSvg("text");
       text.setAttribute("x", String(placement.x));
-      text.setAttribute("y", String(getLabelBarTextY(contentArea)));
+      text.setAttribute(
+        "y",
+        String(getLabelBarTextPlacementY(placement, contentArea, flipVertical))
+      );
       applyLabelBarTextAttrs(text, spec.fontSize);
       text.textContent = spec.text;
       itemG.appendChild(text);
     } else if (spec.type === "svg") {
       appendLabelBarSvgPlacement(itemG, placement, contentArea);
-      appendLabelBarAgeOverlayText(itemG, placement, contentArea);
+      appendLabelBarAgeOverlayText(itemG, placement, contentArea, flipVertical);
     } else if (spec.type === "square") {
       var square = elSvg("rect");
       square.setAttribute("x", String(placement.x));
@@ -10009,7 +11976,11 @@
     }
 
     if (flipVertical) {
-      var rotCenter = getLabelBarPlacementRotate180Center(placement, contentArea);
+      var rotCenter = getLabelBarPlacementRotate180Center(
+        placement,
+        contentArea,
+        flipVertical
+      );
       mount = elSvg("g");
       mount.setAttribute(
         "transform",
@@ -10024,6 +11995,7 @@
     var spec = placement.spec;
     var ix = placement.x;
     var mirror = placement.mirror;
+    var svgY = getLabelBarSvgPlacementY(area, spec.height);
     primeLabelBarSvgCacheFromEmbedded(spec.file);
     var whiteMarkup =
       getLabelBarSvgTintedInnerMarkup(spec.file) ||
@@ -10038,7 +12010,7 @@
         '<g transform="translate(' +
           (mirror ? ix + spec.width : ix) +
           " " +
-          area.y +
+          svgY +
           ") scale(" +
           scaleX +
           " " +
@@ -10056,7 +12028,7 @@
           '<g transform="translate(' +
             (ix + spec.width) +
             "," +
-            area.y +
+            svgY +
             ') scale(-1,1)"><image href="' +
             getLabelBarSvgHref(spec.file) +
             '" x="0" y="0" width="' +
@@ -10074,7 +12046,7 @@
           '" x="' +
           ix +
           '" y="' +
-          area.y +
+          svgY +
           '" width="' +
           spec.width +
           '" height="' +
@@ -10089,7 +12061,7 @@
         '<g transform="translate(' +
           (ix + spec.width) +
           "," +
-          area.y +
+          svgY +
           ') scale(-1,1)"><image href="' +
           getLabelBarSvgHref(spec.file) +
           '" x="0" y="0" width="' +
@@ -10109,7 +12081,7 @@
         '" x="' +
         ix +
         '" y="' +
-        area.y +
+        svgY +
         '" width="' +
         spec.width +
         '" height="' +
@@ -10140,12 +12112,20 @@
     rowG.setAttribute("data-edge", edge);
 
     for (pi = 0; pi < placements.length; pi++) {
-      appendLabelBarPlacement(
-        rowG,
-        placements[pi],
-        area,
-        labelBarEdgeContentFlippedVertically(edge)
+      appendLabelBarPlacement(rowG, placements[pi], area, false);
+    }
+
+    if (labelBarEdgeUsesGroupRotate180(edge)) {
+      var rotCenter = getLabelBarLayoutRotate180Center(layout);
+      var wrapper = elSvg("g");
+      wrapper.setAttribute("data-edge", edge);
+      wrapper.setAttribute(
+        "transform",
+        getLabelBarRotate180Transform(rotCenter.cx, rotCenter.cy)
       );
+      wrapper.appendChild(rowG);
+      rowG.removeAttribute("data-edge");
+      return wrapper;
     }
 
     return rowG;
@@ -10155,10 +12135,37 @@
     var items = getLabelBarItems();
     var bottomLayout = getCanvasEdgeBrownBarLayout("bottom");
     var topLayout = getCanvasEdgeBrownBarLayout("top");
-    var bottomRow = createLabelBarRowGroup("bottom", bottomLayout, items);
-    var topRow = createLabelBarRowGroup("top", topLayout, items);
+    var bottomRow;
+    var topRow;
+    labelBarCoordsMaskId = 0;
+    bottomRow = createLabelBarRowGroup("bottom", bottomLayout, items);
+    topRow = createLabelBarRowGroup("top", topLayout, items);
     if (bottomRow) g.appendChild(bottomRow);
     if (topRow) g.appendChild(topRow);
+  }
+
+  var labelBarContentRenderToken = 0;
+  var labelBarContentHasRendered = false;
+
+  function waitForLabelBarFontsReady() {
+    if (typeof document === "undefined" || !document.fonts) {
+      return Promise.resolve();
+    }
+    var family = getBrownBarBannerFontFamily();
+    return document.fonts.ready
+      .then(function () {
+        if (!document.fonts.load) return;
+        return document.fonts.load('700 16px "' + family + '"');
+      })
+      .catch(function () {});
+  }
+
+  function waitForLabelBarLayoutReady() {
+    return new Promise(function (resolve) {
+      requestAnimationFrame(function () {
+        requestAnimationFrame(resolve);
+      });
+    });
   }
 
   function refreshLabelBarContent() {
@@ -10166,41 +12173,42 @@
     var group = designSvg.querySelector("#edge-brown-bar-label-content");
     if (!group) return;
 
-    var render = function () {
-      while (group.firstChild) group.removeChild(group.firstChild);
-      appendLabelBarContent(group);
-      if (typeof updateMagnifierViewBox === "function") {
-        updateMagnifierViewBox();
-      }
-      preloadLabelBarSvgAssetsForExport().then(function () {
-        if (!designSvg) return;
-        var labelGroup = designSvg.querySelector("#edge-brown-bar-label-content");
-        if (!labelGroup) return;
-        while (labelGroup.firstChild) labelGroup.removeChild(labelGroup.firstChild);
-        appendLabelBarContent(labelGroup);
+    var token = ++labelBarContentRenderToken;
+    if (!labelBarContentHasRendered) {
+      group.setAttribute("visibility", "hidden");
+    }
+
+    return waitForLabelBarFontsReady()
+      .then(function () {
+        return preloadLabelBarSvgAssetsForExport();
+      })
+      .then(waitForLabelBarLayoutReady)
+      .then(function () {
+        if (!designSvg || token !== labelBarContentRenderToken) return;
+        while (group.firstChild) group.removeChild(group.firstChild);
+        appendLabelBarContent(group);
+        group.removeAttribute("visibility");
+        labelBarContentHasRendered = true;
         if (typeof updateMagnifierViewBox === "function") {
           updateMagnifierViewBox();
         }
       });
-    };
-
-    if (typeof document !== "undefined" && document.fonts && document.fonts.ready) {
-      document.fonts.ready.then(render);
-    } else {
-      render();
-    }
   }
 
   function preloadLabelBarSvgAssetsForExport() {
     var items = getLabelBarItems();
     var files = [
       getLabelBarEndCapSvgFile(),
-      getLabelBarLivingInIranSvgFile(),
       getLabelBarLivingOutsideIranSvgFile(),
+      getLivingDurationLabelSvgFile(),
+      getLabelBarLivingNeverInIranSvgFile(),
+      getLabelBarLivingDurationSvgFiles()[0],
+      getLabelBarLivingDurationSvgFiles()[1],
+      getLabelBarLivingDurationSvgFiles()[2],
       getLabelBarFromSvgFile(),
       getLabelBarNowInSvgFile(),
       getLabelBarCircleSvgFile(),
-      getLabelBarUnionSvgFile(),
+      getLabelBarUnionSmallSvgFile(),
       getLabelBarLeftSvgFile(),
       getLabelBarWomenSvgFile(),
       getLabelBarLeftLionInnerRow1SvgFile(),
@@ -10222,12 +12230,15 @@
       }
     }
     var fi;
+    var loadFiles = [];
     for (fi = 0; fi < files.length; fi++) {
+      if (!files[fi]) continue;
+      loadFiles.push(files[fi]);
       primeLabelBarSvgCacheFromEmbedded(files[fi]);
     }
-    if (!files.length) return Promise.resolve();
+    if (!loadFiles.length) return Promise.resolve();
     return Promise.allSettled(
-      files.map(function (name) {
+      loadFiles.map(function (name) {
         return ensureLabelBarSvgAsset(name).catch(function () {
           return null;
         });
@@ -10246,7 +12257,7 @@
   function createBrownBarBannerTextGroup() {
     var g = elSvg("g");
     g.setAttribute("id", "edge-brown-bar-label-content");
-    appendLabelBarContent(g);
+    g.setAttribute("visibility", "hidden");
     return g;
   }
 
@@ -10765,6 +12776,7 @@
     var items = getLabelBarItems();
     var bottomLayout = getCanvasEdgeBrownBarLayout("bottom");
     var topLayout = getCanvasEdgeBrownBarLayout("top");
+    labelBarCoordsMaskId = 0;
     var edges = [
       ["bottom", bottomLayout],
       ["top", topLayout],
@@ -10787,26 +12799,33 @@
       placements = computeLabelBarPlacements(area, endCapArea, row2Area, items);
       if (!placements.length) continue;
       edgeLines = ['<g data-edge="' + edge + '">'];
+      if (labelBarEdgeUsesGroupRotate180(edge)) {
+        var layoutRotCenter = getLabelBarLayoutRotate180Center(layout);
+        edgeLines.push(
+          '<g transform="' +
+            getLabelBarRotate180Transform(
+              layoutRotCenter.cx,
+              layoutRotCenter.cy
+            ) +
+            '">'
+        );
+      }
       for (pi = 0; pi < placements.length; pi++) {
         placement = placements[pi];
         var placementArea = placement.svgArea || area;
-        var flipVertical = labelBarEdgeContentFlippedVertically(edge);
-        if (flipVertical) {
-          var rotCenter = getLabelBarPlacementRotate180Center(
-            placement,
-            placementArea
-          );
-          edgeLines.push(
-            '<g transform="' +
-              getLabelBarRotate180Transform(rotCenter.cx, rotCenter.cy) +
-              '">'
-          );
-        }
         if (placement.spec.type === "text") {
           pushLabelBarTextPlacementExport(
             edgeLines,
             placement,
-            placementArea
+            placementArea,
+            false
+          );
+        } else if (placement.spec.type === "coordinatesBadge") {
+          pushLabelBarCoordinatesBadgeExport(
+            edgeLines,
+            placement,
+            placementArea,
+            false
           );
         } else if (placement.spec.type === "svg") {
           pushLabelBarSvgPlacementExport(
@@ -10817,7 +12836,8 @@
           pushLabelBarAgeOverlayTextExport(
             edgeLines,
             placement,
-            placementArea
+            placementArea,
+            false
           );
         } else if (placement.spec.type === "square") {
           edgeLines.push(
@@ -10834,9 +12854,9 @@
               '"/>'
           );
         }
-        if (flipVertical) {
-          edgeLines.push("</g>");
-        }
+      }
+      if (labelBarEdgeUsesGroupRotate180(edge)) {
+        edgeLines.push("</g>");
       }
       edgeLines.push("</g>");
       rowMarkup = rowMarkup.concat(edgeLines);
@@ -11401,7 +13421,7 @@
   function getRadialFanRibCount() {
     return typeof RADIAL_FAN_RIB_COUNT !== "undefined"
       ? RADIAL_FAN_RIB_COUNT
-      : 26;
+      : 25;
   }
 
   function getFanInnerLeafSizeRatio() {
@@ -11480,12 +13500,53 @@
     return Math.max(0, ribCount - 1);
   }
 
+  /** Petals actually drawn when fully open (end sectors trimmed from rib geometry). */
+  function getFanEffectiveMaxPetals() {
+    var trim = getFanEndSectorTrimCount();
+    return Math.max(0, getHalfCircleMaxPetals() - 2 * trim);
+  }
+
   var FAN_SHARED_LEAVES_ID = "fan-leaves";
   var FAN_SHARED_LEAF_SIZE_ID = "fan-leaf-size";
   var FAN_SHARED_ARC_ID = "fan-arc";
   var FAN_SHARED_STARS_ID = "fan-stars";
+  var FAN_RADIAL_OUTER_ARC_ID = "fan-radial-outer-arc";
+  var FAN_RADIAL_OUTER_ARC_ROW_ID = "fan-radial-outer-arc-row";
   var FAN_TYPE_ORIGINAL_BTN_ID = "fan-type-original-btn";
   var FAN_TYPE_RADIAL_BTN_ID = "fan-type-radial-btn";
+
+  function getRadialFanOuterArcScale() {
+    var min =
+      typeof RADIAL_FAN_OUTER_ARC_SCALE_MIN !== "undefined"
+        ? RADIAL_FAN_OUTER_ARC_SCALE_MIN
+        : 0.7;
+    var max =
+      typeof RADIAL_FAN_OUTER_ARC_SCALE_MAX !== "undefined"
+        ? RADIAL_FAN_OUTER_ARC_SCALE_MAX
+        : 1;
+    var defaultScale =
+      typeof RADIAL_FAN_OUTER_ARC_SCALE_DEFAULT !== "undefined"
+        ? RADIAL_FAN_OUTER_ARC_SCALE_DEFAULT
+        : 1;
+    var input = document.getElementById(FAN_RADIAL_OUTER_ARC_ID);
+    var sliderMin = Math.round(min * 100);
+    var sliderMax = Math.round(max * 100);
+    var defaultSlider = Math.round(defaultScale * 100);
+    var raw = input ? Number(input.value) : defaultSlider;
+    if (!Number.isFinite(raw)) raw = defaultSlider;
+    raw = Math.max(sliderMin, Math.min(sliderMax, Math.round(raw)));
+    return raw / 100;
+  }
+
+  function updateFanRadialOnlyControlsVisibility() {
+    var radialType =
+      typeof FAN_TYPE_RADIAL !== "undefined" ? FAN_TYPE_RADIAL : "radial";
+    var isRadial = getFanType() === radialType;
+    var row = document.getElementById(FAN_RADIAL_OUTER_ARC_ROW_ID);
+    if (row) {
+      row.hidden = !isRadial;
+    }
+  }
 
   function getFanType() {
     var radialBtn = document.getElementById(FAN_TYPE_RADIAL_BTN_ID);
@@ -11515,6 +13576,7 @@
       radialBtn.classList.toggle("is-active", isRadial);
       originalBtn.setAttribute("aria-pressed", String(!isRadial));
       radialBtn.setAttribute("aria-pressed", String(isRadial));
+      updateFanRadialOnlyControlsVisibility();
       renderHalfCircleLayer();
     }
 
@@ -11528,6 +13590,7 @@
     var defaultType =
       typeof FAN_TYPE_DEFAULT !== "undefined" ? FAN_TYPE_DEFAULT : originalType;
     setFanType(defaultType);
+    updateFanRadialOnlyControlsVisibility();
   }
 
   /** @param {"top" | "bottom"} idPrefix */
@@ -11552,16 +13615,18 @@
   }
 
   function getFanLeavesPetalCount(sliderId) {
-    var maxPetals = getHalfCircleMaxPetals();
+    var maxPetals = getFanEffectiveMaxPetals();
     var step = getFanLeavesOpeningStep(sliderId);
     var maxStep =
       typeof WEAR_CONTROL_OPENING_STEP_MAX !== "undefined"
         ? WEAR_CONTROL_OPENING_STEP_MAX
         : 10;
     if (maxPetals <= 0 || step >= maxStep) return 0;
-    var openStep = maxStep - step;
-    if (openStep <= 0) return 0;
-    return Math.round((openStep / maxStep) * maxPetals);
+    if (step <= 0) return maxPetals;
+    // Step maxStep - 1 shows exactly one drawable petal (same as innermost open sector).
+    var petals =
+      1 + ((maxPetals - 1) * (maxStep - step - 1)) / (maxStep - 1);
+    return Math.max(1, Math.round(petals));
   }
 
   /** @param {"top" | "bottom"} idPrefix */
@@ -11732,6 +13797,19 @@
       min: extraArcMin,
       max: extraArcMax,
     });
+    var outerArcMin =
+      typeof RADIAL_FAN_OUTER_ARC_SCALE_MIN !== "undefined"
+        ? Math.round(RADIAL_FAN_OUTER_ARC_SCALE_MIN * 100)
+        : 70;
+    var outerArcMax =
+      typeof RADIAL_FAN_OUTER_ARC_SCALE_MAX !== "undefined"
+        ? Math.round(RADIAL_FAN_OUTER_ARC_SCALE_MAX * 100)
+        : 100;
+    bindFanTuningSlider(document.getElementById(FAN_RADIAL_OUTER_ARC_ID), {
+      snap: "percent",
+      min: outerArcMin,
+      max: outerArcMax,
+    });
   }
 
   function getHalfCircleTopVisiblePetalCount() {
@@ -11854,6 +13932,47 @@
     };
   }
 
+  /** Circle hit along ray origin → through, beyond the through point. */
+  function halfCircleRayCircleHitBeyond(
+    circleCx,
+    circleCy,
+    circleRadius,
+    originX,
+    originY,
+    throughX,
+    throughY
+  ) {
+    var dirX = throughX - originX;
+    var dirY = throughY - originY;
+    var dirLen = Math.hypot(dirX, dirY);
+    if (dirLen < 1e-9) return null;
+
+    var ux = dirX / dirLen;
+    var uy = dirY / dirLen;
+    var tRing = dirLen;
+    var relX = originX - circleCx;
+    var relY = originY - circleCy;
+    var b = 2 * (relX * ux + relY * uy);
+    var c = relX * relX + relY * relY - circleRadius * circleRadius;
+    var disc = b * b - 4 * c;
+    if (disc < 0) return null;
+
+    var sqrtDisc = Math.sqrt(disc);
+    var t1 = (-b - sqrtDisc) * 0.5;
+    var t2 = (-b + sqrtDisc) * 0.5;
+    var tHit = -1;
+
+    if (t1 > tRing + 1e-6) tHit = Math.max(tHit, t1);
+    if (t2 > tRing + 1e-6) tHit = Math.max(tHit, t2);
+    if (tHit < 0) {
+      if (t1 > 1e-6) tHit = Math.max(tHit, t1);
+      if (t2 > 1e-6) tHit = Math.max(tHit, t2);
+    }
+    if (tHit < 0) return null;
+
+    return { x: originX + tHit * ux, y: originY + tHit * uy };
+  }
+
   function buildHalfCircleFullEndpoints(cx, y, r, ribs) {
     var deltaTheta = ribs > 1 ? Math.PI / (ribs - 1) : 0;
     var endpoints = [];
@@ -11869,7 +13988,9 @@
   function buildHalfCircleVisibleFanLayout(cx, y, r, ribs, visiblePetals, anchor) {
     var full = buildHalfCircleFullEndpoints(cx, y, r, ribs);
     var maxPetals = ribs - 1;
-    if (visiblePetals <= 0 || maxPetals <= 0) {
+    var trim = getFanEndSectorTrimCount();
+    var drawableMax = maxPetals - 2 * trim;
+    if (visiblePetals <= 0 || maxPetals <= 0 || drawableMax <= 0) {
       return {
         endpoints: [],
         deltaTheta: full.deltaTheta,
@@ -11879,16 +14000,17 @@
       };
     }
 
+    var petalCount = Math.min(visiblePetals, drawableMax);
     var firstRib;
     var lastRib;
     if (anchor === "right") {
-      // Right-anchored: keep the right edge fixed; petals fold away from the left.
-      firstRib = maxPetals - visiblePetals;
-      lastRib = maxPetals;
+      // Right-anchored: keep the right drawable edge fixed; fold away from the left.
+      firstRib = maxPetals - trim - petalCount;
+      lastRib = maxPetals - trim;
     } else {
-      // Left-anchored: keep the left edge fixed; petals fold away from the right.
-      firstRib = 0;
-      lastRib = visiblePetals;
+      // Left-anchored: keep the left drawable edge fixed; fold away from the right.
+      firstRib = trim;
+      lastRib = trim + petalCount;
     }
     var visibleEndpoints = full.endpoints.slice(firstRib, lastRib + 1);
 
@@ -11897,8 +14019,71 @@
       deltaTheta: full.deltaTheta,
       startAngle: visibleEndpoints[0].a,
       endAngle: visibleEndpoints[visibleEndpoints.length - 1].a,
-      visiblePetals: visiblePetals,
+      visiblePetals: petalCount,
       firstRib: firstRib,
+    };
+  }
+
+  /** Clip layout follows the leaves slider; full layout keeps all fan geometry static. */
+  function buildHalfCircleFanClipAndFullLayouts(
+    cx,
+    y,
+    r,
+    ribs,
+    visiblePetals,
+    anchor
+  ) {
+    var maxPetals = Math.max(0, ribs - 1);
+    var resolvedAnchor = anchor || "left";
+    var clipLayout = buildHalfCircleVisibleFanLayout(
+      cx,
+      y,
+      r,
+      ribs,
+      visiblePetals,
+      resolvedAnchor
+    );
+    var fullLayout = buildHalfCircleVisibleFanLayout(
+      cx,
+      y,
+      r,
+      ribs,
+      maxPetals,
+      resolvedAnchor
+    );
+    return {
+      clipLayout: clipLayout,
+      fullLayout: fullLayout,
+      clipDrawAngles: {
+        startAngle: clipLayout.startAngle,
+        endAngle: clipLayout.endAngle,
+        trimCount: 0,
+      },
+      fullDrawAngles: getFanDrawAngles(fullLayout),
+    };
+  }
+
+  function getFanEndSectorTrimCount() {
+    return typeof FAN_END_SECTOR_TRIM_COUNT !== "undefined"
+      ? FAN_END_SECTOR_TRIM_COUNT
+      : 0;
+  }
+
+  /** Fill/clip/arc bounds after trimming end sectors (rib 1–2 and last pair). */
+  function getFanDrawAngles(layout) {
+    var trim = getFanEndSectorTrimCount();
+    var endpoints = layout.endpoints;
+    if (trim <= 0 || !endpoints || endpoints.length < 2 + trim * 2) {
+      return {
+        startAngle: layout.startAngle,
+        endAngle: layout.endAngle,
+        trimCount: 0,
+      };
+    }
+    return {
+      startAngle: endpoints[trim].a,
+      endAngle: endpoints[endpoints.length - 1 - trim].a,
+      trimCount: trim,
     };
   }
 
@@ -11935,6 +14120,63 @@
       pEnd.x +
       " " +
       pEnd.y +
+      " Z"
+    );
+  }
+
+  /** Base corners stay at baseRadius; outer arc uses outerArcRadius (≤ baseRadius). */
+  function halfCircleRadialFanSectorPath(
+    cx,
+    y,
+    baseRadius,
+    outerArcRadius,
+    startAngle,
+    endAngle
+  ) {
+    if (outerArcRadius >= baseRadius - 0.001) {
+      return halfCircleSectorPath(cx, y, baseRadius, startAngle, endAngle);
+    }
+
+    var leftBase = halfCirclePolarPoint(cx, y, baseRadius, startAngle);
+    var rightBase = halfCirclePolarPoint(cx, y, baseRadius, endAngle);
+    var arcFrom = startAngle;
+    var arcTo = endAngle;
+    if (arcFrom < arcTo) {
+      var swap = arcFrom;
+      arcFrom = arcTo;
+      arcTo = swap;
+    }
+    var leftArc = halfCirclePolarPoint(cx, y, outerArcRadius, arcFrom);
+    var rightArc = halfCirclePolarPoint(cx, y, outerArcRadius, arcTo);
+    var span = arcFrom - arcTo;
+    var largeArc = span > Math.PI ? 1 : 0;
+    return (
+      "M " +
+      cx +
+      " " +
+      y +
+      " L " +
+      leftBase.x +
+      " " +
+      leftBase.y +
+      " L " +
+      leftArc.x +
+      " " +
+      leftArc.y +
+      " A " +
+      outerArcRadius +
+      " " +
+      outerArcRadius +
+      " 0 " +
+      largeArc +
+      " 1 " +
+      rightArc.x +
+      " " +
+      rightArc.y +
+      " L " +
+      rightBase.x +
+      " " +
+      rightBase.y +
       " Z"
     );
   }
@@ -13343,23 +15585,26 @@
     visiblePetals,
     anchor
   ) {
-    var layout = buildHalfCircleVisibleFanLayout(
+    var fanLayouts = buildHalfCircleFanClipAndFullLayouts(
       cx,
       focalY,
       r,
       ribs,
       visiblePetals,
-      anchor || "left"
+      anchor
     );
-    var endpoints = layout.endpoints;
+    if (!fanLayouts.clipLayout.endpoints.length) return;
+
+    var endpoints = fanLayouts.fullLayout.endpoints;
     var visibleRibs = endpoints.length;
-    var deltaTheta = layout.deltaTheta;
+    var deltaTheta = fanLayouts.fullLayout.deltaTheta;
+    var drawAngles = fanLayouts.fullDrawAngles;
     var sectorPath = halfCircleSectorPath(
       cx,
       focalY,
       r,
-      layout.startAngle,
-      layout.endAngle
+      fanLayouts.clipDrawAngles.startAngle,
+      fanLayouts.clipDrawAngles.endAngle
     );
 
     if (idPrefix === "top" && designSvg) {
@@ -13396,8 +15641,22 @@
     bgFill.setAttribute("stroke", "none");
     parentGroup.appendChild(bgFill);
 
+    var sectorClipId = appendRadialFanSectorClipPath(
+      parentGroup,
+      idPrefix,
+      sectorPath
+    );
+    var fanContentGroup = elSvg("g");
+    fanContentGroup.setAttribute("id", "half-circle-content-" + idPrefix);
+    fanContentGroup.setAttribute("clip-path", "url(#" + sectorClipId + ")");
+    parentGroup.appendChild(fanContentGroup);
+
     var outer = elSvg("path");
-    var pts = endpoints;
+    var trim = drawAngles.trimCount;
+    var pts =
+      trim > 0
+        ? endpoints.slice(trim, endpoints.length - trim)
+        : endpoints;
     var dOuter = "M " + pts[0].x + " " + pts[0].y;
     var k;
     for (k = 0; k < pts.length - 1; k++) {
@@ -13407,25 +15666,25 @@
     outer.setAttribute("fill", "none");
     outer.setAttribute("stroke", fanStrokeOuter);
     outer.setAttribute("stroke-width", String(HALF_CIRCLE_FAN_STROKE_WIDTH));
-    parentGroup.appendChild(outer);
+    fanContentGroup.appendChild(outer);
 
     var leftBoundary = elSvg("line");
     leftBoundary.setAttribute("x1", String(cx));
     leftBoundary.setAttribute("y1", String(focalY));
-    leftBoundary.setAttribute("x2", String(endpoints[0].x));
-    leftBoundary.setAttribute("y2", String(endpoints[0].y));
+    leftBoundary.setAttribute("x2", String(pts[0].x));
+    leftBoundary.setAttribute("y2", String(pts[0].y));
     leftBoundary.setAttribute("stroke", fanStrokeOuter);
     leftBoundary.setAttribute("stroke-width", String(HALF_CIRCLE_FAN_STROKE_WIDTH));
-    parentGroup.appendChild(leftBoundary);
+    fanContentGroup.appendChild(leftBoundary);
 
     var rightBoundary = elSvg("line");
     rightBoundary.setAttribute("x1", String(cx));
     rightBoundary.setAttribute("y1", String(focalY));
-    rightBoundary.setAttribute("x2", String(endpoints[visibleRibs - 1].x));
-    rightBoundary.setAttribute("y2", String(endpoints[visibleRibs - 1].y));
+    rightBoundary.setAttribute("x2", String(pts[pts.length - 1].x));
+    rightBoundary.setAttribute("y2", String(pts[pts.length - 1].y));
     rightBoundary.setAttribute("stroke", fanStrokeOuter);
     rightBoundary.setAttribute("stroke-width", String(HALF_CIRCLE_FAN_STROKE_WIDTH));
-    parentGroup.appendChild(rightBoundary);
+    fanContentGroup.appendChild(rightBoundary);
 
     var innerArcRadius = r * getFanInnerArcRadiusRatio(idPrefix);
     var outerArcRadius = getHalfCircleArcPairOuterRadius(innerArcRadius);
@@ -13441,8 +15700,8 @@
       focalY,
       innerArcRadius,
       outerArcRadius,
-      layout.startAngle,
-      layout.endAngle,
+      drawAngles.startAngle,
+      drawAngles.endAngle,
       fanStrokeInnerArc,
       HALF_CIRCLE_FAN_STROKE_WIDTH
     );
@@ -13456,14 +15715,14 @@
         focalY,
         extraArcPair.inner,
         extraArcPair.outer,
-        layout.startAngle,
-        layout.endAngle,
+        drawAngles.startAngle,
+        drawAngles.endAngle,
         fanStrokeInnerArc,
         HALF_CIRCLE_FAN_STROKE_WIDTH
       );
     }
 
-    parentGroup.appendChild(innerArcPair);
+    fanContentGroup.appendChild(innerArcPair);
 
     var petals = buildHalfCirclePetals(
       cx,
@@ -13535,7 +15794,7 @@
         petalFillsGroup.appendChild(extraBandCell);
       }
     }
-    parentGroup.insertBefore(petalFillsGroup, outer);
+    fanContentGroup.insertBefore(petalFillsGroup, outer);
 
     if (getHalfCircleInnerArcDiagonalsVisible()) {
       var diagonalGroup = elSvg("g");
@@ -13564,7 +15823,7 @@
           cellIndex
         );
       }
-      parentGroup.appendChild(diagonalGroup);
+      fanContentGroup.appendChild(diagonalGroup);
     }
 
     var innerGroup = elSvg("g");
@@ -13652,7 +15911,7 @@
       innerCusp.setAttribute("stroke-width", String(HALF_CIRCLE_FAN_STROKE_WIDTH));
       innerGroup.appendChild(innerCusp);
     }
-    parentGroup.appendChild(innerGroup);
+    fanContentGroup.appendChild(innerGroup);
   }
 
   function getRadialFanStrokeWidth() {
@@ -13723,6 +15982,371 @@
       }
     }
     return radii;
+  }
+
+  /** Standalone middle arc + almost-outer frame arc (not part of the tight inner group). */
+  function getRadialFanFrameArcRadii(innerArcRadii) {
+    if (!innerArcRadii || !innerArcRadii.length) {
+      return { middleStandalone: 0, almostOuter: 0 };
+    }
+
+    var addFrameAdjacent =
+      typeof RADIAL_FAN_FRAME_ADJACENT_INNER_ARC !== "undefined"
+        ? RADIAL_FAN_FRAME_ADJACENT_INNER_ARC
+        : true;
+    var addFrameInward =
+      typeof RADIAL_FAN_FRAME_INWARD_ARC !== "undefined"
+        ? RADIAL_FAN_FRAME_INWARD_ARC
+        : true;
+    var almostOuter = 0;
+    var middleStandalone = 0;
+
+    if (addFrameInward && innerArcRadii.length >= 1) {
+      middleStandalone = innerArcRadii[innerArcRadii.length - 1];
+    }
+    if (addFrameAdjacent && innerArcRadii.length >= 1) {
+      almostOuter =
+        addFrameInward && innerArcRadii.length >= 2
+          ? innerArcRadii[innerArcRadii.length - 2]
+          : innerArcRadii[innerArcRadii.length - 1];
+    }
+
+    return { middleStandalone: middleStandalone, almostOuter: almostOuter };
+  }
+
+  /** Lowest valid radius for the middle standalone arc (between inner group and almost-outer). */
+  function getRadialFanMiddleStandaloneArcBounds(innerArcRadii) {
+    if (!innerArcRadii || innerArcRadii.length < 2) {
+      return { minRadius: 0, maxRadius: 0 };
+    }
+
+    var inwardIdx = innerArcRadii.length - 1;
+    var adjacentIdx = inwardIdx - 1;
+    var almostOuter = innerArcRadii[adjacentIdx];
+    var innerMax = 0;
+    var i;
+    for (i = 0; i < adjacentIdx; i++) {
+      if (innerArcRadii[i] > innerMax) innerMax = innerArcRadii[i];
+    }
+
+    return {
+      minRadius: innerMax + 0.51,
+      maxRadius: almostOuter - 0.51,
+    };
+  }
+
+  /** Lower the middle standalone arc to pass through elevated-ring centers. */
+  function setRadialFanMiddleStandaloneArcRadius(innerArcRadii, radius) {
+    if (!innerArcRadii || innerArcRadii.length < 3 || radius <= 0) return;
+
+    var addFrameInward =
+      typeof RADIAL_FAN_FRAME_INWARD_ARC !== "undefined"
+        ? RADIAL_FAN_FRAME_INWARD_ARC
+        : true;
+    if (!addFrameInward) return;
+
+    var bounds = getRadialFanMiddleStandaloneArcBounds(innerArcRadii);
+    if (radius <= bounds.minRadius || radius >= bounds.maxRadius) return;
+
+    innerArcRadii[innerArcRadii.length - 1] = radius;
+  }
+
+  /** Middle standalone arc passes through elevated-ring centers (rib-based seat). */
+  function syncRadialFanMiddleStandaloneArcWithElevatedRings(
+    innerArcRadii,
+    endpoints,
+    almostOuterArcRadius
+  ) {
+    if (!innerArcRadii || !endpoints || endpoints.length < 5) return;
+    if (almostOuterArcRadius <= 0) return;
+
+    var outerRibFromEnd =
+      typeof RADIAL_FAN_ELEVATED_RING_OUTER_RIB_FROM_END !== "undefined"
+        ? RADIAL_FAN_ELEVATED_RING_OUTER_RIB_FROM_END
+        : 4;
+    var innerRibFromEnd =
+      typeof RADIAL_FAN_ELEVATED_RING_INNER_RIB_FROM_END !== "undefined"
+        ? RADIAL_FAN_ELEVATED_RING_INNER_RIB_FROM_END
+        : 7;
+    var ribAngles = getRadialFanElevatedRingRibAngles(
+      endpoints,
+      outerRibFromEnd,
+      innerRibFromEnd,
+      true
+    );
+    if (!ribAngles || ribAngles.halfAngleSpan <= 0) return;
+
+    var seat = getRadialFanElevatedRingSeatOnAlmostOuterArc(
+      almostOuterArcRadius,
+      ribAngles.halfAngleSpan
+    );
+    if (seat.centerDist <= 0) return;
+
+    setRadialFanMiddleStandaloneArcRadius(innerArcRadii, seat.centerDist);
+  }
+
+  function getRadialFanMiddleRibIndex(endpoints) {
+    if (!endpoints || endpoints.length < 3) return -1;
+    return Math.floor((endpoints.length - 1) * 0.5);
+  }
+
+  /**
+   * Lower right-angle triangle: curved base on the middle standalone arc,
+   * radial leg on the outer rib, diagonal as the third edge.
+   */
+  function radialFanMiddleRibLowerTriangleFillPath(
+    cx,
+    focalY,
+    innerRadius,
+    innerAtLeftRib,
+    innerAtRightRib,
+    outerAtOuterRib
+  ) {
+    var d = "M " + innerAtLeftRib.x + " " + innerAtLeftRib.y;
+    d = halfCircleAppendFocalArcBetween(
+      d,
+      cx,
+      focalY,
+      innerRadius,
+      innerAtLeftRib,
+      innerAtRightRib
+    );
+    d += " L " + outerAtOuterRib.x + " " + outerAtOuterRib.y;
+    return d + " L " + innerAtLeftRib.x + " " + innerAtLeftRib.y + " Z";
+  }
+
+  /** First cell index of each facing triangle-pair along the middle band. */
+  function getRadialFanMiddleBandFillPairStarts(midIdx, cellCount) {
+    var gapCells =
+      typeof RADIAL_FAN_MIDDLE_BAND_FILL_GAP_CELLS !== "undefined"
+        ? RADIAL_FAN_MIDDLE_BAND_FILL_GAP_CELLS
+        : 1;
+    var pairCells = 2;
+    var step = pairCells + gapCells;
+    var starts = [];
+    var gi;
+
+    if (midIdx - 1 >= 0 && midIdx < cellCount) {
+      starts.push(midIdx - 1);
+    }
+
+    for (gi = midIdx + 1 + gapCells; gi + pairCells - 1 < cellCount; gi += step) {
+      starts.push(gi);
+    }
+
+    for (gi = midIdx - 1 - gapCells - pairCells; gi >= 0; gi -= step) {
+      starts.push(gi);
+    }
+
+    return trimRadialFanMiddleBandPairStarts(starts, midIdx);
+  }
+
+  function trimRadialFanMiddleBandPairStarts(starts, midIdx) {
+    var trimFromStart =
+      typeof RADIAL_FAN_MIDDLE_BAND_TRIM_SECOND_PAIR_FROM_START !== "undefined"
+        ? RADIAL_FAN_MIDDLE_BAND_TRIM_SECOND_PAIR_FROM_START
+        : false;
+    var trimFromEnd =
+      typeof RADIAL_FAN_MIDDLE_BAND_TRIM_SECOND_PAIR_FROM_END !== "undefined"
+        ? RADIAL_FAN_MIDDLE_BAND_TRIM_SECOND_PAIR_FROM_END
+        : false;
+    if (!trimFromStart && !trimFromEnd) return starts;
+
+    var centerStart = midIdx - 1;
+    var left = [];
+    var right = [];
+    var center = [];
+    var i;
+
+    for (i = 0; i < starts.length; i++) {
+      if (starts[i] === centerStart) center.push(starts[i]);
+      else if (starts[i] < centerStart) left.push(starts[i]);
+      else right.push(starts[i]);
+    }
+
+    left.sort(function (a, b) {
+      return a - b;
+    });
+    right.sort(function (a, b) {
+      return a - b;
+    });
+
+    if (trimFromStart && left.length >= 2) {
+      left.splice(1, 1);
+    }
+    if (trimFromEnd && right.length >= 2) {
+      right.splice(right.length - 2, 1);
+    }
+
+    return center.concat(left, right);
+  }
+
+  /** Two lower triangles + diagonals meeting at the shared rib on the middle arc. */
+  function appendRadialFanMiddleBandFacingPair(
+    parentGroup,
+    idPrefix,
+    cx,
+    focalY,
+    innerRadius,
+    outerRadius,
+    endpoints,
+    pairStartCell,
+    fillColor,
+    stroke,
+    strokeWidth
+  ) {
+    var leftCell = pairStartCell;
+    var sharedRib = leftCell + 1;
+    var rightCell = leftCell + 1;
+    if (sharedRib + 1 >= endpoints.length) return;
+
+    var innerAtLeft = halfCirclePolarPoint(
+      cx,
+      focalY,
+      innerRadius,
+      endpoints[leftCell].a
+    );
+    var innerAtShared = halfCirclePolarPoint(
+      cx,
+      focalY,
+      innerRadius,
+      endpoints[sharedRib].a
+    );
+    var innerAtRight = halfCirclePolarPoint(
+      cx,
+      focalY,
+      innerRadius,
+      endpoints[sharedRib + 1].a
+    );
+    var outerAtLeft = halfCirclePolarPoint(
+      cx,
+      focalY,
+      outerRadius,
+      endpoints[leftCell].a
+    );
+    var outerAtRight = halfCirclePolarPoint(
+      cx,
+      focalY,
+      outerRadius,
+      endpoints[sharedRib + 1].a
+    );
+
+    var leftFill = elSvg("path");
+    leftFill.setAttribute(
+      "id",
+      "radial-fan-middle-band-fill-" + idPrefix + "-" + leftCell
+    );
+    leftFill.setAttribute(
+      "d",
+      radialFanMiddleRibLowerTriangleFillPath(
+        cx,
+        focalY,
+        innerRadius,
+        innerAtLeft,
+        innerAtShared,
+        outerAtLeft
+      )
+    );
+    leftFill.setAttribute("fill", fillColor);
+    leftFill.setAttribute("stroke", "none");
+    parentGroup.appendChild(leftFill);
+
+    var rightFill = elSvg("path");
+    rightFill.setAttribute(
+      "id",
+      "radial-fan-middle-band-fill-" + idPrefix + "-" + rightCell
+    );
+    rightFill.setAttribute(
+      "d",
+      radialFanMiddleRibLowerTriangleFillPath(
+        cx,
+        focalY,
+        innerRadius,
+        innerAtShared,
+        innerAtRight,
+        outerAtRight
+      )
+    );
+    rightFill.setAttribute("fill", fillColor);
+    rightFill.setAttribute("stroke", "none");
+    parentGroup.appendChild(rightFill);
+
+    var leftDiag = elSvg("line");
+    leftDiag.setAttribute(
+      "id",
+      "radial-fan-middle-band-diagonal-" + idPrefix + "-" + leftCell
+    );
+    leftDiag.setAttribute("x1", String(outerAtLeft.x));
+    leftDiag.setAttribute("y1", String(outerAtLeft.y));
+    leftDiag.setAttribute("x2", String(innerAtShared.x));
+    leftDiag.setAttribute("y2", String(innerAtShared.y));
+    leftDiag.setAttribute("stroke", stroke);
+    leftDiag.setAttribute("stroke-width", String(strokeWidth));
+    parentGroup.appendChild(leftDiag);
+
+    var rightDiag = elSvg("line");
+    rightDiag.setAttribute(
+      "id",
+      "radial-fan-middle-band-diagonal-" + idPrefix + "-" + rightCell
+    );
+    rightDiag.setAttribute("x1", String(innerAtShared.x));
+    rightDiag.setAttribute("y1", String(innerAtShared.y));
+    rightDiag.setAttribute("x2", String(outerAtRight.x));
+    rightDiag.setAttribute("y2", String(outerAtRight.y));
+    rightDiag.setAttribute("stroke", stroke);
+    rightDiag.setAttribute("stroke-width", String(strokeWidth));
+    parentGroup.appendChild(rightDiag);
+  }
+
+  /**
+   * Lower-triangle fills + diagonals on the band between the middle standalone arc
+   * and the almost-outer arc — center pair plus mirrored pairs every 2+gap cells.
+   */
+  function appendRadialFanMiddleRibAdjacentDiagonals(
+    parentGroup,
+    idPrefix,
+    cx,
+    focalY,
+    innerArcRadii,
+    endpoints,
+    stroke,
+    strokeWidth
+  ) {
+    var frameArcs = getRadialFanFrameArcRadii(innerArcRadii);
+    var innerRadius = frameArcs.middleStandalone;
+    var outerRadius = frameArcs.almostOuter;
+    if (
+      innerRadius <= 0 ||
+      outerRadius <= 0 ||
+      innerRadius >= outerRadius - 0.5 ||
+      !endpoints ||
+      endpoints.length < 4
+    ) {
+      return;
+    }
+
+    var midIdx = getRadialFanMiddleRibIndex(endpoints);
+    var cellCount = endpoints.length - 1;
+    if (midIdx < 1 || midIdx >= cellCount) return;
+
+    var fillColor = sheetColor("D1");
+    var pairStarts = getRadialFanMiddleBandFillPairStarts(midIdx, cellCount);
+    var pi;
+    for (pi = 0; pi < pairStarts.length; pi++) {
+      appendRadialFanMiddleBandFacingPair(
+        parentGroup,
+        idPrefix,
+        cx,
+        focalY,
+        innerRadius,
+        outerRadius,
+        endpoints,
+        pairStarts[pi],
+        fillColor,
+        stroke,
+        strokeWidth
+      );
+    }
   }
 
   /**
@@ -13797,13 +16421,138 @@
     return angles;
   }
 
+  function getRadialFanRibSpanFromIndices(endpoints, outerIdx, innerIdx) {
+    if (
+      !endpoints ||
+      outerIdx < 0 ||
+      innerIdx < 0 ||
+      outerIdx >= endpoints.length ||
+      innerIdx >= endpoints.length
+    ) {
+      return null;
+    }
+
+    var angleHigh = Math.max(endpoints[outerIdx].a, endpoints[innerIdx].a);
+    var angleLow = Math.min(endpoints[outerIdx].a, endpoints[innerIdx].a);
+    return {
+      midAngle: (angleHigh + angleLow) * 0.5,
+      halfAngleSpan: (angleHigh - angleLow) * 0.5,
+    };
+  }
+
+  /** Ring radius for a circle seated on arcRadius with sides tangent to rib rays. */
+  function getRadialFanArcSeatedRingRadius(arcRadius, halfAngleSpan) {
+    var sinBeta = Math.sin(Math.max(0, halfAngleSpan));
+    if (sinBeta >= 1 - 1e-9) return 0;
+    return (arcRadius * sinBeta) / (1 - sinBeta);
+  }
+
+  /**
+   * Base row: all 5 rings each span 5 ribs; rings 2 and 4 flank the center ring.
+   * @returns {{ angles: number[], ringRadius: number } | null}
+   */
+  function getRadialFanBaseRowRingLayout(endpoints, arcRadius, ringCount) {
+    if (!endpoints || endpoints.length < 5 || ringCount !== 5 || arcRadius <= 0) {
+      return null;
+    }
+
+    var midIdx = getRadialFanMiddleRibIndex(endpoints);
+    var endpointCount = endpoints.length;
+    var endOuterFromEnd =
+      typeof RADIAL_FAN_BASE_ROW_END_OUTER_RIB_FROM_END !== "undefined"
+        ? RADIAL_FAN_BASE_ROW_END_OUTER_RIB_FROM_END
+        : 1;
+    var endInnerFromEnd =
+      typeof RADIAL_FAN_BASE_ROW_END_INNER_RIB_FROM_END !== "undefined"
+        ? RADIAL_FAN_BASE_ROW_END_INNER_RIB_FROM_END
+        : 5;
+    var startOuter =
+      typeof RADIAL_FAN_BASE_ROW_START_OUTER_RIB !== "undefined"
+        ? RADIAL_FAN_BASE_ROW_START_OUTER_RIB
+        : 1;
+    var startInner =
+      typeof RADIAL_FAN_BASE_ROW_START_INNER_RIB !== "undefined"
+        ? RADIAL_FAN_BASE_ROW_START_INNER_RIB
+        : 5;
+    var midOffsetOuter =
+      typeof RADIAL_FAN_BASE_ROW_MIDDLE_RIB_OFFSET_OUTER !== "undefined"
+        ? RADIAL_FAN_BASE_ROW_MIDDLE_RIB_OFFSET_OUTER
+        : 2;
+    var midOffsetInner =
+      typeof RADIAL_FAN_BASE_ROW_MIDDLE_RIB_OFFSET_INNER !== "undefined"
+        ? RADIAL_FAN_BASE_ROW_MIDDLE_RIB_OFFSET_INNER
+        : 2;
+    var leftInnerOffsetOuter =
+      typeof RADIAL_FAN_BASE_ROW_LEFT_INNER_RIB_OFFSET_OUTER !== "undefined"
+        ? RADIAL_FAN_BASE_ROW_LEFT_INNER_RIB_OFFSET_OUTER
+        : 6;
+    var leftInnerOffsetInner =
+      typeof RADIAL_FAN_BASE_ROW_LEFT_INNER_RIB_OFFSET_INNER !== "undefined"
+        ? RADIAL_FAN_BASE_ROW_LEFT_INNER_RIB_OFFSET_INNER
+        : 2;
+    var rightInnerOffsetOuter =
+      typeof RADIAL_FAN_BASE_ROW_RIGHT_INNER_RIB_OFFSET_OUTER !== "undefined"
+        ? RADIAL_FAN_BASE_ROW_RIGHT_INNER_RIB_OFFSET_OUTER
+        : 2;
+    var rightInnerOffsetInner =
+      typeof RADIAL_FAN_BASE_ROW_RIGHT_INNER_RIB_OFFSET_INNER !== "undefined"
+        ? RADIAL_FAN_BASE_ROW_RIGHT_INNER_RIB_OFFSET_INNER
+        : 6;
+
+    var spans = [
+      getRadialFanRibSpanFromIndices(endpoints, startOuter, startInner),
+      getRadialFanRibSpanFromIndices(
+        endpoints,
+        midIdx - leftInnerOffsetOuter,
+        midIdx - leftInnerOffsetInner
+      ),
+      getRadialFanRibSpanFromIndices(
+        endpoints,
+        midIdx - midOffsetOuter,
+        midIdx + midOffsetInner
+      ),
+      getRadialFanRibSpanFromIndices(
+        endpoints,
+        midIdx + rightInnerOffsetOuter,
+        midIdx + rightInnerOffsetInner
+      ),
+      getRadialFanRibSpanFromIndices(
+        endpoints,
+        endpointCount - 1 - endOuterFromEnd,
+        endpointCount - 1 - endInnerFromEnd
+      ),
+    ];
+
+    var si;
+    for (si = 0; si < spans.length; si++) {
+      if (!spans[si]) return null;
+    }
+
+    var maxHalfSpan = spans[0].halfAngleSpan;
+    for (si = 1; si < spans.length; si++) {
+      maxHalfSpan = Math.max(maxHalfSpan, spans[si].halfAngleSpan);
+    }
+    var ringRadius = getRadialFanArcSeatedRingRadius(arcRadius, maxHalfSpan);
+    if (ringRadius <= 0) return null;
+
+    var angles = [];
+    for (si = 0; si < spans.length; si++) {
+      angles.push(spans[si].midAngle);
+    }
+
+    return { angles: angles, ringRadius: ringRadius };
+  }
+
   /** @returns {number[]} radii small → large, equal gaps from center to outer */
-  function getRadialFanNestedRingRadii(outerRingRadius, nestedCount) {
+  function getRadialFanNestedRingRadii(outerRingRadius, nestedCount, spacingCount) {
     if (nestedCount < 1 || outerRingRadius <= 0) return [];
-    var gap = outerRingRadius / nestedCount;
+    var fullCount =
+      spacingCount != null && spacingCount >= nestedCount ? spacingCount : nestedCount;
+    var gap = outerRingRadius / fullCount;
+    var startIndex = fullCount - nestedCount + 1;
     var radii = [];
     var ni;
-    for (ni = 1; ni <= nestedCount; ni++) {
+    for (ni = startIndex; ni <= fullCount; ni++) {
       radii.push(gap * ni);
     }
     return radii;
@@ -13857,15 +16606,22 @@
     centerY,
     outerRingRadius,
     stroke,
-    strokeWidth
+    strokeWidth,
+    nestedCountOverride
   ) {
     if (outerRingRadius <= 0) return;
 
-    var nestedCount =
+    var spacingCount =
       typeof RADIAL_FAN_THIRD_ARC_NESTED_RING_COUNT !== "undefined"
         ? RADIAL_FAN_THIRD_ARC_NESTED_RING_COUNT
         : 3;
-    var nestedRadii = getRadialFanNestedRingRadii(outerRingRadius, nestedCount);
+    var nestedCount =
+      nestedCountOverride != null ? nestedCountOverride : spacingCount;
+    var nestedRadii = getRadialFanNestedRingRadii(
+      outerRingRadius,
+      nestedCount,
+      spacingCount
+    );
     var sliceCount =
       typeof RADIAL_FAN_THIRD_ARC_RING_SLICE_COUNT !== "undefined"
         ? RADIAL_FAN_THIRD_ARC_RING_SLICE_COUNT
@@ -13902,60 +16658,59 @@
     parentGroup.appendChild(nestGroup);
   }
 
+  /** Angular placement for an elevated ring bounded by two fan ribs (counted from an end). */
+  function getRadialFanElevatedRingRibAngles(endpoints, outerRibFromEnd, innerRibFromEnd, fromLeftEnd) {
+    if (!endpoints || endpoints.length < 3) return null;
+
+    var endpointCount = endpoints.length;
+    var outerIdx = fromLeftEnd
+      ? outerRibFromEnd
+      : endpointCount - 1 - outerRibFromEnd;
+    var innerIdx = fromLeftEnd
+      ? innerRibFromEnd
+      : endpointCount - 1 - innerRibFromEnd;
+
+    if (
+      outerIdx < 0 ||
+      innerIdx < 0 ||
+      outerIdx >= endpointCount ||
+      innerIdx >= endpointCount
+    ) {
+      return null;
+    }
+
+    var angleHigh = Math.max(endpoints[outerIdx].a, endpoints[innerIdx].a);
+    var angleLow = Math.min(endpoints[outerIdx].a, endpoints[innerIdx].a);
+    return {
+      midAngle: (angleHigh + angleLow) * 0.5,
+      halfAngleSpan: (angleHigh - angleLow) * 0.5,
+    };
+  }
+
+  /** Outer radius so circle edges meet the bounding rib rays from the focal center. */
+  function getRadialFanElevatedRingOuterRadius(centerDist, halfAngleSpan) {
+    return centerDist * Math.sin(Math.max(0, halfAngleSpan));
+  }
+
   /**
-   * Radial distance for an elevated ring: outer edge stays at least gapPx away
-   * from each adjacent base ring (prevents circle overlap).
+   * Elevated ring sized by rib span; outer top edge on the almost-outer arc.
+   * centerDist + outerRadius === almostOuterArcRadius along the ring bisector.
    */
-  function getRadialFanElevatedCenterDist(
-    cx,
-    focalY,
-    arcRadius,
-    baseRingRadius,
-    midAngle,
-    elevatedRadius,
-    adjacentIndices,
-    ringAngles,
-    gapPx
+  function getRadialFanElevatedRingSeatOnAlmostOuterArc(
+    almostOuterArcRadius,
+    halfAngleSpan
   ) {
-    if (!adjacentIndices || !adjacentIndices.length) {
-      return arcRadius + 2 * baseRingRadius + gapPx + elevatedRadius;
+    if (almostOuterArcRadius <= 0) {
+      return { centerDist: 0, elevatedRadius: 0 };
     }
 
-    var baseCenterDist = arcRadius + baseRingRadius;
-    var lo = arcRadius + 2 * baseRingRadius;
-    var hi = arcRadius + 2 * baseRingRadius + gapPx + elevatedRadius + 120;
-    var iter;
-    var mid;
-    var ai;
-    var elevCenter;
-    var minEdgeGap;
-
-    for (iter = 0; iter < 48; iter++) {
-      mid = (lo + hi) * 0.5;
-      elevCenter = halfCirclePolarPoint(cx, focalY, mid, midAngle);
-      minEdgeGap = Infinity;
-
-      for (ai = 0; ai < adjacentIndices.length; ai++) {
-        var adjIdx = adjacentIndices[ai];
-        if (adjIdx < 0 || adjIdx >= ringAngles.length) continue;
-        var baseCenter = halfCirclePolarPoint(
-          cx,
-          focalY,
-          baseCenterDist,
-          ringAngles[adjIdx]
-        );
-        var dx = elevCenter.x - baseCenter.x;
-        var dy = elevCenter.y - baseCenter.y;
-        var centerGap = Math.sqrt(dx * dx + dy * dy);
-        var edgeGap = centerGap - baseRingRadius - elevatedRadius;
-        if (edgeGap < minEdgeGap) minEdgeGap = edgeGap;
-      }
-
-      if (minEdgeGap >= gapPx) hi = mid;
-      else lo = mid;
-    }
-
-    return hi;
+    var sinBeta = Math.sin(Math.max(0, halfAngleSpan));
+    var centerDist = almostOuterArcRadius / (1 + sinBeta);
+    var elevatedRadius = getRadialFanElevatedRingOuterRadius(
+      centerDist,
+      halfAngleSpan
+    );
+    return { centerDist: centerDist, elevatedRadius: elevatedRadius };
   }
 
   function appendRadialFanElevatedRings(
@@ -13963,59 +16718,135 @@
     idPrefix,
     cx,
     focalY,
-    arcRadius,
-    baseRingRadius,
+    almostOuterArcRadius,
     ringAngles,
+    endpoints,
     stroke,
     strokeWidth
   ) {
-    if (!ringAngles || ringAngles.length < 5 || baseRingRadius <= 0) return;
+    if (
+      !ringAngles ||
+      ringAngles.length < 5 ||
+      almostOuterArcRadius <= 0 ||
+      !endpoints
+    ) {
+      return;
+    }
 
-    var scale =
-      typeof RADIAL_FAN_ELEVATED_RING_SCALE !== "undefined"
-        ? RADIAL_FAN_ELEVATED_RING_SCALE
-        : 1.2;
-    var gapPx =
-      typeof RADIAL_FAN_ELEVATED_RING_GAP_PX !== "undefined"
-        ? RADIAL_FAN_ELEVATED_RING_GAP_PX
-        : 8;
-    var elevatedRadius = baseRingRadius * scale;
-    var pairSpecs = [
-      { leftIdx: 0, rightIdx: 1, adjacentIndices: [0, 1] },
-      { leftIdx: 3, rightIdx: 4, adjacentIndices: [3, 4] },
+    var outerRibFromEnd =
+      typeof RADIAL_FAN_ELEVATED_RING_OUTER_RIB_FROM_END !== "undefined"
+        ? RADIAL_FAN_ELEVATED_RING_OUTER_RIB_FROM_END
+        : 4;
+    var innerRibFromEnd =
+      typeof RADIAL_FAN_ELEVATED_RING_INNER_RIB_FROM_END !== "undefined"
+        ? RADIAL_FAN_ELEVATED_RING_INNER_RIB_FROM_END
+        : 7;
+    var elevatedSpecs = [
+      {
+        fromLeftEnd: true,
+      },
+      {
+        fromLeftEnd: false,
+      },
     ];
     var pi;
 
-    for (pi = 0; pi < pairSpecs.length; pi++) {
-      var leftIdx = pairSpecs[pi].leftIdx;
-      var rightIdx = pairSpecs[pi].rightIdx;
-      var adjacentIndices = pairSpecs[pi].adjacentIndices;
-      if (rightIdx >= ringAngles.length) continue;
+    for (pi = 0; pi < elevatedSpecs.length; pi++) {
+      var spec = elevatedSpecs[pi];
+      var ribAngles = getRadialFanElevatedRingRibAngles(
+        endpoints,
+        outerRibFromEnd,
+        innerRibFromEnd,
+        spec.fromLeftEnd
+      );
+      if (!ribAngles || ribAngles.halfAngleSpan <= 0) continue;
 
-      var midAngle = (ringAngles[leftIdx] + ringAngles[rightIdx]) * 0.5;
-      var centerDist = getRadialFanElevatedCenterDist(
+      var seat = getRadialFanElevatedRingSeatOnAlmostOuterArc(
+        almostOuterArcRadius,
+        ribAngles.halfAngleSpan
+      );
+      if (seat.elevatedRadius <= 0 || seat.centerDist <= 0) continue;
+
+      var center = halfCirclePolarPoint(
         cx,
         focalY,
-        arcRadius,
-        baseRingRadius,
-        midAngle,
-        elevatedRadius,
-        adjacentIndices,
-        ringAngles,
-        gapPx
+        seat.centerDist,
+        ribAngles.midAngle
       );
-      var center = halfCirclePolarPoint(cx, focalY, centerDist, midAngle);
+      var elevatedNestedCount =
+        typeof RADIAL_FAN_ELEVATED_NESTED_RING_COUNT !== "undefined"
+          ? RADIAL_FAN_ELEVATED_NESTED_RING_COUNT
+          : 2;
       appendRadialFanRingSet(
         parentGroup,
         idPrefix,
         "elevated-" + pi,
         center.x,
         center.y,
-        elevatedRadius,
+        seat.elevatedRadius,
         stroke,
-        strokeWidth
+        strokeWidth,
+        elevatedNestedCount
       );
     }
+  }
+
+  /** Center of the middle ring set on the 3rd inner arc (used by base diagonals). */
+  function getRadialFanMiddleThirdArcRingCenter(
+    cx,
+    focalY,
+    innerArcRadii,
+    startAngle,
+    endAngle,
+    endpoints
+  ) {
+    var thirdArcIndex =
+      typeof RADIAL_FAN_THIRD_ARC_RING_ARC_INDEX !== "undefined"
+        ? RADIAL_FAN_THIRD_ARC_RING_ARC_INDEX
+        : 2;
+    if (!innerArcRadii || innerArcRadii.length <= thirdArcIndex) return null;
+
+    var arcRadius = innerArcRadii[thirdArcIndex];
+    var ringCount =
+      typeof RADIAL_FAN_THIRD_ARC_RING_COUNT !== "undefined"
+        ? RADIAL_FAN_THIRD_ARC_RING_COUNT
+        : 5;
+    var fallbackRadius =
+      typeof RADIAL_FAN_THIRD_ARC_RING_RADIUS !== "undefined"
+        ? RADIAL_FAN_THIRD_ARC_RING_RADIUS
+        : 44;
+    if (ringCount < 1 || fallbackRadius <= 0) return null;
+
+    var baseLayout =
+      endpoints && endpoints.length >= 5
+        ? getRadialFanBaseRowRingLayout(endpoints, arcRadius, ringCount)
+        : null;
+    var ringAngles;
+    var ringRadius;
+
+    if (baseLayout) {
+      ringAngles = baseLayout.angles;
+      ringRadius = baseLayout.ringRadius;
+    } else {
+      ringAngles = getRadialFanThirdArcRingAngles(
+        arcRadius,
+        fallbackRadius,
+        startAngle,
+        endAngle,
+        ringCount
+      );
+      ringRadius = fallbackRadius;
+    }
+
+    if (!ringAngles.length) return null;
+
+    var middleIndex = Math.floor((ringAngles.length - 1) * 0.5);
+    return halfCirclePolarPoint(
+      cx,
+      focalY,
+      arcRadius + ringRadius,
+      ringAngles[middleIndex]
+    );
   }
 
   function appendRadialFanThirdArcRings(
@@ -14028,24 +16859,42 @@
     endAngle,
     ringCount,
     ringRadius,
+    endpoints,
+    almostOuterArcRadius,
     stroke,
     strokeWidth
   ) {
-    if (ringCount < 1 || ringRadius <= 0) return;
+    if (ringCount < 1) return;
 
-    var ringAngles = getRadialFanThirdArcRingAngles(
-      arcRadius,
-      ringRadius,
-      startAngle,
-      endAngle,
-      ringCount
-    );
+    var baseLayout =
+      endpoints && endpoints.length >= 5
+        ? getRadialFanBaseRowRingLayout(endpoints, arcRadius, ringCount)
+        : null;
+    var ringAngles;
+    var effectiveRingRadius;
+
+    if (baseLayout && baseLayout.ringRadius > 0) {
+      ringAngles = baseLayout.angles;
+      effectiveRingRadius = baseLayout.ringRadius;
+    } else if (ringRadius > 0) {
+      ringAngles = getRadialFanThirdArcRingAngles(
+        arcRadius,
+        ringRadius,
+        startAngle,
+        endAngle,
+        ringCount
+      );
+      effectiveRingRadius = ringRadius;
+    } else {
+      return;
+    }
+
     var ri;
     for (ri = 0; ri < ringAngles.length; ri++) {
       var center = halfCirclePolarPoint(
         cx,
         focalY,
-        arcRadius + ringRadius,
+        arcRadius + effectiveRingRadius,
         ringAngles[ri]
       );
       appendRadialFanRingSet(
@@ -14054,7 +16903,7 @@
         String(ri),
         center.x,
         center.y,
-        ringRadius,
+        effectiveRingRadius,
         stroke,
         strokeWidth
       );
@@ -14065,12 +16914,162 @@
       idPrefix,
       cx,
       focalY,
-      arcRadius,
-      ringRadius,
+      almostOuterArcRadius,
       ringAngles,
+      endpoints,
       stroke,
       strokeWidth
     );
+  }
+
+  /** Intersection of segments (ax,ay)-(bx,by) and (cx,cy)-(dx,dy), or null if parallel. */
+  function segmentLinesIntersectPoint(ax, ay, bx, by, cx, cy, dx, dy) {
+    var denom = (ax - bx) * (cy - dy) - (ay - by) * (cx - dx);
+    if (Math.abs(denom) < 1e-9) return null;
+    var t =
+      ((ax - cx) * (cy - dy) - (ay - cy) * (cx - dx)) / denom;
+    return {
+      x: ax + t * (bx - ax),
+      y: ay + t * (by - ay),
+    };
+  }
+
+  /**
+   * Top or bottom triangle inside one inner-arc-band X cell
+   * (curved edge on inner or outer arc, other two edges meet at the X center).
+   */
+  function radialFanInnerArcBandHorizontalTrianglePath(
+    cx,
+    focalY,
+    innerRadius,
+    outerRadius,
+    leftAngle,
+    rightAngle,
+    which
+  ) {
+    var pointA = halfCirclePolarPoint(cx, focalY, innerRadius, leftAngle);
+    var pointB = halfCirclePolarPoint(cx, focalY, innerRadius, rightAngle);
+    var pointC = halfCirclePolarPoint(cx, focalY, outerRadius, rightAngle);
+    var pointD = halfCirclePolarPoint(cx, focalY, outerRadius, leftAngle);
+    var mid = segmentLinesIntersectPoint(
+      pointA.x,
+      pointA.y,
+      pointC.x,
+      pointC.y,
+      pointB.x,
+      pointB.y,
+      pointD.x,
+      pointD.y
+    );
+    if (!mid) return null;
+
+    // Use endpoint angles (not atan2 from points) so the left fan-edge cell
+    // does not wrap PI/-PI into a near-full-circle arc.
+    if (which === "top") {
+      return (
+        halfCircleFocalArcPath(
+          cx,
+          focalY,
+          innerRadius,
+          leftAngle,
+          rightAngle
+        ) +
+        " L " +
+        mid.x +
+        " " +
+        mid.y +
+        " Z"
+      );
+    }
+
+    return (
+      halfCircleFocalArcPath(
+        cx,
+        focalY,
+        outerRadius,
+        leftAngle,
+        rightAngle
+      ) +
+      " L " +
+      mid.x +
+      " " +
+      mid.y +
+      " Z"
+    );
+  }
+
+  /** Fill the two horizontal triangles (inner-arc + outer-arc) in each X cell. */
+  function appendRadialFanInnerArcBandHorizontalTriangleFills(
+    parentGroup,
+    idPrefix,
+    bandSuffix,
+    cx,
+    focalY,
+    innerRadius,
+    outerRadius,
+    endpoints,
+    fillColor
+  ) {
+    if (!endpoints || endpoints.length < 2) return;
+    if (innerRadius <= 0 || outerRadius <= innerRadius + 0.5) return;
+
+    var gi;
+    for (gi = 0; gi < endpoints.length - 1; gi++) {
+      var leftAngle = endpoints[gi].a;
+      var rightAngle = endpoints[gi + 1].a;
+      var topPath = radialFanInnerArcBandHorizontalTrianglePath(
+        cx,
+        focalY,
+        innerRadius,
+        outerRadius,
+        leftAngle,
+        rightAngle,
+        "top"
+      );
+      var bottomPath = radialFanInnerArcBandHorizontalTrianglePath(
+        cx,
+        focalY,
+        innerRadius,
+        outerRadius,
+        leftAngle,
+        rightAngle,
+        "bottom"
+      );
+
+      if (topPath) {
+        var topFill = elSvg("path");
+        topFill.setAttribute(
+          "id",
+          "radial-fan-arc-band-h-fill-top-" +
+            idPrefix +
+            "-" +
+            bandSuffix +
+            "-" +
+            gi
+        );
+        topFill.setAttribute("d", topPath);
+        topFill.setAttribute("fill", fillColor);
+        topFill.setAttribute("stroke", "none");
+        parentGroup.appendChild(topFill);
+      }
+
+      if (bottomPath) {
+        var bottomFill = elSvg("path");
+        bottomFill.setAttribute(
+          "id",
+          "radial-fan-arc-band-h-fill-bottom-" +
+            idPrefix +
+            "-" +
+            bandSuffix +
+            "-" +
+            gi
+        );
+        bottomFill.setAttribute("d", bottomPath);
+        bottomFill.setAttribute("fill", fillColor);
+        bottomFill.setAttribute("stroke", "none");
+        parentGroup.appendChild(bottomFill);
+      }
+    }
   }
 
   function appendRadialFanInnerArcBandXMarks(
@@ -14147,7 +17146,7 @@
    * Mirrored pair on 6th inner arc: start corner fixed at 2nd rib cell edge,
    * outer end at 3rd rib from each side.
    */
-  /** Left base corner → outer arc at the Nth rib from the fan end (right side). */
+  /** Left base corner → outer arc, passing through the middle third-arc ring center. */
   function appendRadialFanBaseLeftDiagonal(
     parentGroup,
     idPrefix,
@@ -14155,18 +17154,25 @@
     focalY,
     fanRadius,
     endpoints,
+    ringCenter,
     stroke,
     strokeWidth
   ) {
-    var ribFromEnd =
-      typeof RADIAL_FAN_BASE_LEFT_DIAGONAL_END_RIB_FROM_END !== "undefined"
-        ? RADIAL_FAN_BASE_LEFT_DIAGONAL_END_RIB_FROM_END
-        : 9;
-    if (!endpoints || endpoints.length < ribFromEnd + 1) return;
+    if (!endpoints || !endpoints.length || !ringCenter) return;
 
-    var startPoint = endpoints[0];
-    var endAngle = endpoints[endpoints.length - ribFromEnd].a;
-    var endPoint = halfCirclePolarPoint(cx, focalY, fanRadius, endAngle);
+    var trim = getFanEndSectorTrimCount();
+    var startPoint = endpoints[trim > 0 ? trim : 0];
+    var endPoint = halfCircleRayCircleHitBeyond(
+      cx,
+      focalY,
+      fanRadius,
+      startPoint.x,
+      startPoint.y,
+      ringCenter.x,
+      ringCenter.y
+    );
+    if (!endPoint) return;
+
     var diagonal = elSvg("line");
     diagonal.setAttribute("id", "radial-fan-base-left-diagonal-" + idPrefix);
     diagonal.setAttribute("x1", String(startPoint.x));
@@ -14178,7 +17184,7 @@
     parentGroup.appendChild(diagonal);
   }
 
-  /** Right base corner → outer arc at the Nth rib from the fan start (left side). */
+  /** Right base corner → outer arc, passing through the middle third-arc ring center. */
   function appendRadialFanBaseRightDiagonal(
     parentGroup,
     idPrefix,
@@ -14186,18 +17192,26 @@
     focalY,
     fanRadius,
     endpoints,
+    ringCenter,
     stroke,
     strokeWidth
   ) {
-    var ribFromStart =
-      typeof RADIAL_FAN_BASE_RIGHT_DIAGONAL_END_RIB_FROM_START !== "undefined"
-        ? RADIAL_FAN_BASE_RIGHT_DIAGONAL_END_RIB_FROM_START
-        : 9;
-    if (!endpoints || endpoints.length < ribFromStart) return;
+    if (!endpoints || !endpoints.length || !ringCenter) return;
 
-    var startPoint = endpoints[endpoints.length - 1];
-    var endAngle = endpoints[ribFromStart - 1].a;
-    var endPoint = halfCirclePolarPoint(cx, focalY, fanRadius, endAngle);
+    var trim = getFanEndSectorTrimCount();
+    var startPoint =
+      endpoints[trim > 0 ? endpoints.length - 1 - trim : endpoints.length - 1];
+    var endPoint = halfCircleRayCircleHitBeyond(
+      cx,
+      focalY,
+      fanRadius,
+      startPoint.x,
+      startPoint.y,
+      ringCenter.x,
+      ringCenter.y
+    );
+    if (!endPoint) return;
+
     var diagonal = elSvg("line");
     diagonal.setAttribute("id", "radial-fan-base-right-diagonal-" + idPrefix);
     diagonal.setAttribute("x1", String(startPoint.x));
@@ -14297,6 +17311,51 @@
     return clipId;
   }
 
+  function isRadialFanDrawBoundaryAngle(angle, drawAngles) {
+    return (
+      Math.abs(angle - drawAngles.startAngle) < 1e-9 ||
+      Math.abs(angle - drawAngles.endAngle) < 1e-9
+    );
+  }
+
+  /** Left/right sector boundary ribs — drawn outside the clip so stroke is not halved. */
+  function appendRadialFanBoundaryRibs(
+    parentGroup,
+    idPrefix,
+    cx,
+    focalY,
+    outerArcRadius,
+    drawAngles,
+    stroke,
+    strokeWidth
+  ) {
+    var sides = [
+      { side: "left", angle: drawAngles.startAngle },
+      { side: "right", angle: drawAngles.endAngle },
+    ];
+    var si;
+    for (si = 0; si < sides.length; si++) {
+      var ribEnd = halfCirclePolarPoint(
+        cx,
+        focalY,
+        outerArcRadius,
+        sides[si].angle
+      );
+      var rib = elSvg("line");
+      rib.setAttribute(
+        "id",
+        "radial-fan-boundary-rib-" + idPrefix + "-" + sides[si].side
+      );
+      rib.setAttribute("x1", String(cx));
+      rib.setAttribute("y1", String(focalY));
+      rib.setAttribute("x2", String(ribEnd.x));
+      rib.setAttribute("y2", String(ribEnd.y));
+      rib.setAttribute("stroke", stroke);
+      rib.setAttribute("stroke-width", String(strokeWidth));
+      parentGroup.appendChild(rib);
+    }
+  }
+
   function appendRadialBaseFan(
     parentGroup,
     idPrefix,
@@ -14308,31 +17367,28 @@
     anchor
   ) {
     var radialRibs = getRadialFanRibCount();
-    var layout = buildHalfCircleVisibleFanLayout(
+    var fanLayouts = buildHalfCircleFanClipAndFullLayouts(
       cx,
       focalY,
       r,
       radialRibs,
       visiblePetals,
-      anchor || "left"
+      anchor
     );
-    var endpoints = layout.endpoints;
-    if (!endpoints.length) return;
+    if (!fanLayouts.clipLayout.endpoints.length) return;
 
-    var sectorPath = halfCircleSectorPath(
+    var endpoints = fanLayouts.fullLayout.endpoints;
+    var drawAngles = fanLayouts.fullDrawAngles;
+    var fullLayout = fanLayouts.fullLayout;
+    var fullDrawAngles = fanLayouts.fullDrawAngles;
+    var outerArcRadius = r * getRadialFanOuterArcScale();
+    var sectorPath = halfCircleRadialFanSectorPath(
       cx,
       focalY,
       r,
-      layout.startAngle,
-      layout.endAngle
-    );
-    var fullLayout = buildHalfCircleVisibleFanLayout(
-      cx,
-      focalY,
-      r,
-      radialRibs,
-      radialRibs - 1,
-      anchor || "left"
+      outerArcRadius,
+      fanLayouts.clipDrawAngles.startAngle,
+      fanLayouts.clipDrawAngles.endAngle
     );
 
     if (idPrefix === "top" && designSvg) {
@@ -14362,28 +17418,40 @@
     bgFill.setAttribute("stroke", "none");
     parentGroup.appendChild(bgFill);
 
-    var baseLine = elSvg("line");
-    baseLine.setAttribute("id", "radial-fan-base-" + idPrefix);
-    baseLine.setAttribute("x1", String(endpoints[0].x));
-    baseLine.setAttribute("y1", String(endpoints[0].y));
-    baseLine.setAttribute("x2", String(endpoints[endpoints.length - 1].x));
-    baseLine.setAttribute("y2", String(endpoints[endpoints.length - 1].y));
-    baseLine.setAttribute("stroke", fanStroke);
-    baseLine.setAttribute("stroke-width", String(strokeWidth));
-    parentGroup.appendChild(baseLine);
+    var sectorClipId = appendRadialFanSectorClipPath(
+      parentGroup,
+      idPrefix,
+      sectorPath
+    );
+    var strokesGroup = elSvg("g");
+    strokesGroup.setAttribute("id", "radial-fan-strokes-" + idPrefix);
+    strokesGroup.setAttribute("clip-path", "url(#" + sectorClipId + ")");
+    parentGroup.appendChild(strokesGroup);
 
     var arcFrame = elSvg("path");
     arcFrame.setAttribute("id", "radial-fan-arc-" + idPrefix);
     arcFrame.setAttribute(
       "d",
-      halfCircleFocalArcPath(cx, focalY, r, layout.startAngle, layout.endAngle)
+      halfCircleFocalArcPath(
+        cx,
+        focalY,
+        outerArcRadius,
+        drawAngles.startAngle,
+        drawAngles.endAngle
+      )
     );
     arcFrame.setAttribute("fill", "none");
     arcFrame.setAttribute("stroke", fanStroke);
     arcFrame.setAttribute("stroke-width", String(strokeWidth));
-    parentGroup.appendChild(arcFrame);
+    strokesGroup.appendChild(arcFrame);
 
-    var innerArcRadii = getRadialFanEvenInnerArcRadii(idPrefix, r);
+    var innerArcRadii = getRadialFanEvenInnerArcRadii(idPrefix, outerArcRadius);
+    var frameArcsForSync = getRadialFanFrameArcRadii(innerArcRadii);
+    syncRadialFanMiddleStandaloneArcWithElevatedRings(
+      innerArcRadii,
+      fullLayout.endpoints,
+      frameArcsForSync.almostOuter
+    );
     var innerArcsGroup = elSvg("g");
     innerArcsGroup.setAttribute("id", "radial-fan-inner-arcs-" + idPrefix);
     var ai;
@@ -14394,64 +17462,110 @@
         cx,
         focalY,
         innerArcRadii[ai],
-        layout.startAngle,
-        layout.endAngle,
+        drawAngles.startAngle,
+        drawAngles.endAngle,
         fanStroke,
         strokeWidth
       );
     }
-    parentGroup.appendChild(innerArcsGroup);
+    strokesGroup.appendChild(innerArcsGroup);
 
     var ribsGroup = elSvg("g");
     ribsGroup.setAttribute("id", "radial-fan-ribs-" + idPrefix);
     var i;
     for (i = 0; i < endpoints.length; i++) {
+      var ribEnd = halfCirclePolarPoint(
+        cx,
+        focalY,
+        outerArcRadius,
+        endpoints[i].a
+      );
       var rib = elSvg("line");
       rib.setAttribute("x1", String(cx));
       rib.setAttribute("y1", String(focalY));
-      rib.setAttribute("x2", String(endpoints[i].x));
-      rib.setAttribute("y2", String(endpoints[i].y));
+      rib.setAttribute("x2", String(ribEnd.x));
+      rib.setAttribute("y2", String(ribEnd.y));
       rib.setAttribute("stroke", fanStroke);
       rib.setAttribute("stroke-width", String(strokeWidth));
       ribsGroup.appendChild(rib);
     }
-    parentGroup.appendChild(ribsGroup);
+    strokesGroup.appendChild(ribsGroup);
 
     appendRadialFanSixthArcDiagonals(
-      parentGroup,
+      strokesGroup,
       idPrefix,
       cx,
       focalY,
-      r,
+      outerArcRadius,
       innerArcRadii,
       endpoints,
       fanStroke,
       strokeWidth
     );
 
-    appendRadialFanBaseLeftDiagonal(
-      parentGroup,
+    appendRadialFanMiddleRibAdjacentDiagonals(
+      strokesGroup,
       idPrefix,
       cx,
       focalY,
-      r,
+      innerArcRadii,
       endpoints,
+      fanStroke,
+      strokeWidth
+    );
+
+    var middleRingCenter = getRadialFanMiddleThirdArcRingCenter(
+      cx,
+      focalY,
+      innerArcRadii,
+      fullDrawAngles.startAngle,
+      fullDrawAngles.endAngle,
+      fullLayout.endpoints
+    );
+
+    appendRadialFanBaseLeftDiagonal(
+      strokesGroup,
+      idPrefix,
+      cx,
+      focalY,
+      outerArcRadius,
+      endpoints,
+      middleRingCenter,
       fanStroke,
       strokeWidth
     );
 
     appendRadialFanBaseRightDiagonal(
-      parentGroup,
+      strokesGroup,
       idPrefix,
       cx,
       focalY,
-      r,
+      outerArcRadius,
       endpoints,
+      middleRingCenter,
       fanStroke,
       strokeWidth
     );
 
     if (innerArcRadii.length >= 2) {
+      var innerBandFillsGroup = elSvg("g");
+      innerBandFillsGroup.setAttribute(
+        "id",
+        "radial-fan-inner-band-horizontal-fills-" + idPrefix
+      );
+      appendRadialFanInnerArcBandHorizontalTriangleFills(
+        innerBandFillsGroup,
+        idPrefix,
+        "inner",
+        cx,
+        focalY,
+        innerArcRadii[0],
+        innerArcRadii[1],
+        endpoints,
+        fanStroke
+      );
+      strokesGroup.insertBefore(innerBandFillsGroup, strokesGroup.firstChild);
+
       var xMarksGroup = elSvg("g");
       xMarksGroup.setAttribute("id", "radial-fan-inner-arc-x-marks-" + idPrefix);
       appendRadialFanInnerArcBandXMarks(
@@ -14464,7 +17578,50 @@
         fanStroke,
         strokeWidth
       );
-      parentGroup.appendChild(xMarksGroup);
+      strokesGroup.appendChild(xMarksGroup);
+    }
+
+    if (innerArcRadii.length >= 1) {
+      var frameAdjacentRadius = Math.max.apply(null, innerArcRadii);
+      if (frameAdjacentRadius < outerArcRadius - 0.5) {
+        var outerBandFillsGroup = elSvg("g");
+        outerBandFillsGroup.setAttribute(
+          "id",
+          "radial-fan-outer-band-horizontal-fills-" + idPrefix
+        );
+        appendRadialFanInnerArcBandHorizontalTriangleFills(
+          outerBandFillsGroup,
+          idPrefix,
+          "outer",
+          cx,
+          focalY,
+          frameAdjacentRadius,
+          outerArcRadius,
+          endpoints,
+          fanStroke
+        );
+        strokesGroup.insertBefore(
+          outerBandFillsGroup,
+          strokesGroup.firstChild
+        );
+
+        var outerXMarksGroup = elSvg("g");
+        outerXMarksGroup.setAttribute(
+          "id",
+          "radial-fan-outer-arc-x-marks-" + idPrefix
+        );
+        appendRadialFanInnerArcBandXMarks(
+          outerXMarksGroup,
+          cx,
+          focalY,
+          frameAdjacentRadius,
+          outerArcRadius,
+          endpoints,
+          fanStroke,
+          strokeWidth
+        );
+        strokesGroup.appendChild(outerXMarksGroup);
+      }
     }
 
     var thirdArcIndex =
@@ -14482,26 +17639,23 @@
           : 20;
       var ringsGroup = elSvg("g");
       ringsGroup.setAttribute("id", "radial-fan-third-arc-rings-" + idPrefix);
-      var ringsClipId = appendRadialFanSectorClipPath(
-        parentGroup,
-        idPrefix,
-        sectorPath
-      );
-      ringsGroup.setAttribute("clip-path", "url(#" + ringsClipId + ")");
+      var frameArcs = getRadialFanFrameArcRadii(innerArcRadii);
       appendRadialFanThirdArcRings(
         ringsGroup,
         idPrefix,
         cx,
         focalY,
         innerArcRadii[thirdArcIndex],
-        fullLayout.startAngle,
-        fullLayout.endAngle,
+        fullDrawAngles.startAngle,
+        fullDrawAngles.endAngle,
         ringCount,
         ringRadius,
+        fullLayout.endpoints,
+        frameArcs.almostOuter,
         fanStroke,
         strokeWidth
       );
-      parentGroup.appendChild(ringsGroup);
+      strokesGroup.appendChild(ringsGroup);
     }
   }
 
@@ -14675,9 +17829,15 @@
     renderDiamondFillsLayer();
     renderHollowDiamondFillsLayer();
     while (patternLayer.firstChild) patternLayer.removeChild(patternLayer.firstChild);
-    patternLayer.appendChild(
-      segmentsToGroup(getVisibleSegments(cachedAllSegments))
-    );
+    patternLayer.appendChild(segmentsToGroup(getVisiblePatternSegments()));
+    if (isCirclesGrid()) {
+      var intactStructuralCircles = getIntactStructuralCirclesForPattern();
+      if (intactStructuralCircles.length) {
+        patternLayer.appendChild(
+          structuralCirclesToGroup(intactStructuralCircles)
+        );
+      }
+    }
     var helplessnessMarks = getActiveHelplessnessMarks();
     if (helplessnessMarks.length) {
       patternLayer.appendChild(helplessnessToGroup(helplessnessMarks));
@@ -14715,6 +17875,129 @@
     var strengthDensityOut = document.getElementById("strength-density-out");
     if (strengthDensityOut) {
       strengthDensityOut.textContent = String(getStrengthDensity()) + "%";
+    }
+  }
+
+  function renderCirclesGrid() {
+    applyOctagonGridLayerVisibility();
+    updateInnerContentTransformForGridType();
+
+    var innerScale = getInnerScale();
+    var outInner = document.getElementById("inner-scale-out");
+    if (outInner) outInner.textContent = String(innerScale);
+
+    var layout = CirclesGridGeometry.computeLayout(
+      lastOctagonsN,
+      CANVAS_W,
+      CANVAS_H
+    );
+    var info = document.getElementById("tile-info");
+    if (info) {
+      info.textContent =
+        "Cell " +
+        Math.round(layout.tileSize * 100) / 100 +
+        " px · " +
+        (lastOctagonsN + 1) +
+        " across · " +
+        (layout.m + 1) +
+        " down (circles grid)";
+    }
+
+    var layoutSig = buildCircleLayoutSignature();
+    syncSadnessCircleLayoutOnSignatureChange();
+    if (layoutSig !== lastLongingCircleLayoutSignature) {
+      lastLongingCircleLayoutSignature = layoutSig;
+      syncLongingCircleSelection(true);
+    }
+    if (layoutSig !== lastGriefCircleLayoutSignature) {
+      lastGriefCircleLayoutSignature = layoutSig;
+      syncGriefCircleSelection(true);
+    }
+    syncStrengthCircleLayoutOnSignatureChange(layoutSig);
+    var helplessnessSig = buildHelplessnessLayoutSignature();
+    if (helplessnessSig !== lastHelplessnessLayoutSignature) {
+      lastHelplessnessLayoutSignature = helplessnessSig;
+      syncHelplessnessSelection(true);
+    }
+
+    var diamondSig = buildDiamondLayoutSignature();
+    if (diamondSig !== lastDiamondLayoutSignature) {
+      lastDiamondLayoutSignature = diamondSig;
+      syncDiamondFill(false);
+      syncGuiltShameDiamondFill(false);
+      syncAngerTriangleSelection(false);
+    }
+
+    var densityOut = document.getElementById("circle-density-out");
+    if (densityOut) densityOut.textContent = String(getCircleDensity()) + "%";
+
+    var longingDensityOut = document.getElementById("longing-circle-density-out");
+    if (longingDensityOut) {
+      longingDensityOut.textContent = String(getLongingCircleDensity()) + "%";
+    }
+
+    var griefDensityOut = document.getElementById("grief-circle-density-out");
+    if (griefDensityOut) {
+      griefDensityOut.textContent = String(getGriefCircleDensity()) + "%";
+    }
+    updateStrengthDensityOutput();
+
+    var helplessnessOut = document.getElementById("helplessness-percent-out");
+    if (helplessnessOut) {
+      helplessnessOut.textContent = String(getHelplessnessPercent()) + "%";
+    }
+
+    var prideFillOut = document.getElementById("pride-fill-percent-out");
+    if (prideFillOut) {
+      prideFillOut.textContent = String(getPrideFillPercent()) + "%";
+    }
+
+    var guiltShameFillOut = document.getElementById("guilt-shame-fill-percent-out");
+    if (guiltShameFillOut) {
+      guiltShameFillOut.textContent = String(getGuiltShameFillPercent()) + "%";
+    }
+
+    var angerTriangleOut = document.getElementById("anger-triangle-density-out");
+    if (angerTriangleOut) {
+      angerTriangleOut.textContent = String(getAngerTriangleDensity()) + "%";
+    }
+
+    updateAutoMergeIntensityOutput();
+
+    var angerLengthOut = document.getElementById("anger-vertical-length-out");
+    if (angerLengthOut) {
+      angerLengthOut.textContent = String(getAngerVerticalLengthPercent()) + "%";
+    }
+    syncAnxietyVerticalStrokeOutput();
+
+    var borderSideOut = document.getElementById("border-side-segments-out");
+    if (borderSideOut) {
+      borderSideOut.textContent = borderSideThicknessLabel(
+        getBorderSideThicknessColumns()
+      );
+    }
+    syncBorderSideWhiteFillOutput();
+
+    applySheetPaletteToDom();
+    renderBackgroundLayer();
+    renderGridMaskLayer("render");
+    applyMergeReveal();
+    syncVerticalGridLines(false);
+    renderVerticalGridLayer();
+    updateGridBoundaryRect();
+    updateBorderDivisionLines();
+    updateColorDivisionsLayer();
+    updateBorderDivisionOverlay();
+    updateCanvasEdgeBrownBars();
+    renderPatternLayer();
+    renderHalfCircleLayer();
+    renderAutoMergeFillsLayer();
+    updateFrameInsetOverlayLayer();
+    layoutStage();
+    updateHopeResetButton();
+
+    if (getAutoMergeIntensity() > 0 && !hasActivePrideAutoMergeRegions()) {
+      runAutoMerge();
     }
   }
 
@@ -14764,10 +18047,7 @@
     syncAnxietyVerticalStrokeOutput();
 
     var circleSig = buildCircleLayoutSignature();
-    if (circleSig !== lastCircleLayoutSignature) {
-      lastCircleLayoutSignature = circleSig;
-      syncCircleSelection(true);
-    }
+    syncSadnessCircleLayoutOnSignatureChange();
     if (circleSig !== lastLongingCircleLayoutSignature) {
       lastLongingCircleLayoutSignature = circleSig;
       syncLongingCircleSelection(true);
@@ -14876,6 +18156,11 @@
       return;
     }
 
+    if (isCirclesGrid()) {
+      renderCirclesGrid();
+      return;
+    }
+
     applyOctagonGridLayerVisibility();
     updateInnerContentTransformForGridType();
 
@@ -14901,10 +18186,7 @@
     }
 
     var layoutSig = buildCircleLayoutSignature();
-    if (layoutSig !== lastCircleLayoutSignature) {
-      lastCircleLayoutSignature = layoutSig;
-      syncCircleSelection(true);
-    }
+    syncSadnessCircleLayoutOnSignatureChange();
     if (layoutSig !== lastLongingCircleLayoutSignature) {
       lastLongingCircleLayoutSignature = layoutSig;
       syncLongingCircleSelection(true);
@@ -14997,18 +18279,58 @@
     updateHopeResetButton();
   }
 
-  function renderAfterSliderChangeNow() {
+  function commitSliderRelease(hadPreview, previewWasInFlight) {
+    sliderPreviewRendered = false;
     var hadAutoMerge = autoMergeEdgeKeys.size > 0;
     clearMergeState();
     clearAutoMergeState();
-    render();
+    // During drag, preview already ran full render() (markers + grid). On release,
+    // only refresh merge-dependent layers unless preview never painted final value.
+    if (hadPreview && !previewWasInFlight) {
+      renderPatternAndVerticalLayers();
+    } else {
+      render();
+    }
+    updateHopeResetButton();
     if (hadAutoMerge) {
-      runAutoMerge();
+      requestAnimationFrame(function () {
+        runAutoMerge();
+      });
     }
   }
 
+  /** Throttled preview while dragging octagons-n / inner-scale (no merge reset). */
+  function scheduleSliderRender() {
+    sliderRenderPending = true;
+    if (sliderRenderScheduled) return;
+    sliderRenderScheduled = true;
+    var gen = sliderRenderGeneration;
+    requestAnimationFrame(function () {
+      sliderRenderScheduled = false;
+      if (gen !== sliderRenderGeneration || !sliderRenderPending) return;
+      sliderRenderPending = false;
+      render();
+      sliderPreviewRendered = true;
+    });
+  }
+
+  /** Final commit when the user releases a main grid slider. */
+  function renderAfterSliderRelease() {
+    sliderRenderGeneration++;
+    var hadPreview = sliderPreviewRendered;
+    var previewWasInFlight = sliderRenderPending || sliderRenderScheduled;
+    sliderRenderPending = false;
+    if (previewWasInFlight && !hadPreview) {
+      requestAnimationFrame(function () {
+        commitSliderRelease(hadPreview, previewWasInFlight);
+      });
+      return;
+    }
+    commitSliderRelease(hadPreview, previewWasInFlight);
+  }
+
   function renderAfterSliderChange() {
-    renderAfterSliderChangeNow();
+    renderAfterSliderRelease();
   }
 
   function randomIntInRange(min, max) {
@@ -15210,11 +18532,17 @@
     );
     setSliderValue(
       "longing-circle-density",
-      randomFeelingsStepValue(CIRCLE_DENSITY_MIN, CIRCLE_DENSITY_MAX)
+      randomFeelingsStepValue(
+        CIRCLE_DENSITY_MIN,
+        getJunctionEmotionDensityMaxForActiveGrid()
+      )
     );
     setSliderValue(
       "grief-circle-density",
-      randomFeelingsStepValue(CIRCLE_DENSITY_MIN, CIRCLE_DENSITY_MAX)
+      randomFeelingsStepValue(
+        CIRCLE_DENSITY_MIN,
+        getJunctionEmotionDensityMaxForActiveGrid()
+      )
     );
     setSliderValue(
       "strength-density",
@@ -15222,9 +18550,7 @@
         typeof STRENGTH_DENSITY_MIN !== "undefined"
           ? STRENGTH_DENSITY_MIN
           : CIRCLE_DENSITY_MIN,
-        typeof STRENGTH_DENSITY_MAX !== "undefined"
-          ? STRENGTH_DENSITY_MAX
-          : CIRCLE_DENSITY_MAX
+        getJunctionEmotionDensityMaxForActiveGrid()
       )
     );
     setSliderValue(
@@ -15240,19 +18566,35 @@
     );
     setSliderValue(
       "pride-fill-percent",
-      randomFeelingsStepValue(PRIDE_FILL_PERCENT_MIN, PRIDE_FILL_PERCENT_MAX)
+      randomFeelingsStepValue(
+        PRIDE_FILL_PERCENT_MIN,
+        getPrideFillPercentMaxForActiveGrid()
+      )
     );
     setSliderValue(
       "guilt-shame-fill-percent",
-      randomFeelingsStepValue(GUILT_SHAME_FILL_PERCENT_MIN, GUILT_SHAME_FILL_PERCENT_MAX)
+      randomFeelingsStepValue(
+        typeof GUILT_SHAME_FILL_PERCENT_MIN !== "undefined"
+          ? GUILT_SHAME_FILL_PERCENT_MIN
+          : 0,
+        getGuiltShameFillPercentMaxForActiveGrid()
+      )
     );
     setSliderValue(
       "anger-triangle-density",
-      randomFeelingsStepValue(ANGER_TRIANGLE_DENSITY_MIN, ANGER_TRIANGLE_DENSITY_MAX)
+      randomFeelingsStepValue(
+        typeof ANGER_TRIANGLE_DENSITY_MIN !== "undefined"
+          ? ANGER_TRIANGLE_DENSITY_MIN
+          : 0,
+        getAngerTriangleDensityMaxForActiveGrid()
+      )
     );
     setSliderValue(
       "helplessness-percent",
-      randomFeelingsStepValue(HELPLESSNESS_PERCENT_MIN, HELPLESSNESS_PERCENT_MAX)
+      randomFeelingsStepValue(
+        HELPLESSNESS_PERCENT_MIN,
+        getHelplessnessPercentMaxForActiveGrid()
+      )
     );
 
     syncFeelingsSliderOutputs();
@@ -15354,21 +18696,21 @@
 
   function getEmbeddedExportFontDataUri() {
     return typeof window !== "undefined" &&
-      typeof window.OT2049_EXPORT_FONT_DATA_URI === "string" &&
-      window.OT2049_EXPORT_FONT_DATA_URI
-      ? window.OT2049_EXPORT_FONT_DATA_URI
+      typeof window.DIN_CONDENSED_EXPORT_FONT_DATA_URI === "string" &&
+      window.DIN_CONDENSED_EXPORT_FONT_DATA_URI
+      ? window.DIN_CONDENSED_EXPORT_FONT_DATA_URI
       : null;
   }
 
   function getExportFontFaceCss(fontDataUri) {
     var resolvedUri = fontDataUri || getEmbeddedExportFontDataUri();
     var src = resolvedUri
-      ? 'url("' + resolvedUri + '") format("opentype")'
-      : 'url("../fonts/OT2049-Regular.otf") format("opentype")';
+      ? 'url("' + resolvedUri + '") format("truetype")'
+      : 'url("../fonts/DIN%20Condensed%20Bold.ttf") format("truetype")';
     return (
-      '@font-face{font-family:"OT2049";src:' +
+      '@font-face{font-family:"DIN Condensed";src:' +
       src +
-      ";font-weight:400;font-style:normal;}"
+      ";font-weight:700;font-style:normal;}"
     );
   }
 
@@ -15381,7 +18723,7 @@
       cachedExportFontDataUri = embedded;
       return Promise.resolve(embedded);
     }
-    return fetch("fonts/OT2049-Regular.otf")
+    return fetch("fonts/DIN%20Condensed%20Bold.ttf")
       .then(function (res) {
         if (!res.ok) throw new Error("font fetch failed");
         return res.arrayBuffer();
@@ -15394,7 +18736,7 @@
           binary += String.fromCharCode(bytes[i]);
         }
         cachedExportFontDataUri =
-          "data:font/otf;base64," + btoa(binary);
+          "data:font/ttf;base64," + btoa(binary);
         return cachedExportFontDataUri;
       });
   }
@@ -15517,6 +18859,11 @@
     var circleStroke = getCircleStrokeWidth();
     lines.push('<g clip-path="url(#inner-content-clip)">');
 
+    if (shouldRenderPrideFillsBeforeCirclesGridPattern()) {
+      pushAutoMergeShadowExportLines(lines);
+      pushAutoMergeFillOnlyExportLines(lines);
+    }
+
     lines.push(
       '<g fill="none" stroke="' +
         getPatternStrokeColor() +
@@ -15541,6 +18888,8 @@
     }
 
     lines.push("</g>");
+
+    pushStructuralCirclesExportLines(lines);
 
     pushHelplessnessExportLines(lines);
 
@@ -15689,8 +19038,10 @@
 
     pushVerticalGridExportLines(lines);
 
-    pushAutoMergeShadowExportLines(lines);
-    pushAutoMergeFillOnlyExportLines(lines);
+    if (!shouldRenderPrideFillsBeforeCirclesGridPattern()) {
+      pushAutoMergeShadowExportLines(lines);
+      pushAutoMergeFillOnlyExportLines(lines);
+    }
 
     pushAngerTriangleExportLines(lines);
 
@@ -15750,7 +19101,7 @@
           syncVerticalGridLines(false);
           renderHalfCircleLayer();
           var markup = buildExportSvgString(
-            getVisibleSegments(cachedAllSegments),
+            getVisiblePatternSegments(),
             getActiveCircles(),
             getFilledDiamonds(),
             getFilledHollowDiamonds(),
@@ -15774,7 +19125,7 @@
           syncVerticalGridLines(false);
           renderHalfCircleLayer();
           var markup = buildExportSvgString(
-            getVisibleSegments(cachedAllSegments),
+            getVisiblePatternSegments(),
             getActiveCircles(),
             getFilledDiamonds(),
             getFilledHollowDiamonds(),
@@ -15846,6 +19197,8 @@
 
   function applyDanglingPrune() {
     if (isAlternateGrid()) return false;
+    // Circles tessellation: dangling prune cascades across ellipse chords → false merge holes.
+    if (isCirclesGrid()) return false;
     var changed = false;
     var pruneKeys = TopkapiGeometry.findDanglingPruneKeys(
       getSegmentsForHopeMerge(),
@@ -15873,7 +19226,12 @@
     if (applyDanglingPrune()) changed = true;
 
     if (changed) {
-      renderPatternAndVerticalLayers();
+      if (isHopeMergeDragActive()) {
+        hopeMergeDragHadEdgeChanges = true;
+        scheduleHopeMergeDragPreview();
+      } else {
+        renderPatternAndVerticalLayers();
+      }
       updateHopeResetButton();
     }
   }
@@ -15883,7 +19241,7 @@
     if (hopeInteractionMode !== "merge") return;
     var threshold = getHitThreshold(designSvg);
     var mergeSegments = getSegmentsForHopeMerge();
-    var visible = getVisibleSegments(mergeSegments);
+    var visible = getVisibleSegmentsFast(mergeSegments);
     var keys = TopkapiGeometry.findSegmentsNearPolyline(
       visible,
       dragPath,
@@ -15897,6 +19255,7 @@
     if (!isHopeDragInteractionMode() || !designSvg) return;
     if (e.button !== 0) return;
     isDragging = true;
+    hopeMergeDragHadEdgeChanges = false;
     dragPath = [];
     designSvg.setPointerCapture(e.pointerId);
     appendDragPoint(designSvg, e.clientX, e.clientY);
@@ -15915,6 +19274,8 @@
 
   function endDrag(e) {
     if (!isDragging) return;
+    var wasHopeMergeDrag = hopeInteractionMode === "merge";
+    var hadHopeChanges = hopeMergeDragHadEdgeChanges;
     isDragging = false;
     dragPath = [];
     if (designSvg && designSvg.hasPointerCapture(e.pointerId)) {
@@ -15922,6 +19283,9 @@
     }
     var wrap = document.getElementById("stage-wrap");
     if (wrap) wrap.classList.remove("is-dragging");
+    if (wasHopeMergeDrag && hadHopeChanges) {
+      finalizeHopeMergeDrag();
+    }
   }
 
   function onPointerUp(e) {
@@ -16087,7 +19451,8 @@
       slider.min = String(OCTAGONS_N_MIN);
       slider.max = String(OCTAGONS_N_MAX);
       slider.value = String(OCTAGONS_N_DEFAULT);
-      slider.addEventListener("input", renderAfterSliderChange);
+      slider.addEventListener("input", scheduleSliderRender);
+      slider.addEventListener("change", renderAfterSliderRelease);
     }
 
     var innerSlider = document.getElementById("inner-scale");
@@ -16095,7 +19460,8 @@
       innerSlider.min = String(INNER_SCALE_MIN);
       innerSlider.max = String(INNER_SCALE_MAX);
       innerSlider.value = String(INNER_SCALE_DEFAULT);
-      innerSlider.addEventListener("input", renderAfterSliderChange);
+      innerSlider.addEventListener("input", scheduleSliderRender);
+      innerSlider.addEventListener("change", renderAfterSliderRelease);
     }
 
     var borderSideSegmentsSlider = document.getElementById("border-side-segments");
@@ -16112,7 +19478,28 @@
         }
         // Thickness affects both the border divisions layer AND the inner content bounds,
         // so we re-render to update transforms + dependent layers.
-        render();
+        scheduleSliderRender();
+      });
+    }
+
+    var borderFrameDivisionsSlider = document.getElementById(
+      "border-frame-divisions"
+    );
+    if (borderFrameDivisionsSlider) {
+      borderFrameDivisionsSlider.min = "1";
+      borderFrameDivisionsSlider.max = "3";
+      borderFrameDivisionsSlider.value = "2";
+      borderFrameDivisionsSlider.addEventListener("input", function () {
+        var frameDivisionsOut = document.getElementById(
+          "border-frame-divisions-out"
+        );
+        if (frameDivisionsOut) {
+          frameDivisionsOut.textContent = borderFrameDivisionsLabel(
+            getBorderFrameDivisionsStep()
+          );
+        }
+        cachedBorderSideSegmentRatios = null;
+        refreshBorderFrameAndLabelBars();
       });
     }
 
@@ -16342,7 +19729,7 @@
     initFeelingsSteppedSlider(
       "longing-circle-density",
       CIRCLE_DENSITY_MIN,
-      CIRCLE_DENSITY_MAX,
+      getJunctionEmotionDensityMaxForActiveGrid(),
       CIRCLE_DENSITY_DEFAULT,
       function () {
         syncLongingCircleSelection(false);
@@ -16357,7 +19744,7 @@
     initFeelingsSteppedSlider(
       "grief-circle-density",
       CIRCLE_DENSITY_MIN,
-      CIRCLE_DENSITY_MAX,
+      getJunctionEmotionDensityMaxForActiveGrid(),
       CIRCLE_DENSITY_DEFAULT,
       function () {
         syncGriefCircleSelection(false);
@@ -16374,9 +19761,7 @@
       typeof STRENGTH_DENSITY_MIN !== "undefined"
         ? STRENGTH_DENSITY_MIN
         : CIRCLE_DENSITY_MIN,
-      typeof STRENGTH_DENSITY_MAX !== "undefined"
-        ? STRENGTH_DENSITY_MAX
-        : CIRCLE_DENSITY_MAX,
+      getJunctionEmotionDensityMaxForActiveGrid(),
       typeof STRENGTH_DENSITY_DEFAULT !== "undefined"
         ? STRENGTH_DENSITY_DEFAULT
         : CIRCLE_DENSITY_DEFAULT,
@@ -16421,7 +19806,7 @@
     initFeelingsSteppedSlider(
       "pride-fill-percent",
       PRIDE_FILL_PERCENT_MIN,
-      PRIDE_FILL_PERCENT_MAX,
+      getPrideFillPercentMaxForActiveGrid(),
       PRIDE_FILL_PERCENT_DEFAULT,
       function () {
         var prideFillOut = document.getElementById("pride-fill-percent-out");
@@ -16435,8 +19820,10 @@
 
     initFeelingsSteppedSlider(
       "guilt-shame-fill-percent",
-      GUILT_SHAME_FILL_PERCENT_MIN,
-      GUILT_SHAME_FILL_PERCENT_MAX,
+      typeof GUILT_SHAME_FILL_PERCENT_MIN !== "undefined"
+        ? GUILT_SHAME_FILL_PERCENT_MIN
+        : 0,
+      getGuiltShameFillPercentMaxForActiveGrid(),
       GUILT_SHAME_FILL_PERCENT_DEFAULT,
       function () {
         var guiltShameFillOut = document.getElementById(
@@ -16453,8 +19840,10 @@
 
     initFeelingsSteppedSlider(
       "anger-triangle-density",
-      ANGER_TRIANGLE_DENSITY_MIN,
-      ANGER_TRIANGLE_DENSITY_MAX,
+      typeof ANGER_TRIANGLE_DENSITY_MIN !== "undefined"
+        ? ANGER_TRIANGLE_DENSITY_MIN
+        : 0,
+      getAngerTriangleDensityMaxForActiveGrid(),
       ANGER_TRIANGLE_DENSITY_DEFAULT,
       function () {
         var angerTriangleOut = document.getElementById("anger-triangle-density-out");
@@ -16469,7 +19858,7 @@
     initFeelingsSteppedSlider(
       "helplessness-percent",
       HELPLESSNESS_PERCENT_MIN,
-      HELPLESSNESS_PERCENT_MAX,
+      getHelplessnessPercentMaxForActiveGrid(),
       HELPLESSNESS_PERCENT_DEFAULT,
       function () {
         syncHelplessnessSelection(false);
@@ -16542,7 +19931,10 @@
 
     if (window.SheetPalettes) {
       await window.SheetPalettes.loadSheetPalettes();
-      window.SheetPalettes.setActivePalette("palette1");
+      var restoredPalette =
+        window.SheetPalettes.getRememberedActivePalette &&
+        window.SheetPalettes.getRememberedActivePalette();
+      window.SheetPalettes.setActivePalette(restoredPalette || "palette1");
       initSheetPaletteControls();
     }
 
@@ -16566,6 +19958,9 @@
     if (window.IdentityControls && window.IdentityControls.setOnLivingInIranChange) {
       window.IdentityControls.setOnLivingInIranChange(refreshLabelBarContent);
     }
+    if (window.IdentityControls && window.IdentityControls.setOnLivingDurationChange) {
+      window.IdentityControls.setOnLivingDurationChange(refreshLabelBarContent);
+    }
     if (window.IdentityControls && window.IdentityControls.setOnLeavingYearChange) {
       window.IdentityControls.setOnLeavingYearChange(refreshLabelBarContent);
     }
@@ -16575,15 +19970,27 @@
     if (window.IdentityControls && window.IdentityControls.setOnFromChange) {
       window.IdentityControls.setOnFromChange(refreshLabelBarContent);
     }
-    if (window.IdentityControls && window.IdentityControls.setOnNowInChange) {
-      window.IdentityControls.setOnNowInChange(refreshLabelBarContent);
+    if (window.LocationCoordinates && window.LocationCoordinates.setOnUpdate) {
+      window.LocationCoordinates.setOnUpdate(refreshLabelBarContent);
     }
+    if (window.IdentityControls && window.IdentityControls.setOnNowInChange) {
+      window.IdentityControls.setOnNowInChange(function () {
+        scheduleLocationCoordinates();
+        refreshLabelBarContent();
+      });
+    }
+    if (window.IdentityControls && window.IdentityControls.setOnHomeAtChange) {
+      window.IdentityControls.setOnHomeAtChange(function () {
+        scheduleLocationCoordinates();
+        refreshLabelBarContent();
+      });
+    }
+    refreshLocationCoordinates();
     if (window.IdentityControls && window.IdentityControls.setOnNameChange) {
       window.IdentityControls.setOnNameChange(refreshLabelBarContent);
     }
-    if (window.IdentityControls && window.IdentityControls.setOnHomeAtChange) {
-      window.IdentityControls.setOnHomeAtChange(refreshLabelBarContent);
-    }
+
+    initLabelBarTagControls();
 
     window.addEventListener("resize", layoutStage);
     lastCircleLayoutSignature = "";

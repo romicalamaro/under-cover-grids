@@ -14,12 +14,12 @@
             <h2 class="sidebar__title">Profile</h2>
             <div class="sidebar__identity-fields">
               <div class="sidebar__identity-field">
-                <span class="sidebar__identity-heading">Have I lived in Iran?</span>
+                <span class="sidebar__identity-heading">Did you ever live in Iran?</span>
                 <div class="sidebar__identity-slot" id="identity-living-slot">
                   <div
                     class="sidebar__toggle sidebar__identity-living-toggle"
                     role="group"
-                    aria-label="Have I lived in Iran? Yes or no"
+                    aria-label="Did you ever live in Iran? Yes or no"
                   >
                     <button
                       type="button"
@@ -36,6 +36,53 @@
                       aria-pressed="false"
                     >
                       No
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div
+                class="sidebar__identity-field"
+                id="identity-living-duration-field"
+              >
+                <span
+                  class="sidebar__identity-heading sidebar__identity-heading--wrap"
+                  >How much of your life did you live in Iran?</span
+                >
+                <div
+                  class="sidebar__identity-slot"
+                  id="identity-living-duration-slot"
+                >
+                  <div
+                    class="sidebar__toggle sidebar__identity-living-duration-toggle"
+                    role="radiogroup"
+                    aria-label="How much of your life did you live in Iran?"
+                  >
+                    <button
+                      type="button"
+                      id="identity-living-duration-small-btn"
+                      class="sidebar__toggle-btn"
+                      data-living-duration="smallPart"
+                      aria-pressed="false"
+                    >
+                      Small part of my life
+                    </button>
+                    <button
+                      type="button"
+                      id="identity-living-duration-part-btn"
+                      class="sidebar__toggle-btn is-active"
+                      data-living-duration="partOfLife"
+                      aria-pressed="true"
+                    >
+                      Yes, part of my life
+                    </button>
+                    <button
+                      type="button"
+                      id="identity-living-duration-most-btn"
+                      class="sidebar__toggle-btn"
+                      data-living-duration="mostAll"
+                      aria-pressed="false"
+                    >
+                      Yes, most / all of my life
                     </button>
                   </div>
                 </div>
@@ -196,6 +243,30 @@
                 </div>
               </div>
             </div>
+            <div class="sidebar__sheet-palette-row sidebar__label-tag-row">
+              <span class="sidebar__grid-density-label">Label side marks</span>
+              <div
+                class="sidebar__palette-shuffle-group"
+                role="group"
+                aria-label="Label side mark selector"
+              >
+                <button
+                  type="button"
+                  id="label-bar-tag-toggle-btn"
+                  class="sidebar__palette-btn sidebar__palette-btn--label"
+                  aria-label="Cycle label side marks from tag folder"
+                  title="Cycle label side marks"
+                >
+                  Side marks
+                </button>
+                <span
+                  id="label-bar-tag-active-label"
+                  class="sidebar__palette-active-label"
+                  aria-live="polite"
+                  >Lion</span
+                >
+              </div>
+            </div>
           </section>
 
           <section class="sidebar__section sidebar__section--grid-choose">
@@ -221,6 +292,14 @@
               >
                 Star grid
               </button>
+              <button
+                type="button"
+                id="grid-choose-circles-btn"
+                class="sidebar__grid-btn"
+                aria-pressed="false"
+              >
+                Circles
+              </button>
             </div>
             <div class="sidebar__grid-choose-sliders">
               <div class="sidebar__grid-density sidebar__grid-density--long-label">
@@ -244,7 +323,7 @@
                       id="octagons-n"
                       type="range"
                       min="3"
-                      max="15"
+                      max="13"
                       value="7"
                       step="1"
                       aria-label="How much do I feel part of the Iranian community? Not part at all to very much part."
@@ -295,15 +374,23 @@
                 >
                   Shuffle layout
                 </button>
-                <button
-                  type="button"
-                  id="sheet-palette-random-btn"
-                  class="sidebar__palette-btn sidebar__palette-btn--label"
-                  aria-label="החלף בין פלטות 1 עד 8"
-                  title="החלף בין פלטות 1 עד 8"
-                >
-                  Palette 1–8
-                </button>
+                <div class="sidebar__palette-shuffle-group">
+                  <button
+                    type="button"
+                    id="sheet-palette-random-btn"
+                    class="sidebar__palette-btn sidebar__palette-btn--label"
+                    aria-label="החלף בין פלטות 1 עד 8"
+                    title="החלף בין פלטות 1 עד 8"
+                  >
+                    Palette 1–8
+                  </button>
+                  <span
+                    id="sheet-palette-active-label"
+                    class="sidebar__palette-active-label"
+                    aria-live="polite"
+                    >Palette 1</span
+                  >
+                </div>
                 <button
                   type="button"
                   id="color-divisions-mix-areas-btn"
@@ -434,6 +521,32 @@
               </div>
             </div>
             <div class="sidebar__grid-density">
+              <span class="sidebar__grid-density-label">Frame divisions</span>
+              <div class="sidebar__grid-density-slider-wrap">
+                <div
+                  class="sidebar__grid-density-range-labels"
+                  aria-hidden="true"
+                >
+                  <span class="sidebar__grid-density-range-label">Minimum</span>
+                  <span class="sidebar__grid-density-range-label">Maximum</span>
+                </div>
+                <div class="sidebar__body-autonomy-control sidebar__item-control">
+                  <input
+                    id="border-frame-divisions"
+                    type="range"
+                    min="1"
+                    max="3"
+                    value="2"
+                    step="1"
+                    aria-label="Frame divisions. Minimum to maximum."
+                  />
+                  <output id="border-frame-divisions-out" for="border-frame-divisions"
+                    >Medium</output
+                  >
+                </div>
+              </div>
+            </div>
+            <div class="sidebar__grid-density">
               <span class="sidebar__grid-density-label">Color fade</span>
               <div class="sidebar__grid-density-slider-wrap">
                 <div
@@ -444,7 +557,7 @@
                     >Full color</span
                   >
                   <span class="sidebar__grid-density-range-label"
-                    >40% white</span
+                    >50% white</span
                   >
                 </div>
                 <div class="sidebar__body-autonomy-control sidebar__item-control">
@@ -455,7 +568,7 @@
                     max="100"
                     value="0"
                     step="25"
-                    aria-label="Family and friends in Iran color fade. Full color to 40 percent white."
+                    aria-label="Family and friends in Iran color fade. Full color to 50 percent white."
                   />
                   <output id="border-side-white-fill-out" for="border-side-white-fill"
                     >0%</output
@@ -497,6 +610,23 @@
                       >
                         Radial
                       </button>
+                    </div>
+                  </div>
+                  <div
+                    class="sidebar__fan-tuning-row sidebar__fan-tuning-row--radial-only"
+                    id="fan-radial-outer-arc-row"
+                  >
+                    <span class="sidebar__fan-tuning-label">Outer arc size</span>
+                    <div class="sidebar__grid-density-control sidebar__wear-control-range">
+                      <input
+                        id="fan-radial-outer-arc"
+                        type="range"
+                        min="70"
+                        max="100"
+                        value="100"
+                        step="1"
+                        aria-label="Radial fan outer arc size"
+                      />
                     </div>
                   </div>
                   <div class="sidebar__fan-tuning-row">
@@ -916,13 +1046,16 @@
       </div>
     </div>
     <script defer src="js/constants.js"></script>
-    <script defer src="js/sheetPalettes.js?v=20260604-csv-multiline"></script>
-    <script defer src="js/labelBarSvgAssets.js?v=20260604-subfolder-icons"></script>
+    <script defer src="js/embeddedPaletteCsv.js?v=20260606-palette8-embed"></script>
+    <script defer src="js/sheetPalettes.js?v=20260606-palette8-embed"></script>
+    <script defer src="js/labelBarSvgAssets.js?v=20260606-outside-iran"></script>
     <script defer src="js/exportFontData.js"></script>
     <script defer src="js/opentype.min.js"></script>
     <script defer src="js/topkapiGeometry.js"></script>
     <script defer src="js/nestedStarOctagonsGeometry.js"></script>
+    <script defer src="js/circlesGridGeometry.js"></script>
     <script defer src="js/identityControls.js"></script>
+    <script defer src="js/locationCoordinates.js"></script>
     <script defer src="js/app.js?v=20260604-sheet-reload"></script>
   </body>
 </html>

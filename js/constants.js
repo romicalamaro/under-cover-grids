@@ -51,7 +51,7 @@ var BG_COLOR = CANVAS_BACKGROUND_COLOR_DEFAULT;
 
 /**
  * Full-width brown bars on top/bottom side-frame division edges.
- * Bottom bar is canonical; top bar mirrors bottom vertically (flip Y).
+ * Bottom bar is canonical; top bar duplicates bottom layout on the bar, then rotates 180°.
  */
 var CANVAS_EDGE_BROWN_BAR_HEIGHT_PX = 100;
 /** Length toward canvas top/bottom past division line (inner edge stays on divY) */
@@ -90,7 +90,7 @@ var CANVAS_EDGE_BROWN_BAR_GRID_WIDTH_RANDOM_POWER = 3.2;
 var BROWN_BAR_BANNER_TEXT = "";
 /** Middle word struck through (line spans IRANIAN only, not the dots) */
 var BROWN_BAR_BANNER_STRIKE_WORD = "IRANIAN";
-var BROWN_BAR_BANNER_FONT_FAMILY = "OT2049";
+var BROWN_BAR_BANNER_FONT_FAMILY = "DIN Condensed";
 var BROWN_BAR_BANNER_FILL = "#ffffff";
 /** Extra space between characters (SVG letter-spacing, canvas px) */
 var BROWN_BAR_BANNER_LETTER_SPACING = -1;
@@ -106,12 +106,11 @@ var BROWN_BAR_BANNER_OPTICAL_CENTER_DY_EM = 0.12;
 /** SVG files available for the dynamic label bar (svg/ folder) */
 var LABEL_BAR_SVG_ASSETS = [
   "tag/lion.svg",
-  "tag/tag01.svg",
+  "tag/tag01.2.svg",
   "tag/tag02.svg",
   "tag/tag03.svg",
   "tag/tag04.svg",
-  "tag/tag05.svg",
-  "tag/scissors.svg",
+  "tag/tag05.2.svg",
   "sun.svg",
   "IN IRAN.svg",
   "OUTSIDE IRAN.svg",
@@ -122,6 +121,7 @@ var LABEL_BAR_SVG_ASSETS = [
   "now in.svg",
   "circle.svg",
   "Union.svg",
+  "Unionsmall.svg",
   "Vector.svg",
   "left.svg",
   "women.svg",
@@ -131,16 +131,19 @@ var LABEL_BAR_SVG_ASSETS = [
   "home/IN IRAN home.svg",
   "home/WHERE I LIVE.svg",
   "home/NOWHERE.svg",
+  "Did you ever live in Iran?/no.svg",
+  "Did you ever live in Iran?/small part of my life.svg",
+  "Did you ever live in Iran?/part of my life.svg",
+  "Did you ever live in Iran?/Yes, most : all of my life.svg",
 ];
 /** Natural pixel sizes for label-bar layout (from each SVG viewBox) */
 var LABEL_BAR_SVG_DIMENSIONS = {
   "tag/lion.svg": { width: 257.14, height: 186 },
-  "tag/tag01.svg": { width: 193, height: 192 },
+  "tag/tag01.2.svg": { width: 193, height: 192 },
   "tag/tag02.svg": { width: 221, height: 198 },
   "tag/tag03.svg": { width: 78, height: 78 },
   "tag/tag04.svg": { width: 94, height: 69 },
-  "tag/tag05.svg": { width: 278, height: 278 },
-  "tag/scissors.svg": { width: 209, height: 194 },
+  "tag/tag05.2.svg": { width: 195, height: 195 },
   "lion.svg": { width: 257.14, height: 186 },
   "man.svg": { width: 89, height: 115 },
   "LOST/man.svg": { width: 89, height: 115 },
@@ -148,7 +151,7 @@ var LABEL_BAR_SVG_DIMENSIONS = {
   "LOST/3 man.svg": { width: 247, height: 115 },
   "sun.svg": { width: 123, height: 136 },
   "IN IRAN.svg": { width: 115, height: 103.73 },
-  "OUTSIDE IRAN.svg": { width: 115, height: 106 },
+  "OUTSIDE IRAN.svg": { width: 111, height: 111 },
   "undercover english.svg": { width: 164.16, height: 80 },
   "logo placeholder.svg": { width: 294, height: 88 },
   "undercover arabic.svg": { width: 215, height: 80 },
@@ -157,12 +160,17 @@ var LABEL_BAR_SVG_DIMENSIONS = {
   "now in.svg": { width: 96, height: 85 },
   "circle.svg": { width: 154, height: 152 },
   "Union.svg": { width: 296.9, height: 53 },
+  "Unionsmall.svg": { width: 304, height: 87 },
   "Vector.svg": { width: 164, height: 91 },
   "left.svg": { width: 81, height: 80 },
   "women.svg": { width: 47.58, height: 80 },
   "home/IN IRAN home.svg": { width: 66, height: 98 },
   "home/WHERE I LIVE.svg": { width: 66, height: 98 },
   "home/NOWHERE.svg": { width: 66, height: 98 },
+  "Did you ever live in Iran?/no.svg": { width: 86, height: 86 },
+  "Did you ever live in Iran?/small part of my life.svg": { width: 86, height: 86 },
+  "Did you ever live in Iran?/part of my life.svg": { width: 86, height: 86 },
+  "Did you ever live in Iran?/Yes, most : all of my life.svg": { width: 86, height: 86 },
 };
 /** Profile “where do you feel at home?” → row 1 icon */
 var LABEL_BAR_HOME_AT_SVGS = {
@@ -172,9 +180,17 @@ var LABEL_BAR_HOME_AT_SVGS = {
 };
 /** Multi-color or non-tintable SVGs on the label bar (original colors preserved) */
 var LABEL_BAR_NATIVE_COLOR_SVGS = [];
-/** Profile “Yes” → this sign on the label; “No” → OUTSIDE IRAN */
+/** Profile “Yes” → this sign on the label; “No” → OUTSIDE IRAN (legacy, unused for duration question) */
 var LABEL_BAR_LIVING_IN_IRAN_SVG = "IN IRAN.svg";
 var LABEL_BAR_LIVING_OUTSIDE_IRAN_SVG = "OUTSIDE IRAN.svg";
+/** Profile “Did you ever live in Iran?” — No sign on the label */
+var LABEL_BAR_LIVING_NEVER_IN_IRAN_SVG = "Did you ever live in Iran?/no.svg";
+/** Profile “Did you ever live in Iran?” Yes → duration signs on the label */
+var LABEL_BAR_LIVING_DURATION_SVGS = {
+  smallPart: "Did you ever live in Iran?/small part of my life.svg",
+  partOfLife: "Did you ever live in Iran?/part of my life.svg",
+  mostAll: "Did you ever live in Iran?/Yes, most : all of my life.svg",
+};
 /** Row 2: profile From / Now in icons inward from the living-in-Iran sign */
 var LABEL_BAR_FROM_SVG = "from.svg";
 var LABEL_BAR_NOW_IN_SVG = "now in.svg";
@@ -182,6 +198,8 @@ var LABEL_BAR_NOW_IN_SVG = "now in.svg";
 var LABEL_BAR_CIRCLE_SVG = "sun.svg";
 /** Row 1: fixed union sign between home-at icon and women icon */
 var LABEL_BAR_UNION_SVG = "Union.svg";
+/** Row 1 left edge + row 2 right edge (pinned, not spread) */
+var LABEL_BAR_UNION_SMALL_SVG = "Unionsmall.svg";
 var LABEL_BAR_PROFILE_FROM_DEFAULT = "TEHERAN";
 var LABEL_BAR_PROFILE_NOW_IN_DEFAULT = "MAINZ";
 var LABEL_BAR_PROFILE_LEAVING_YEAR_DEFAULT = "2021";
@@ -190,8 +208,8 @@ var LABEL_BAR_AGE_DEFAULT = "27";
 var LABEL_BAR_LEFT_SVG = "left.svg";
 /** Row 1: women icon after union (replaces former Vector position) */
 var LABEL_BAR_WOMEN_SVG = "women.svg";
-/** Fixed wordmarks by the lions */
-var LABEL_BAR_LEFT_LION_INNER_ROW1_SVG = "logo placeholder.svg";
+/** Fixed wordmarks by the lions (empty = hidden) */
+var LABEL_BAR_LEFT_LION_INNER_ROW1_SVG = "";
 /** Row 1: fixed sun icon removed — Profile “at home” icon sits here (see LABEL_BAR_HOME_AT_SVGS) */
 var LABEL_BAR_LEFT_LION_INNER_ROW1_SUN_SVG = "sun.svg";
 var LABEL_BAR_AGE_SVG = "age.svg";
@@ -202,11 +220,11 @@ var LABEL_BAR_AGE_CIRCLE_CX = 30.38;
 var LABEL_BAR_AGE_CIRCLE_CY = 40;
 var LABEL_BAR_AGE_CIRCLE_R = 23.65;
 /** Overlay font size as a fraction of circle diameter */
-var LABEL_BAR_AGE_OVERLAY_FONT_SIZE_RATIO = 0.67;
+var LABEL_BAR_AGE_OVERLAY_FONT_SIZE_RATIO = 0.58;
 var LABEL_BAR_AGE_OVERLAY_FILL = "#ffffff";
 /** Nudge age digits down inside the circle (px) */
 var LABEL_BAR_AGE_OVERLAY_Y_OFFSET_PX = 1;
-var LABEL_BAR_RIGHT_LION_INNER_ROW2_SVG = "logo placeholder.svg";
+var LABEL_BAR_RIGHT_LION_INNER_ROW2_SVG = "";
 /** Profile Lost icon inward from the right lion (row 1) — always Inner Circle */
 var LABEL_BAR_LOST_INNER_SVG = "LOST/man.svg";
 var LABEL_BAR_LOST_MIDDLE_SVG = "LOST/2 man.svg";
@@ -219,36 +237,51 @@ var LABEL_BAR_ICON_FILL = "#ffffff";
 var LABEL_BAR_ICON_TINT_FILTER_ID = "label-bar-icon-tint-filter";
 /** Horizontal inset from each bar edge before label items are laid out */
 var LABEL_BAR_HORIZONTAL_INSET_PX = 10;
-/** Vertical inset above and below label items inside the bar segment */
+/** Vertical inset above and below label items inside the bar segment (text band) */
 var LABEL_BAR_VERTICAL_INSET_PX = 10;
+/** Legacy vertical padding removed from SVG icons only (restores pre-text-fit icon size) */
+var LABEL_BAR_SVG_LEGACY_VERTICAL_INSET_PX = 0;
 /** Gap between row-1 and row-2 label content (split evenly at the segment boundary) */
 var LABEL_BAR_ADJACENT_ROW_CONTENT_GAP_PX = 5;
-/** End-cap tag SVGs (svg/tag/) — rotated sequentially on each page load */
+/**
+ * Nudge both content rows toward the outer grid band without changing row heights
+ * or the row-1↔row-2 gap. Transfers padding from below row 2 to above row 1.
+ */
+var LABEL_BAR_CONTENT_SHIFT_TOWARD_GRID_PX = 2.5;
+/** End-cap tag SVGs (svg/tag/) — user cycles via sidebar control */
 var LABEL_BAR_TAG_SVGS = [
   "tag/lion.svg",
-  "tag/tag01.svg",
+  "tag/tag01.2.svg",
   "tag/tag02.svg",
   "tag/tag03.svg",
   "tag/tag04.svg",
-  "tag/tag05.svg",
-  "tag/scissors.svg",
+  "tag/tag05.2.svg",
 ];
 var LABEL_BAR_TAG_ROTATION_STORAGE_KEY = "undercover.labelBarTagIndex";
 /** Fallback end-cap SVG when rotation pool is unavailable */
 var LABEL_BAR_END_CAP_SVG = "tag/lion.svg";
 /** End caps span this many brown-bar horizontal rows (segments) from the inner edge */
 var LABEL_BAR_END_CAP_ROW_SPAN = 2;
-/** Gap between adjacent label-bar symbols (px) */
-var LABEL_BAR_ITEM_GAP_PX = 5;
+/** Gap between end cap and inner label content on each side (px) */
+var LABEL_BAR_ITEM_GAP_PX = 8;
 /** Fixed gap between caption text and its symbol inside one label-bar group (px) */
-var LABEL_BAR_CLUSTER_INTERNAL_GAP_PX = 5;
-/** 5×5 px square inserted between each pair of label-bar SVG symbols */
+var LABEL_BAR_CLUSTER_INTERNAL_GAP_PX = 7;
+/** Square inserted between each pair of label-bar SVG symbol clusters */
 var LABEL_BAR_SYMBOL_SEPARATOR_SIZE_PX = 5;
 var LABEL_BAR_SYMBOL_SEPARATOR_FILL = "#ffffff";
-/** Label-bar text visual size vs content cell height (>1 compensates OT2049 cap-height vs icons) */
+/** Uniform scale for all label-bar text and SVG symbols (1 = max row height) */
+var LABEL_BAR_CONTENT_SCALE = 1;
+/** Starting scale for label-bar text before bbox fit (1 = fill content band height) */
 var LABEL_BAR_TEXT_FONT_HEIGHT_RATIO = 1;
-/** Nudge label-bar text down from cell center (px) */
+/** Extra scale after bbox fit (1 = glyph bbox matches content row height) */
+var LABEL_BAR_TEXT_TOUCH_OVERSCALE = 1;
+/** Downward nudge so all-caps sit visually centered in the row (px) */
 var LABEL_BAR_TEXT_Y_OFFSET_PX = 3;
+/** Padding inside the knockout badge (coordinates + 1/1) */
+var LABEL_BAR_COORDINATES_BADGE_PAD_X_PX = 7;
+var LABEL_BAR_COORDINATES_BADGE_PAD_Y_PX = 3;
+/** Extra downward nudge for text inside knockout badges (px); rect stays put */
+var LABEL_BAR_KNOCKOUT_BADGE_TEXT_Y_OFFSET_PX = 1;
 
 /** Random 8-digit serial in white margin above/below brown bars (same number top + bottom) */
 var CANVAS_EDGE_SERIAL_EDGE_INSET_PX = 50;
@@ -262,7 +295,7 @@ var CANVAS_EDGE_SERIAL_FILL = "#3c06a7";
 
 /** Full octagons per row/column (n); half-octagon on each edge → (n+1) tile widths */
 var OCTAGONS_N_MIN = 3;
-var OCTAGONS_N_MAX = 15;
+var OCTAGONS_N_MAX = 13;
 var OCTAGONS_N_DEFAULT = 7;
 
 /** Corner cut: t = side / (2 + sqrt(2)) */
@@ -343,10 +376,10 @@ var GRID_FRAME_INSET_OVERLAY_CAP_ELLIPSE_INSET_PX = 30;
 var GRID_FRAME_INSET_OVERLAY_CAP_ELLIPSE_RX = 7;
 var GRID_FRAME_INSET_OVERLAY_CAP_ELLIPSE_RY = 12;
 
-/** Left/right white margin strip horizontal divisions (segment count) */
-var BORDER_LEFT_RIGHT_SEGMENTS_MIN = 12;
-var BORDER_LEFT_RIGHT_SEGMENTS_MAX = 24;
+/** Left/right white margin strip horizontal divisions (3-step slider) */
+var BORDER_LEFT_RIGHT_SEGMENTS_LOW = 8;
 var BORDER_LEFT_RIGHT_SEGMENTS_DEFAULT = 12;
+var BORDER_LEFT_RIGHT_SEGMENTS_HIGH = 18;
 /** Random height weights per margin row (normalized to fill strip) */
 var BORDER_SIDE_SEGMENT_HEIGHT_MIN_RATIO = 0.18;
 var BORDER_SIDE_SEGMENT_HEIGHT_MAX_RATIO = 1.4;
@@ -360,12 +393,16 @@ var BORDER_SIDE_WHITE_FILL_DEFAULT = 0;
 /** Discrete positions on the slider (0, 25, 50, 75, 100) */
 var BORDER_SIDE_WHITE_FILL_STEPS = 5;
 /** At slider maximum, this fraction of margin division cells are painted white */
-var BORDER_SIDE_WHITE_CAP_PERCENT = 40;
+var BORDER_SIDE_WHITE_CAP_PERCENT = 50;
 
 /** Fan geometry variant: original (cusp petals) or radial (base line + arc + ribs) */
 var FAN_TYPE_ORIGINAL = "original";
 var FAN_TYPE_RADIAL = "radial";
 var FAN_TYPE_DEFAULT = "radial";
+/** Radial fan: outer arc scale (slider 70–100 → 0.7×–1× base radius; base line stays fixed) */
+var RADIAL_FAN_OUTER_ARC_SCALE_MIN = 0.7;
+var RADIAL_FAN_OUTER_ARC_SCALE_MAX = 1;
+var RADIAL_FAN_OUTER_ARC_SCALE_DEFAULT = 1;
 /** Radial fan: inner arcs in a tight band near the focal center */
 var RADIAL_FAN_INNER_ARC_COUNT = 6;
 /** +1 arc inset by RADIAL_FAN_INNER_ARC_STEP_PX from the outer frame arc */
@@ -383,12 +420,14 @@ var RADIAL_FAN_STROKE_WIDTH = 2;
 var RADIAL_FAN_SIXTH_ARC_DIAGONAL_ARC_INDEX = 5;
 var RADIAL_FAN_SIXTH_ARC_DIAGONAL_START_CORNER_RIB_INDEX = 1;
 var RADIAL_FAN_SIXTH_ARC_DIAGONAL_END_RIB_INDEX = 2;
-/** Base-left diagonal: outer-arc end at this rib (1-based from the right / fan end) */
-var RADIAL_FAN_BASE_LEFT_DIAGONAL_END_RIB_FROM_END = 9;
-/** Base-right diagonal: outer-arc end at this rib (1-based from the left / fan start) */
-var RADIAL_FAN_BASE_RIGHT_DIAGONAL_END_RIB_FROM_START = 9;
+/** Base diagonals: outer-arc ends are computed so both lines meet at the middle third-arc ring center. */
+/** Middle-rib band: 2 cells per pair, 1 empty cell between pairs. */
+var RADIAL_FAN_MIDDLE_BAND_FILL_GAP_CELLS = 1;
+/** Omit the 2nd triangle-pair from the fan start (left) and end (right). */
+var RADIAL_FAN_MIDDLE_BAND_TRIM_SECOND_PAIR_FROM_START = true;
+var RADIAL_FAN_MIDDLE_BAND_TRIM_SECOND_PAIR_FROM_END = true;
 /** Ribs from focal center to outer arc (equal angular spacing across the semicircle) */
-var RADIAL_FAN_RIB_COUNT = 26;
+var RADIAL_FAN_RIB_COUNT = 25;
 /** Rings seated on the 3rd inner arc: count, radius (px), arc index (0-based) */
 var RADIAL_FAN_THIRD_ARC_RING_COUNT = 5;
 var RADIAL_FAN_THIRD_ARC_RING_RADIUS = 44;
@@ -404,6 +443,27 @@ var RADIAL_FAN_THIRD_ARC_RING_EDGE_MARGIN_RATIO = 0.08;
 /** Elevated rings between base pairs 1–2 and 4–5 (1-based): scale, edge clearance from neighbors (px) */
 var RADIAL_FAN_ELEVATED_RING_SCALE = 1.2;
 var RADIAL_FAN_ELEVATED_RING_GAP_PX = 8;
+/** Elevated rings: omit innermost circle only; medium + large keep 3-ring spacing */
+var RADIAL_FAN_ELEVATED_NESTED_RING_COUNT = 2;
+/** Large elevated rings sit between these ribs (1-based from each fan end; outer < inner). */
+var RADIAL_FAN_ELEVATED_RING_OUTER_RIB_FROM_END = 4;
+var RADIAL_FAN_ELEVATED_RING_INNER_RIB_FROM_END = 7;
+/** Base row (5 rings): each spans 5 ribs; rings 2 and 4 flank the center ring. */
+var RADIAL_FAN_BASE_ROW_END_OUTER_RIB_FROM_END = 1;
+var RADIAL_FAN_BASE_ROW_END_INNER_RIB_FROM_END = 5;
+var RADIAL_FAN_BASE_ROW_START_OUTER_RIB = 1;
+var RADIAL_FAN_BASE_ROW_START_INNER_RIB = 5;
+var RADIAL_FAN_BASE_ROW_MIDDLE_RIB_OFFSET_OUTER = 2;
+var RADIAL_FAN_BASE_ROW_MIDDLE_RIB_OFFSET_INNER = 2;
+/** Ring 2 (left of center): midIdx − these offsets → shares boundary rib with center. */
+var RADIAL_FAN_BASE_ROW_LEFT_INNER_RIB_OFFSET_OUTER = 6;
+var RADIAL_FAN_BASE_ROW_LEFT_INNER_RIB_OFFSET_INNER = 2;
+/** Ring 4 (right of center): midIdx + these offsets → shares boundary rib with center. */
+var RADIAL_FAN_BASE_ROW_RIGHT_INNER_RIB_OFFSET_OUTER = 2;
+var RADIAL_FAN_BASE_ROW_RIGHT_INNER_RIB_OFFSET_INNER = 6;
+
+/** Sectors omitted at each fan end (between rib 1–2 and the last rib pair); angles the base */
+var FAN_END_SECTOR_TRIM_COUNT = 1;
 
 /** Body autonomy: shared fan opening (both manifolds), discrete steps (inverted: 0 = open, 10 = none) */
 var WEAR_CONTROL_OPENING_STEP_MIN = 0;
@@ -512,10 +572,54 @@ var NESTED_STAR_STRENGTH_SQUARE_USE_TILE_CUT = true;
 /** Main app grid type (index.html) */
 var GRID_TYPE_OCTAGON = "octagon";
 var GRID_TYPE_STAR = "star";
+var GRID_TYPE_CIRCLES = "circles";
+/** Circles grid: rotated diamond half-side as fraction of cell size */
+var CIRCLES_GRID_CELL_DIAMOND_HALF_RATIO = 0.35;
+/** Circles grid: helplessness X half-extent as fraction of cell size */
+var CIRCLES_GRID_HELPLESS_HALF_RATIO = 0.3;
+/** Circles grid: density slider steps by 2 fine cells (one full 2×2 circle column) */
+var CIRCLES_GRID_N_STEP = 2;
+/** Least-dense circles grid: minimum structural circles per row (each spans 2 cell columns) */
+var CIRCLES_GRID_MIN_CIRCLE_COLUMNS = 4;
+/** Fine-cell n at minimum density: 2 × circle columns − 1 */
+var CIRCLES_GRID_N_MIN =
+  2 * CIRCLES_GRID_MIN_CIRCLE_COLUMNS - 1;
+/** Circles grid only: Helplessness, Longing, Grief, Strength slider cap (%) */
+var CIRCLES_GRID_JUNCTION_EMOTION_DENSITY_MAX = 20;
+/** Circles grid only: anger triangles / pain diamonds / guilt-shame diamonds slider cap (%) */
+var CIRCLES_GRID_ANGER_TRIANGLE_DENSITY_MAX = 50;
+var CIRCLES_GRID_PRIDE_FILL_PERCENT_MAX = 50;
+var CIRCLES_GRID_GUILT_SHAME_FILL_PERCENT_MAX = 50;
+/** Pride circles grid: keep merged fills that span at least this many structural circles */
+var CIRCLES_GRID_PRIDE_MIN_CIRCLES_INSIDE = 2;
+/** Reference density for Pride area compensation on circles grid */
+var CIRCLES_GRID_PRIDE_REFERENCE_N = CIRCLES_GRID_N_MIN;
+/** Pride circles grid: ellipse outline segments in tessellation (chord count) */
+var CIRCLES_GRID_PRIDE_ELLIPSE_ARC_STEPS = 16;
+/** Pride circles grid: samples per rounded exterior quarter-circle corner (shadow only) */
+var CIRCLES_GRID_PRIDE_CORNER_ARC_STEPS = 6;
+/** Pride circles grid: tolerance for matching outline edges to structural ellipses */
+var CIRCLES_GRID_PRIDE_ELLIPSE_EDGE_EPS = 0.12;
+/** Pride circles grid: shadow polygon samples along each smooth arc segment */
+var CIRCLES_GRID_PRIDE_SHADOW_ARC_STEPS = 24;
+/**
+ * Pride tessellation inner-scale cap — at slider max (1) the mesh still needs
+ * corner cells, so Pride uses a slightly lower effective inner scale.
+ */
+var CIRCLES_GRID_PRIDE_TESSELLATION_INNER_SCALE_MAX = 0.92;
 /** Star grid only: max value on “Iranian community” density slider (octagons-n) */
-var STAR_GRID_OCTAGONS_N_MAX = 11;
+var STAR_GRID_OCTAGONS_N_MAX = 9;
 /** Hope merge cutouts: ignore micro-faces smaller than this × tileSize² */
 var STAR_GRID_HOPE_MERGE_MIN_AREA_TILE_FRACTION = 0.45;
+/** Octagon Hope merge: min stipple hole area (× tileSize²); lower → finer, more intricate shapes */
+var OCTAGON_HOPE_MERGE_MIN_AREA_TILE_FRACTION = 0.18;
+/** Circles Hope merge: min stipple hole area (× tileSize²); lower → quarter/half sectors */
+var CIRCLES_GRID_HOPE_MERGE_MIN_AREA_TILE_FRACTION = 0.18;
+/**
+ * Circles Hope merge: reject single-circle holes at/above this × tileSize² — dangling
+ * prune false positives (~0.75× tile² per block from runtime tessellation).
+ */
+var CIRCLES_GRID_HOPE_SINGLE_BLOCK_MAX_AREA_TILE_FRACTION = 0.75;
 /**
  * Pride on star grid uses coarse octagon+square mesh (see getSegmentsForPrideAutoMerge).
  * Edge budget matches octagon grid; no extra multiplier needed.
