@@ -39,7 +39,7 @@
   var onLeavingYearChange = null;
   /** @type {string} */
   var nameValue = "";
-  /** @type {"initials" | "anonymous" | "none"} */
+  /** @type {"initials" | "anonymous" | "name"} */
   var nameDisplayMode = "anonymous";
   /** @type {(() => void) | null} */
   var onNameChange = null;
@@ -210,9 +210,9 @@
 
   /** Text shown on the label bar between leaving year and women icon. */
   function getNameLabelText() {
-    if (nameDisplayMode === "none") return "";
     if (nameDisplayMode === "anonymous") return "ANONYMOUS";
-    return formatNameInitials(nameValue);
+    if (nameDisplayMode === "initials") return formatNameInitials(nameValue);
+    return String(nameValue || "").trim();
   }
 
   function initNameInput() {
@@ -230,16 +230,16 @@
   function initNameDisplayModeToggle() {
     var anonymousBtn = document.getElementById("identity-name-anonymous-btn");
     var initialsBtn = document.getElementById("identity-name-initials-btn");
-    var noneBtn = document.getElementById("identity-name-none-btn");
-    if (!anonymousBtn || !initialsBtn || !noneBtn) return;
+    var nameBtn = document.getElementById("identity-name-name-btn");
+    if (!anonymousBtn || !initialsBtn || !nameBtn) return;
 
     function applyUi(mode) {
       anonymousBtn.classList.toggle("is-active", mode === "anonymous");
       anonymousBtn.setAttribute("aria-pressed", String(mode === "anonymous"));
       initialsBtn.classList.toggle("is-active", mode === "initials");
       initialsBtn.setAttribute("aria-pressed", String(mode === "initials"));
-      noneBtn.classList.toggle("is-active", mode === "none");
-      noneBtn.setAttribute("aria-pressed", String(mode === "none"));
+      nameBtn.classList.toggle("is-active", mode === "name");
+      nameBtn.setAttribute("aria-pressed", String(mode === "name"));
     }
 
     function setMode(mode) {
@@ -255,8 +255,8 @@
     initialsBtn.addEventListener("click", function () {
       setMode("initials");
     });
-    noneBtn.addEventListener("click", function () {
-      setMode("none");
+    nameBtn.addEventListener("click", function () {
+      setMode("name");
     });
   }
 
@@ -359,6 +359,152 @@
     }
   }
 
+  function syncLivingInIranUiOnly(isYes) {
+    var yesBtn = document.getElementById("living-in-btn");
+    var noBtn = document.getElementById("living-outside-btn");
+    var leavingYearField = document.getElementById("identity-leaving-year-field");
+    var livingDurationField = document.getElementById(
+      "identity-living-duration-field"
+    );
+    if (!yesBtn || !noBtn) return;
+    yesBtn.classList.toggle("is-active", isYes === true);
+    yesBtn.setAttribute("aria-pressed", String(isYes === true));
+    noBtn.classList.toggle("is-active", isYes === false);
+    noBtn.setAttribute("aria-pressed", String(isYes === false));
+    if (leavingYearField) {
+      if (isYes === true) leavingYearField.removeAttribute("hidden");
+      else leavingYearField.setAttribute("hidden", "");
+    }
+    if (livingDurationField) {
+      if (isYes === true) livingDurationField.removeAttribute("hidden");
+      else livingDurationField.setAttribute("hidden", "");
+    }
+  }
+
+  function syncLivingDurationUiOnly(choice) {
+    var buttons = document.querySelectorAll("[data-living-duration]");
+    var i;
+    for (i = 0; i < buttons.length; i++) {
+      var btn = buttons[i];
+      var value = btn.getAttribute("data-living-duration");
+      var isActive = value === choice;
+      btn.classList.toggle("is-active", isActive);
+      btn.setAttribute("aria-pressed", String(isActive));
+    }
+  }
+
+  function syncNameDisplayModeUiOnly(mode) {
+    var anonymousBtn = document.getElementById("identity-name-anonymous-btn");
+    var initialsBtn = document.getElementById("identity-name-initials-btn");
+    var nameBtn = document.getElementById("identity-name-name-btn");
+    if (!anonymousBtn || !initialsBtn || !nameBtn) return;
+    anonymousBtn.classList.toggle("is-active", mode === "anonymous");
+    anonymousBtn.setAttribute("aria-pressed", String(mode === "anonymous"));
+    initialsBtn.classList.toggle("is-active", mode === "initials");
+    initialsBtn.setAttribute("aria-pressed", String(mode === "initials"));
+    nameBtn.classList.toggle("is-active", mode === "name");
+    nameBtn.setAttribute("aria-pressed", String(mode === "name"));
+  }
+
+  function syncHomeAtUiOnly(choice) {
+    var buttons = document.querySelectorAll("[data-home-at]");
+    var i;
+    for (i = 0; i < buttons.length; i++) {
+      var btn = buttons[i];
+      var value = btn.getAttribute("data-home-at");
+      var isActive = value === choice;
+      btn.classList.toggle("is-active", isActive);
+      btn.setAttribute("aria-pressed", String(isActive));
+    }
+  }
+
+  /**
+   * Apply profile fields from a combination row (no grid / palette).
+   * @param {Record<string, string>} row
+   * @param {{ silent?: boolean }} [options]
+   */
+  function applyProfileState(row, options) {
+    var silent = options && options.silent === true;
+    if (!row) return;
+
+    if (row.livingInIran !== undefined && row.livingInIran !== "") {
+      var isYes =
+        row.livingInIran === true ||
+        String(row.livingInIran).toLowerCase() === "yes" ||
+        String(row.livingInIran) === "true";
+      livingInIranChoice = isYes;
+      syncLivingInIranUiOnly(isYes);
+      if (!silent && onLivingInIranChange) onLivingInIranChange(livingInIranChoice);
+    }
+
+    if (
+      row.livingDuration === "smallPart" ||
+      row.livingDuration === "partOfLife" ||
+      row.livingDuration === "mostAll"
+    ) {
+      livingDurationChoice = row.livingDuration;
+      syncLivingDurationUiOnly(livingDurationChoice);
+      if (!silent && onLivingDurationChange) {
+        onLivingDurationChange(livingDurationChoice);
+      }
+    }
+
+    if (row.leavingYear !== undefined) {
+      leavingYearValue = String(row.leavingYear).replace(/\D/g, "").slice(0, 4);
+      var leavingYearInput = document.getElementById("identity-leaving-year-input");
+      if (leavingYearInput) leavingYearInput.value = leavingYearValue;
+      if (!silent && onLeavingYearChange) onLeavingYearChange(leavingYearValue);
+    }
+
+    if (row.from !== undefined) {
+      fromValue = normalizeProfileEnglishText(row.from);
+      var fromInput = document.getElementById("identity-from-input");
+      if (fromInput) fromInput.value = fromValue;
+      if (!silent && onFromChange) onFromChange(fromValue);
+    }
+
+    if (row.nowIn !== undefined) {
+      nowInValue = normalizeProfileEnglishText(row.nowIn);
+      var nowInInput = document.getElementById("identity-now-in-input");
+      if (nowInInput) nowInInput.value = nowInValue;
+      if (!silent && onNowInChange) onNowInChange(nowInValue);
+    }
+
+    if (row.name !== undefined) {
+      nameValue = normalizeProfileEnglishText(row.name);
+      var nameInput = document.getElementById("identity-name-input");
+      if (nameInput) nameInput.value = nameValue;
+    }
+
+    if (
+      row.nameDisplayMode === "anonymous" ||
+      row.nameDisplayMode === "initials" ||
+      row.nameDisplayMode === "name"
+    ) {
+      nameDisplayMode = row.nameDisplayMode;
+      syncNameDisplayModeUiOnly(nameDisplayMode);
+    }
+
+    if (row.age !== undefined) {
+      ageValue = String(row.age).replace(/\D/g, "").slice(0, 2);
+      var ageInput = document.getElementById("identity-age-input");
+      if (ageInput) ageInput.value = ageValue;
+      if (!silent && onAgeChange) onAgeChange(ageValue);
+    }
+
+    if (
+      row.homeAt === "inIran" ||
+      row.homeAt === "whereILive" ||
+      row.homeAt === "nowhere"
+    ) {
+      homeAtChoice = row.homeAt;
+      syncHomeAtUiOnly(homeAtChoice);
+      if (!silent && onHomeAtChange) onHomeAtChange(homeAtChoice);
+    }
+
+    if (!silent && onNameChange) onNameChange();
+  }
+
   function init() {
     initLivingInIranToggle();
     initLivingDurationPicker();
@@ -435,6 +581,11 @@
     setOnHomeAtChange: function (fn) {
       onHomeAtChange = fn;
     },
+    /**
+     * @param {Record<string, string>} row
+     * @param {{ silent?: boolean }} [options]
+     */
+    applyProfileState: applyProfileState,
   };
 
   if (document.readyState === "loading") {

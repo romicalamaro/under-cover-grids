@@ -489,6 +489,13 @@ body {
   flex: 0 0 auto;
 }
 
+.sidebar__sheet-live-status {
+  display: block;
+  margin-top: 0.35rem;
+  font-size: 0.78rem;
+  color: #5a6b52;
+}
+
 .sidebar__sheet-palette-row {
   display: flex;
   flex-direction: column;
@@ -550,6 +557,39 @@ body {
   font-size: 0.85rem;
   color: rgba(0, 0, 0, 0.65);
   white-space: nowrap;
+}
+
+.sidebar__hint--combo-note {
+  margin-top: 0;
+  font-size: 0.78rem;
+  opacity: 0.85;
+}
+
+.sidebar__combo-switcher {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.sidebar__combo-btn {
+  font: inherit;
+  min-width: 2.25rem;
+  padding: 0.35rem 0.55rem;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.sidebar__combo-btn:hover {
+  background: #fffef8;
+}
+
+.sidebar__combo-btn.is-active {
+  background: #1a1a1a;
+  color: #fff;
+  border-color: #1a1a1a;
 }
 
 .sidebar__canvas-bg-swatches {

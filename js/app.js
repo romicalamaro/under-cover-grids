@@ -77,6 +77,11 @@
   var hopeStippleExportDataUri = null;
   var hopeStippleRawExportDataUri = null;
   var hopeStippleExportDataLoadPromise = null;
+  /** Lazy-load stipple assets (PNG first; ~3MB embed only when export needs it). */
+  var hopeStippleReadyPromise = null;
+  /** Skip palette onLoaded → render() during startup (single consolidated render). */
+  var appStartupBootstrapping = true;
+  var deferredAutoMergeScheduled = false;
   /** Frame inset overlay (lines, caps, ellipses, diagonals); default hidden */
   var frameInsetOverlayVisible = false;
 
@@ -99,6 +104,8 @@
         return getAngerVerticalLengthPercent() > 0;
       case "anger":
         return getAngerTriangleDensity() > 0;
+      case "pride":
+        return getAutoMergeIntensity() > 0;
       default:
         return true;
     }
@@ -128,6 +135,8 @@
   var lastColorDivisionLayoutSignature = "";
   /** Incremented by Shuffle layout to force a new Mondrian-style split. */
   var colorDivisionShuffleSeed = 0;
+  /** @type {null | function(): number} */
+  var colorDivisionGenerationRng = null;
   /** Cached inline SVG assets for the dynamic label bar. */
   var labelBarSvgCache = {};
   var labelBarSvgLoadPromises = {};
@@ -246,6 +255,11 @@
     }
     if (typeof getColor === "function") return getColor(slotId);
     return "#000000";
+  }
+
+  /** Fear verticals — slot F1 from the active sheet palette. */
+  function getFearVerticalStrokeColor() {
+    return sheetColor("F1");
   }
 
   function getGridBoundaryStrokeColor() {
@@ -451,6 +465,34 @@
     }
   }
 
+  /**
+   * Uniform scale + center so stipple dots stay circular (no non-uniform stretch).
+   * @param {number} sourceW
+   * @param {number} sourceH
+   * @param {number} [sourceMinX]
+   * @param {number} [sourceMinY]
+   * @returns {{ scale: number, offsetX: number, offsetY: number, drawW: number, drawH: number }}
+   */
+  function getHopeStippleUniformLayout(
+    sourceW,
+    sourceH,
+    sourceMinX,
+    sourceMinY
+  ) {
+    var minX = typeof sourceMinX === "number" ? sourceMinX : 0;
+    var minY = typeof sourceMinY === "number" ? sourceMinY : 0;
+    var scale = Math.min(CANVAS_W / sourceW, CANVAS_H / sourceH);
+    var drawW = sourceW * scale;
+    var drawH = sourceH * scale;
+    return {
+      scale: scale,
+      offsetX: (CANVAS_W - drawW) / 2 - minX * scale,
+      offsetY: (CANVAS_H - drawH) / 2 - minY * scale,
+      drawW: drawW,
+      drawH: drawH,
+    };
+  }
+
   function prepareHopeStippleSvgContent(svgText, dotColor) {
     var viewBoxMatch = svgText.match(/viewBox="([^"]+)"/i);
     var viewBox = viewBoxMatch ? viewBoxMatch[1] : "0 0 " + CANVAS_W + " " + CANVAS_H;
@@ -473,19 +515,16 @@
     var vbMinY = isFinite(vbParts[1]) ? vbParts[1] : 0;
     var vbW = isFinite(vbParts[2]) && vbParts[2] > 0 ? vbParts[2] : CANVAS_W;
     var vbH = isFinite(vbParts[3]) && vbParts[3] > 0 ? vbParts[3] : CANVAS_H;
-    var stippleScaleX = CANVAS_W / vbW;
-    var stippleScaleY = CANVAS_H / vbH;
+    var layout = getHopeStippleUniformLayout(vbW, vbH, vbMinX, vbMinY);
     return {
       inner: inner,
       transform:
         "translate(" +
-        -vbMinX * stippleScaleX +
+        layout.offsetX +
         "," +
-        -vbMinY * stippleScaleY +
+        layout.offsetY +
         ") scale(" +
-        stippleScaleX +
-        "," +
-        stippleScaleY +
+        layout.scale +
         ")",
     };
   }
@@ -639,7 +678,19 @@
         var ctx = canvas.getContext("2d");
         if (!ctx) return resolve(null);
 
-        ctx.drawImage(exportImg, 0, 0, CANVAS_W, CANVAS_H);
+        var imgLayout = getHopeStippleUniformLayout(
+          exportImg.naturalWidth,
+          exportImg.naturalHeight
+        );
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+        ctx.drawImage(
+          exportImg,
+          imgLayout.offsetX,
+          imgLayout.offsetY,
+          imgLayout.drawW,
+          imgLayout.drawH
+        );
         var imageData = ctx.getImageData(0, 0, CANVAS_W, CANVAS_H);
         var data = imageData.data;
         var visited = new Uint8Array(CANVAS_W * CANVAS_H);
@@ -766,7 +817,7 @@
       cm.setAttribute("type", "matrix");
       cm.setAttribute(
         "values",
-        "0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  -1 -1 -1 1 1"
+        "-1 0 0 0 1  0 -1 0 0 1  0 0 -1 0 1  0 0 0 1 0"
       );
       filter.appendChild(cm);
       defs.appendChild(filter);
@@ -784,35 +835,69 @@
       defs.appendChild(mask);
     }
 
+    // Opaque black base: feColorMatrix turns transparent mask pixels white (show-all bug).
+    var maskBg = mask.querySelector("[data-hope-dots-mask-bg]");
+    if (!maskBg) {
+      maskBg = elSvg("rect");
+      maskBg.setAttribute("data-hope-dots-mask-bg", "1");
+      mask.insertBefore(maskBg, mask.firstChild);
+    }
+    maskBg.setAttribute("x", "0");
+    maskBg.setAttribute("y", "0");
+    maskBg.setAttribute("width", String(CANVAS_W));
+    maskBg.setAttribute("height", String(CANVAS_H));
+    maskBg.setAttribute("fill", "black");
+
     var maskHref = getHopeStippleMaskImageHref();
     var maskImg = mask.querySelector("image");
     if (!maskImg) {
       maskImg = elSvg("image");
       maskImg.setAttribute("filter", "url(#" + HOPE_DOTS_MASK_INVERT_FILTER_ID + ")");
-      maskImg.setAttribute("x", "0");
-      maskImg.setAttribute("y", "0");
-      maskImg.setAttribute("width", String(CANVAS_W));
-      maskImg.setAttribute("height", String(CANVAS_H));
-      maskImg.setAttribute("preserveAspectRatio", "none");
       mask.appendChild(maskImg);
     }
+    maskImg.setAttribute("x", "0");
+    maskImg.setAttribute("y", "0");
+    maskImg.setAttribute("width", String(CANVAS_W));
+    maskImg.setAttribute("height", String(CANVAS_H));
+    // PNG is rasterized at full canvas size with opaque white letterbox baked in.
+    maskImg.setAttribute("preserveAspectRatio", "none");
     maskImg.setAttribute("href", maskHref);
   }
 
   function loadHopeStippleSvg() {
-    ensureHopeStippleExportDataLoaded()
-      .then(function () {
-        return Promise.all([
-          getHopeStippleSvgTextForExport(),
-          ensureHopeStippleRawExportDataUri(),
-        ]);
-      })
-      .then(function (results) {
-        var svgText = results[0];
-        if (!svgText) throw new Error("Hope stipple SVG missing");
-        hopeStippleSvgText = svgText;
-        hopeStippleImageReady = true;
-        applyMergeReveal();
+    return ensureHopeStippleReady();
+  }
+
+  /**
+   * Load stipple mask for Hope merge dots. Fast path: PNG file only (~770KB).
+   * The ~3MB hopeStippleExportData.js embed loads only for SVG export.
+   * @returns {Promise<boolean>}
+   */
+  function ensureHopeStippleReady() {
+    if (hopeStippleImageReady) return Promise.resolve(true);
+    if (hopeStippleReadyPromise) return hopeStippleReadyPromise;
+
+    hopeStippleReadyPromise = ensureHopeStippleRawExportDataUri()
+      .then(function (rawUri) {
+        if (rawUri) {
+          hopeStippleImageReady = true;
+          applyMergeReveal();
+          return true;
+        }
+        return ensureHopeStippleExportDataLoaded().then(function () {
+          return Promise.all([
+            getHopeStippleSvgTextForExport(),
+            ensureHopeStippleRawExportDataUri(),
+          ]);
+        }).then(function (results) {
+          var svgText = results[0];
+          if (svgText) hopeStippleSvgText = svgText;
+          hopeStippleImageReady = !!(
+            hopeStippleRawExportDataUri || hopeStippleSvgText
+          );
+          if (hopeStippleImageReady) applyMergeReveal();
+          return hopeStippleImageReady;
+        });
       })
       .catch(function () {
         hopeStippleSvgText = null;
@@ -820,7 +905,29 @@
         hopeStippleImageReady = false;
         hopeStippleExportDataUri = null;
         hopeStippleRawExportDataUri = null;
+        hopeStippleReadyPromise = null;
+        return false;
       });
+
+    return hopeStippleReadyPromise;
+  }
+
+  function scheduleDeferredAutoMerge() {
+    if (deferredAutoMergeScheduled) return;
+    if (getAutoMergeIntensity() <= 0) return;
+    if (hasActivePrideAutoMergeRegions()) return;
+    deferredAutoMergeScheduled = true;
+    var run = function () {
+      deferredAutoMergeScheduled = false;
+      if (getAutoMergeIntensity() > 0 && !hasActivePrideAutoMergeRegions()) {
+        runAutoMerge();
+      }
+    };
+    if (typeof requestIdleCallback === "function") {
+      requestIdleCallback(run, { timeout: 2000 });
+    } else {
+      setTimeout(run, 0);
+    }
   }
 
   function getStarGridOctagonsNMax() {
@@ -834,14 +941,61 @@
     return OCTAGONS_N_MAX;
   }
 
-  function getOctagonsN() {
+  function getOctagonsNSteps() {
+    return typeof OCTAGONS_N_STEPS !== "undefined" ? OCTAGONS_N_STEPS : 10;
+  }
+
+  function getOctagonsNStepFromSlider() {
     var slider = document.getElementById("octagons-n");
-    var v = slider ? Number(slider.value) : OCTAGONS_N_DEFAULT;
-    if (isCirclesGrid()) {
-      return CirclesGridGeometry.snapCirclesGridN(v);
+    var steps = getOctagonsNSteps();
+    var step = slider
+      ? Math.round(Number(slider.value))
+      : octagonsNStepFromValue(OCTAGONS_N_DEFAULT);
+    return Math.max(1, Math.min(steps, step));
+  }
+
+  function getOctagonsNStepDisplay() {
+    return getOctagonsNStepFromSlider();
+  }
+
+  function getOctagonsNValueForActiveGrid(step) {
+    if (isStarGrid()) {
+      return octagonsNValueFromStepTable(
+        step,
+        typeof OCTAGONS_N_BY_STEP_STAR !== "undefined"
+          ? OCTAGONS_N_BY_STEP_STAR
+          : null
+      );
+    }
+    if (isCirclesLikeGrid()) {
+      return octagonsNValueFromStepTable(
+        step,
+        typeof OCTAGONS_N_BY_STEP_CIRCLES !== "undefined"
+          ? OCTAGONS_N_BY_STEP_CIRCLES
+          : null
+      );
+    }
+    return octagonsNValueFromStep(step);
+  }
+
+  function getOctagonsN() {
+    var v = getOctagonsNValueForActiveGrid(getOctagonsNStepFromSlider());
+    if (isCirclesLikeGrid()) {
+      return getCirclesLikeGridGeometry().snapCirclesGridN(v);
+    }
+    if (isStarGrid()) {
+      var starMin =
+        typeof OCTAGONS_N_BY_STEP_STAR !== "undefined" &&
+        OCTAGONS_N_BY_STEP_STAR.length
+          ? OCTAGONS_N_BY_STEP_STAR[0]
+          : OCTAGONS_N_MIN;
+      return Math.min(
+        getOctagonsNMaxForActiveGrid(),
+        Math.max(starMin, Math.round(v))
+      );
     }
     return Math.min(
-      getOctagonsNMaxForActiveGrid(),
+      OCTAGONS_N_MAX,
       Math.max(OCTAGONS_N_MIN, Math.round(v))
     );
   }
@@ -854,18 +1008,37 @@
     return gridType === GRID_TYPE_CIRCLES;
   }
 
+  function isDiamondsGrid() {
+    return gridType === GRID_TYPE_DIAMONDS;
+  }
+
+  /** Circles + diamonds grids share the same 2×2-block tessellation and emotion semantics. */
+  function isCirclesLikeGrid() {
+    return isCirclesGrid() || isDiamondsGrid();
+  }
+
+  function getCirclesLikeGridGeometry() {
+    if (
+      isDiamondsGrid() &&
+      typeof DiamondsGridGeometry !== "undefined"
+    ) {
+      return DiamondsGridGeometry;
+    }
+    return CirclesGridGeometry;
+  }
+
   function isOctagonGrid() {
     return gridType === GRID_TYPE_OCTAGON;
   }
 
-  /** Octagon + star + circles grids share junction-diamond catalog semantics. */
+  /** Octagon + star + circles + diamonds grids share junction-diamond catalog semantics. */
   function supportsAngerDiamondTriangles() {
-    return isOctagonGrid() || isStarGrid() || isCirclesGrid();
+    return isOctagonGrid() || isStarGrid() || isCirclesLikeGrid();
   }
 
   function getAngerTriangleDensityMaxForActiveGrid() {
     if (
-      isCirclesGrid() &&
+      isCirclesLikeGrid() &&
       typeof CIRCLES_GRID_ANGER_TRIANGLE_DENSITY_MAX !== "undefined"
     ) {
       return CIRCLES_GRID_ANGER_TRIANGLE_DENSITY_MAX;
@@ -877,7 +1050,7 @@
 
   function getPrideFillPercentMaxForActiveGrid() {
     if (
-      isCirclesGrid() &&
+      isCirclesLikeGrid() &&
       typeof CIRCLES_GRID_PRIDE_FILL_PERCENT_MAX !== "undefined"
     ) {
       return CIRCLES_GRID_PRIDE_FILL_PERCENT_MAX;
@@ -889,7 +1062,7 @@
 
   function getGuiltShameFillPercentMaxForActiveGrid() {
     if (
-      isCirclesGrid() &&
+      isCirclesLikeGrid() &&
       typeof CIRCLES_GRID_GUILT_SHAME_FILL_PERCENT_MAX !== "undefined"
     ) {
       return CIRCLES_GRID_GUILT_SHAME_FILL_PERCENT_MAX;
@@ -901,7 +1074,7 @@
 
   function getJunctionEmotionDensityMaxForActiveGrid() {
     if (
-      isCirclesGrid() &&
+      isCirclesLikeGrid() &&
       typeof CIRCLES_GRID_JUNCTION_EMOTION_DENSITY_MAX !== "undefined"
     ) {
       return CIRCLES_GRID_JUNCTION_EMOTION_DENSITY_MAX;
@@ -911,7 +1084,7 @@
 
   function getHelplessnessPercentMaxForActiveGrid() {
     if (
-      isCirclesGrid() &&
+      isCirclesLikeGrid() &&
       typeof CIRCLES_GRID_JUNCTION_EMOTION_DENSITY_MAX !== "undefined"
     ) {
       return CIRCLES_GRID_JUNCTION_EMOTION_DENSITY_MAX;
@@ -919,6 +1092,51 @@
     return typeof HELPLESSNESS_PERCENT_MAX !== "undefined"
       ? HELPLESSNESS_PERCENT_MAX
       : 30;
+  }
+
+  /** Grid-aware min/max when applying handkerchief combo CSV steps. */
+  function getFeelingsSliderBoundsForCombo(key) {
+    switch (key) {
+      case "longingCircleDensity":
+      case "griefCircleDensity":
+      case "strengthDensity":
+        return {
+          min:
+            typeof CIRCLE_DENSITY_MIN !== "undefined" ? CIRCLE_DENSITY_MIN : 0,
+          max: getJunctionEmotionDensityMaxForActiveGrid(),
+        };
+      case "helplessnessPercent":
+        return {
+          min:
+            typeof HELPLESSNESS_PERCENT_MIN !== "undefined"
+              ? HELPLESSNESS_PERCENT_MIN
+              : 0,
+          max: getHelplessnessPercentMaxForActiveGrid(),
+        };
+      case "angerTriangleDensity":
+        return {
+          min:
+            typeof ANGER_TRIANGLE_DENSITY_MIN !== "undefined"
+              ? ANGER_TRIANGLE_DENSITY_MIN
+              : 0,
+          max: getAngerTriangleDensityMaxForActiveGrid(),
+        };
+      case "prideFillPercent":
+        return {
+          min: PRIDE_FILL_PERCENT_MIN,
+          max: getPrideFillPercentMaxForActiveGrid(),
+        };
+      case "guiltShameFillPercent":
+        return {
+          min:
+            typeof GUILT_SHAME_FILL_PERCENT_MIN !== "undefined"
+              ? GUILT_SHAME_FILL_PERCENT_MIN
+              : 0,
+          max: getGuiltShameFillPercentMaxForActiveGrid(),
+        };
+      default:
+        return null;
+    }
   }
 
   function syncFeelingsSteppedSliderRange(sliderId, min, max) {
@@ -1007,6 +1225,31 @@
     ).filter(function (layout) {
       return layout.n <= starMaxN;
     });
+    if (
+      typeof OCTAGONS_N_BY_STEP_STAR !== "undefined" &&
+      NestedStarOctagonsGeometry.computeLayoutFromN
+    ) {
+      var starNSeen = {};
+      var li;
+      for (li = 0; li < starValidLayouts.length; li++) {
+        starNSeen[starValidLayouts[li].n] = true;
+      }
+      for (li = 0; li < OCTAGONS_N_BY_STEP_STAR.length; li++) {
+        var reqStarN = OCTAGONS_N_BY_STEP_STAR[li];
+        if (reqStarN > starMaxN || starNSeen[reqStarN]) continue;
+        starValidLayouts.push(
+          NestedStarOctagonsGeometry.computeLayoutFromN(
+            reqStarN,
+            CANVAS_W,
+            CANVAS_H
+          )
+        );
+        starNSeen[reqStarN] = true;
+      }
+      starValidLayouts.sort(function (a, b) {
+        return a.n - b.n;
+      });
+    }
     if (!starValidLayouts.length) {
       starValidLayouts = [
         NestedStarOctagonsGeometry.computeLayoutFromN(
@@ -1031,36 +1274,13 @@
   function syncOctagonDensitySliderRange() {
     var slider = document.getElementById("octagons-n");
     if (!slider) return;
-    if (isStarGrid() && starValidLayouts.length) {
-      var minN = starValidLayouts[0].n;
-      var maxN = Math.min(
-        starValidLayouts[starValidLayouts.length - 1].n,
-        getStarGridOctagonsNMax()
-      );
-      slider.min = String(minN);
-      slider.max = String(maxN);
-      slider.step = "1";
-      if (Number(slider.value) > maxN) {
-        slider.value = String(maxN);
-      }
-    } else if (isCirclesGrid()) {
-      var circlesMin =
-        typeof CIRCLES_GRID_N_MIN !== "undefined"
-          ? CirclesGridGeometry.snapCirclesGridN(CIRCLES_GRID_N_MIN)
-          : CirclesGridGeometry.snapCirclesGridN(OCTAGONS_N_MIN);
-      var circlesMax = CirclesGridGeometry.snapCirclesGridN(OCTAGONS_N_MAX);
-      var circlesStep =
-        typeof CIRCLES_GRID_N_STEP !== "undefined" ? CIRCLES_GRID_N_STEP : 2;
-      slider.min = String(circlesMin);
-      slider.max = String(circlesMax);
-      slider.step = String(circlesStep);
-      slider.value = String(
-        CirclesGridGeometry.snapCirclesGridN(Number(slider.value))
-      );
-    } else {
-      slider.min = String(OCTAGONS_N_MIN);
-      slider.max = String(OCTAGONS_N_MAX);
-      slider.step = "1";
+    var steps = getOctagonsNSteps();
+    slider.min = "1";
+    slider.max = String(steps);
+    slider.step = "1";
+    var step = getOctagonsNStepFromSlider();
+    if (Number(slider.value) !== step) {
+      slider.value = String(step);
     }
   }
 
@@ -1068,6 +1288,7 @@
     var octBtn = document.getElementById("grid-choose-octagon-btn");
     var starBtn = document.getElementById("grid-choose-star-btn");
     var circlesBtn = document.getElementById("grid-choose-circles-btn");
+    var diamondsBtn = document.getElementById("grid-choose-diamonds-btn");
     if (octBtn) {
       octBtn.classList.toggle("is-active", isOctagonGrid());
       octBtn.setAttribute("aria-pressed", String(isOctagonGrid()));
@@ -1079,6 +1300,10 @@
     if (circlesBtn) {
       circlesBtn.classList.toggle("is-active", isCirclesGrid());
       circlesBtn.setAttribute("aria-pressed", String(isCirclesGrid()));
+    }
+    if (diamondsBtn) {
+      diamondsBtn.classList.toggle("is-active", isDiamondsGrid());
+      diamondsBtn.setAttribute("aria-pressed", String(isDiamondsGrid()));
     }
   }
 
@@ -1137,8 +1362,23 @@
 
   function updateInnerContentTransformForGridType() {
     if (!designSvg) return;
+    var transformAttr = getInnerContentTransformAttr();
     var inner = designSvg.querySelector("#inner-content");
-    if (inner) inner.setAttribute("transform", getInnerContentTransformAttr());
+    if (inner) inner.setAttribute("transform", transformAttr);
+    var fearVerticalRoot = designSvg.querySelector("#fear-vertical-grid-root");
+    if (fearVerticalRoot) {
+      fearVerticalRoot.setAttribute("transform", transformAttr);
+    }
+    var prideRoot = designSvg.querySelector("#pride-auto-merge-root");
+    if (prideRoot) {
+      prideRoot.setAttribute("transform", transformAttr);
+    }
+    var fanRoot = designSvg.querySelector("#fan-half-circle-root");
+    if (fanRoot) {
+      fanRoot.setAttribute("transform", transformAttr);
+    }
+    ensurePrideAutoMergeMounted();
+    ensureFanLayerMounted();
   }
 
   function refreshBorderFrameAndLabelBars() {
@@ -1153,7 +1393,8 @@
     if (
       nextType !== GRID_TYPE_OCTAGON &&
       nextType !== GRID_TYPE_STAR &&
-      nextType !== GRID_TYPE_CIRCLES
+      nextType !== GRID_TYPE_CIRCLES &&
+      nextType !== GRID_TYPE_DIAMONDS
     ) {
       return;
     }
@@ -1189,6 +1430,7 @@
     var octBtn = document.getElementById("grid-choose-octagon-btn");
     var starBtn = document.getElementById("grid-choose-star-btn");
     var circlesBtn = document.getElementById("grid-choose-circles-btn");
+    var diamondsBtn = document.getElementById("grid-choose-diamonds-btn");
     if (octBtn) {
       octBtn.addEventListener("click", function () {
         setGridType(GRID_TYPE_OCTAGON);
@@ -1204,17 +1446,34 @@
         setGridType(GRID_TYPE_CIRCLES);
       });
     }
+    if (diamondsBtn) {
+      diamondsBtn.addEventListener("click", function () {
+        setGridType(GRID_TYPE_DIAMONDS);
+      });
+    }
     syncGridTypeButtons();
     syncGridSlidersForGridType();
   }
 
-  function getInnerScale() {
+  function getInnerScaleSteps() {
+    return typeof INNER_SCALE_STEPS !== "undefined" ? INNER_SCALE_STEPS : 10;
+  }
+
+  function getInnerScaleStepFromSlider() {
     var slider = document.getElementById("inner-scale");
-    var v = slider ? Number(slider.value) : INNER_SCALE_DEFAULT;
-    return Math.min(
-      INNER_SCALE_MAX,
-      Math.max(INNER_SCALE_MIN, Math.round(v * 100) / 100)
-    );
+    var steps = getInnerScaleSteps();
+    var step = slider
+      ? Math.round(Number(slider.value))
+      : innerScaleStepFromValue(INNER_SCALE_DEFAULT);
+    return Math.max(1, Math.min(steps, step));
+  }
+
+  function getInnerScale() {
+    return innerScaleValueFromStep(getInnerScaleStepFromSlider());
+  }
+
+  function getInnerScaleStepDisplay() {
+    return getInnerScaleStepFromSlider();
   }
 
   /**
@@ -1242,6 +1501,12 @@
 
   function snapFeelingsSliderValue(raw, min, max) {
     return snapSteppedSliderValue(raw, min, max, getFeelingsSliderSteps());
+  }
+
+  function setFeelingsStepOutputById(outputId, internalValue, min, max) {
+    var out = document.getElementById(outputId);
+    if (!out) return;
+    out.textContent = String(feelingsStepFromValue(internalValue, min, max));
   }
 
   /** @returns {number} */
@@ -1465,14 +1730,14 @@
         ).tileSize;
       }
     }
-    if (isCirclesGrid()) {
+    if (isCirclesLikeGrid()) {
       var circlesRefN =
         typeof CIRCLES_GRID_PRIDE_REFERENCE_N !== "undefined"
           ? CIRCLES_GRID_PRIDE_REFERENCE_N
           : typeof CIRCLES_GRID_N_MIN !== "undefined"
             ? CIRCLES_GRID_N_MIN
             : OCTAGONS_N_DEFAULT;
-      return CirclesGridGeometry.tileSizeFromN(circlesRefN, CANVAS_W);
+      return getCirclesLikeGridGeometry().tileSizeFromN(circlesRefN, CANVAS_W);
     }
     var octRefN =
       typeof PRIDE_AUTO_MERGE_REFERENCE_N_OCTAGON !== "undefined"
@@ -1492,32 +1757,32 @@
   }
 
   /**
-   * Denser grid → lower edge budget so Pride clusters stay small and simple.
-   * @returns {number} scale in [min, 1]
+   * Denser grid → higher edge budget so Pride clusters cover the same px² as at reference density.
+   * @returns {number} scale in [1, max]
    */
-  function getPrideAutoMergeDensityEdgeScale() {
+  function getPrideAutoMergeDensityAreaScale() {
     var densityRatio = getPrideAutoMergeDensityRatio();
     if (densityRatio <= 1) return 1;
 
     var exponent =
-      typeof PRIDE_AUTO_MERGE_DENSITY_SIMPLIFY_EXPONENT !== "undefined"
-        ? PRIDE_AUTO_MERGE_DENSITY_SIMPLIFY_EXPONENT
-        : 1;
-    var minScale =
-      typeof PRIDE_AUTO_MERGE_DENSITY_EDGE_SCALE_MIN !== "undefined"
-        ? PRIDE_AUTO_MERGE_DENSITY_EDGE_SCALE_MIN
-        : 0.35;
-    return Math.max(minScale, Math.pow(1 / densityRatio, exponent));
+      typeof PRIDE_AUTO_MERGE_DENSITY_AREA_EXPONENT !== "undefined"
+        ? PRIDE_AUTO_MERGE_DENSITY_AREA_EXPONENT
+        : 2;
+    var maxScale =
+      typeof PRIDE_AUTO_MERGE_DENSITY_AREA_SCALE_MAX !== "undefined"
+        ? PRIDE_AUTO_MERGE_DENSITY_AREA_SCALE_MAX
+        : 8;
+    return Math.min(maxScale, Math.pow(densityRatio, exponent));
   }
 
   /** Fast Pride path: skip dangling prune, orphan fills, midpoint segment tests. */
   function shouldUseSimplePrideAutoMergeMode() {
-    // Circles grid needs orphan fills at every density; simple mode removes almost all Pride areas when dense.
-    if (isCirclesGrid()) return false;
+    // Circles/diamonds/octagon need full merge passes for consistent canvas fill area.
+    if (isCirclesLikeGrid() || isOctagonGrid()) return false;
     var threshold =
       typeof PRIDE_AUTO_MERGE_SIMPLE_MODE_DENSITY_RATIO !== "undefined"
         ? PRIDE_AUTO_MERGE_SIMPLE_MODE_DENSITY_RATIO
-        : 1.15;
+        : 3;
     return getPrideAutoMergeDensityRatio() >= threshold;
   }
 
@@ -1576,15 +1841,13 @@
       if (edgesPerAreaMax < edgesPerAreaMin) edgesPerAreaMax = edgesPerAreaMin;
     }
 
-    if (!isCirclesGrid()) {
-      var densityEdgeScale = getPrideAutoMergeDensityEdgeScale();
-      if (densityEdgeScale < 1) {
-        edgesPerAreaMin = Math.max(2, Math.round(edgesPerAreaMin * densityEdgeScale));
-        edgesPerAreaMax = Math.max(
-          edgesPerAreaMin,
-          Math.round(edgesPerAreaMax * densityEdgeScale)
-        );
-      }
+    var densityAreaScale = getPrideAutoMergeDensityAreaScale();
+    if (densityAreaScale > 1) {
+      edgesPerAreaMin = Math.max(2, Math.round(edgesPerAreaMin * densityAreaScale));
+      edgesPerAreaMax = Math.max(
+        edgesPerAreaMin,
+        Math.round(edgesPerAreaMax * densityAreaScale)
+      );
     }
 
     return {
@@ -1600,15 +1863,20 @@
   }
 
   function updateAutoMergeIntensityOutput() {
-    var out = document.getElementById("auto-merge-intensity-out");
-    if (!out) return;
-    var step = getAutoMergeIntensity();
-    if (step <= 0) {
-      out.textContent = "Off";
-      return;
-    }
-    var opts = getAutoMergePlanOptions();
-    out.textContent = "Step " + step + " · " + opts.areaCountMin + " areas";
+    var min =
+      typeof AUTO_MERGE_INTENSITY_MIN !== "undefined"
+        ? AUTO_MERGE_INTENSITY_MIN
+        : 0;
+    var max =
+      typeof AUTO_MERGE_INTENSITY_MAX !== "undefined"
+        ? AUTO_MERGE_INTENSITY_MAX
+        : 7;
+    setFeelingsStepOutputById(
+      "auto-merge-intensity-out",
+      getAutoMergeIntensity(),
+      min,
+      max
+    );
   }
 
   function getGridStrokeWidth() {
@@ -2004,6 +2272,36 @@
   /** Color fade: fill for margin cells that lost their pattern color (sheet C10). */
   function getBorderSideColorFadeFillColor() {
     return sheetColor("C10");
+  }
+
+  function getBorderSideEmptyCellStippleDotRadius() {
+    var dotSize =
+      typeof BORDER_FRAME_EMPTY_CELL_DOT_SIZE !== "undefined"
+        ? BORDER_FRAME_EMPTY_CELL_DOT_SIZE
+        : typeof RADIAL_FAN_MIDDLE_BAND_DOT_SIZE !== "undefined"
+          ? RADIAL_FAN_MIDDLE_BAND_DOT_SIZE
+          : 2;
+    return dotSize / 2;
+  }
+
+  function getBorderSideEmptyCellStippleMinDotDistance() {
+    var dotSize =
+      typeof BORDER_FRAME_EMPTY_CELL_DOT_SIZE !== "undefined"
+        ? BORDER_FRAME_EMPTY_CELL_DOT_SIZE
+        : typeof RADIAL_FAN_MIDDLE_BAND_DOT_SIZE !== "undefined"
+          ? RADIAL_FAN_MIDDLE_BAND_DOT_SIZE
+          : 2;
+    var spacing =
+      typeof BORDER_FRAME_EMPTY_CELL_DOT_SPACING !== "undefined"
+        ? BORDER_FRAME_EMPTY_CELL_DOT_SPACING
+        : typeof RADIAL_FAN_MIDDLE_BAND_DOT_SPACING !== "undefined"
+          ? RADIAL_FAN_MIDDLE_BAND_DOT_SPACING
+          : 2;
+    return dotSize + spacing;
+  }
+
+  function getBorderSideEmptyCellStippleColor() {
+    return getBorderDivisionStrokeColor();
   }
 
   function getCircleFillColor() {
@@ -3252,8 +3550,8 @@
         1
       );
     }
-    if (isCirclesGrid()) {
-      return CirclesGridGeometry.buildJunctionCircleCatalog(
+    if (isCirclesLikeGrid()) {
+      return getCirclesLikeGridGeometry().buildJunctionCircleCatalog(
         lastOctagonsN,
         CANVAS_W,
         CANVAS_H
@@ -3268,10 +3566,10 @@
     );
   }
 
-  /** Circles grid: Sadness uses two-circle junction crosses only. */
+  /** Circles/diamonds grid: Sadness uses two-block junction crosses only. */
   function getSadnessCircleCatalog() {
-    if (isCirclesGrid()) {
-      return CirclesGridGeometry.buildAdjacentCircleJunctionCatalog(
+    if (isCirclesLikeGrid()) {
+      return getCirclesLikeGridGeometry().buildAdjacentCircleJunctionCatalog(
         lastOctagonsN,
         CANVAS_W,
         CANVAS_H
@@ -3281,7 +3579,7 @@
   }
 
   function syncSadnessCircleLayoutOnSignatureChange() {
-    var sig = isCirclesGrid()
+    var sig = isCirclesLikeGrid()
       ? "circles-sadness-adjacent|" +
         lastOctagonsN +
         "|" +
@@ -3293,6 +3591,16 @@
       lastCircleLayoutSignature = sig;
       syncCircleSelection(true);
     }
+  }
+
+  /** Combo apply: grid layout may be unchanged while slider values differ. */
+  function resetFeelingsLayoutSignatures() {
+    lastCircleLayoutSignature = "";
+    lastLongingCircleLayoutSignature = "";
+    lastGriefCircleLayoutSignature = "";
+    lastStrengthCircleLayoutSignature = "";
+    lastHelplessnessLayoutSignature = "";
+    lastDiamondLayoutSignature = "";
   }
 
   function getHelplessnessJunctionCatalog() {
@@ -3309,8 +3617,8 @@
         CANVAS_H
       );
     }
-    if (isCirclesGrid()) {
-      return CirclesGridGeometry.buildHelplessnessCatalog(
+    if (isCirclesLikeGrid()) {
+      return getCirclesLikeGridGeometry().buildHelplessnessCatalog(
         lastOctagonsN,
         CANVAS_W,
         CANVAS_H
@@ -3342,7 +3650,7 @@
         CANVAS_H
       );
     }
-    if (isCirclesGrid()) {
+    if (isCirclesLikeGrid()) {
       return (
         "circles-hp|" +
         lastOctagonsN +
@@ -3373,8 +3681,8 @@
         CANVAS_H
       );
     }
-    if (isCirclesGrid()) {
-      return CirclesGridGeometry.buildJunctionDiamondCatalog(
+    if (isCirclesLikeGrid()) {
+      return getCirclesLikeGridGeometry().buildJunctionDiamondCatalog(
         lastOctagonsN,
         CANVAS_W,
         CANVAS_H
@@ -3408,7 +3716,7 @@
         getInnerScale()
       );
     }
-    if (isCirclesGrid()) {
+    if (isCirclesLikeGrid()) {
       return (
         "circles-quad-junction|" +
         lastOctagonsN +
@@ -3962,6 +4270,7 @@
 
   function renderAutoMergeFillsLayer() {
     if (!designSvg) return;
+    ensurePrideAutoMergeMounted();
     var layer = designSvg.querySelector("#layer-auto-merge-fills");
     if (!layer) return;
 
@@ -4146,6 +4455,47 @@
   }
 
   /**
+   * Structural pattern diamonds (Diamonds grid only) — outline, same stroke as grid lines.
+   * @param {{ cx: number, cy: number, rx: number, ry: number }[]} diamonds
+   * @returns {SVGElement}
+   */
+  function structuralDiamondsToGroup(diamonds) {
+    var g = elSvg("g");
+    g.setAttribute("id", "layer-structural-diamonds");
+    g.setAttribute("fill", "none");
+    g.setAttribute("stroke", getPatternStrokeColor());
+    g.setAttribute("stroke-width", String(getGridStrokeWidth()));
+    g.setAttribute("stroke-linejoin", "miter");
+    var i;
+    var d;
+    var poly;
+    for (i = 0; i < diamonds.length; i++) {
+      d = diamonds[i];
+      poly = elSvg("polygon");
+      poly.setAttribute(
+        "points",
+        d.cx +
+          "," +
+          (d.cy - d.ry) +
+          " " +
+          (d.cx + d.rx) +
+          "," +
+          d.cy +
+          " " +
+          d.cx +
+          "," +
+          (d.cy + d.ry) +
+          " " +
+          (d.cx - d.rx) +
+          "," +
+          d.cy
+      );
+      g.appendChild(poly);
+    }
+    return g;
+  }
+
+  /**
    * @param {{ cx: number, cy: number, r: number }[]} circles
    * @returns {SVGElement}
    */
@@ -4276,8 +4626,11 @@
       var starLayout = getStarLayout();
       lastOctagonsN = starLayout.n;
       lastTileSize = starLayout.tileSize;
-    } else if (isCirclesGrid()) {
-      lastTileSize = CirclesGridGeometry.tileSizeFromN(lastOctagonsN, CANVAS_W);
+    } else if (isCirclesLikeGrid()) {
+      lastTileSize = getCirclesLikeGridGeometry().tileSizeFromN(
+        lastOctagonsN,
+        CANVAS_W
+      );
     } else {
       lastTileSize = TopkapiGeometry.tileSizeFromN(lastOctagonsN, CANVAS_W);
     }
@@ -4306,16 +4659,17 @@
     }
     cachedStarFills = [];
     cachedStarRhombusFills = [];
-    if (isCirclesGrid()) {
+    if (isCirclesLikeGrid()) {
       var circlesInnerScale = getInnerScale();
-      cachedStructuralCircles = CirclesGridGeometry.buildStructuralCircles(
+      var circlesLikeGeometry = getCirclesLikeGridGeometry();
+      cachedStructuralCircles = circlesLikeGeometry.buildStructuralCircles(
         lastOctagonsN,
         CANVAS_W,
         CANVAS_H,
         circlesInnerScale
       );
       rebuildCirclesGridEllipseChordKeyCache();
-      return CirclesGridGeometry.buildPatternSegments(
+      return circlesLikeGeometry.buildPatternSegments(
         lastTileSize,
         CANVAS_W,
         CANVAS_H,
@@ -4421,14 +4775,9 @@
     return count;
   }
 
-  /** Circles grid: Pride adds fills only — never remove grid lines or structural ellipses. */
+  /** Circles/diamonds grid: Pride adds fills only — never remove grid lines or structural shapes. */
   function shouldPreserveCirclesGridPatternUnderPride() {
-    return isCirclesGrid();
-  }
-
-  /** Circles grid: Pride fills render above emotion marks (same stacking as star grid). */
-  function shouldRenderPrideFillsBeforeCirclesGridPattern() {
-    return false;
+    return isCirclesLikeGrid();
   }
 
   /** Hide structural circles under Pride auto-merge (solid red replaces them). */
@@ -4500,7 +4849,7 @@
     var key;
     for (ci = 0; ci < cachedStructuralCircles.length; ci++) {
       circle = cachedStructuralCircles[ci];
-      chords = CirclesGridGeometry.buildEllipseBoundarySegments([circle]);
+      chords = getCirclesLikeGridGeometry().buildEllipseBoundarySegments([circle]);
       for (i = 0; i < chords.length; i++) {
         key = TopkapiGeometry.segmentKey(
           chords[i].x1,
@@ -4534,7 +4883,7 @@
   /** True when every ellipse chord is still visible (smooth outline, not broken). */
   function isStructuralCircleOutlineIntact(circle) {
     if (!circle) return false;
-    var chords = CirclesGridGeometry.buildEllipseBoundarySegments([circle]);
+    var chords = getCirclesLikeGridGeometry().buildEllipseBoundarySegments([circle]);
     var hopeMergeRegions = getHopeMergeCutoutRegionsForRendering();
     var i;
     var s;
@@ -4557,6 +4906,100 @@
       }
     }
     return out;
+  }
+
+  /**
+   * Circles grid: four ellipse × side-grid crossings per intact structural circle
+   * (top / right / bottom / left on the circle outline).
+   * @returns {{ cx: number, cy: number }[]}
+   */
+  function collectCirclesGridFrameJunctionPoints() {
+    if (!isCirclesLikeGrid()) return [];
+    var circles = getIntactStructuralCirclesForPattern();
+    var points = [];
+    var seen = {};
+    var i;
+    var c;
+
+    function add(px, py) {
+      var key = px.toFixed(3) + "," + py.toFixed(3);
+      if (seen[key]) return;
+      seen[key] = true;
+      points.push({ cx: px, cy: py });
+    }
+
+    for (i = 0; i < circles.length; i++) {
+      c = circles[i];
+      if (typeof c.rx !== "number" || typeof c.ry !== "number") continue;
+      add(c.cx, c.cy - c.ry);
+      add(c.cx + c.rx, c.cy);
+      add(c.cx, c.cy + c.ry);
+      add(c.cx - c.rx, c.cy);
+    }
+    return points;
+  }
+
+  function getCirclesGridFrameJunctionDotRadius() {
+    var diameter =
+      typeof CIRCLES_GRID_FRAME_JUNCTION_DOT_DIAMETER_PX !== "undefined"
+        ? CIRCLES_GRID_FRAME_JUNCTION_DOT_DIAMETER_PX
+        : 5;
+    return diameter / 2;
+  }
+
+  /**
+   * @param {SVGElement} g
+   */
+  function appendCirclesGridFrameJunctionDots(g) {
+    if (!isCirclesLikeGrid()) return;
+    var points = collectCirclesGridFrameJunctionPoints();
+    if (!points.length) return;
+
+    var fill = getPatternStrokeColor();
+    var r = getCirclesGridFrameJunctionDotRadius();
+    var dotG = elSvg("g");
+    dotG.setAttribute("class", "circles-grid-frame-junction-dots");
+    dotG.setAttribute("fill", fill);
+    dotG.setAttribute("stroke", "none");
+
+    for (var i = 0; i < points.length; i++) {
+      var circle = elSvg("circle");
+      circle.setAttribute("cx", String(points[i].cx));
+      circle.setAttribute("cy", String(points[i].cy));
+      circle.setAttribute("r", String(r));
+      dotG.appendChild(circle);
+    }
+    g.appendChild(dotG);
+  }
+
+  /**
+   * @param {string[]} lines
+   */
+  function pushCirclesGridFrameJunctionDotsExport(lines) {
+    if (!isCirclesLikeGrid()) return;
+    var points = collectCirclesGridFrameJunctionPoints();
+    if (!points.length) return;
+
+    var fill = getPatternStrokeColor();
+    var r = getCirclesGridFrameJunctionDotRadius();
+    var i;
+    lines.push(
+      '<g class="circles-grid-frame-junction-dots" fill="' +
+        fill +
+        '" stroke="none">'
+    );
+    for (i = 0; i < points.length; i++) {
+      lines.push(
+        '<circle cx="' +
+          points[i].cx +
+          '" cy="' +
+          points[i].cy +
+          '" r="' +
+          r +
+          '"/>'
+      );
+    }
+    lines.push("</g>");
   }
 
   /**
@@ -4592,7 +5035,7 @@
    */
   function getCirclesGridEllipseOutlineSegments() {
     if (!cachedStructuralCircles.length) return [];
-    return CirclesGridGeometry.buildEllipseBoundarySegments(
+    return getCirclesLikeGridGeometry().buildEllipseBoundarySegments(
       cachedStructuralCircles
     );
   }
@@ -4632,7 +5075,7 @@
       return out;
     }
 
-    if (isCirclesGrid()) {
+    if (isCirclesLikeGrid()) {
       var ellipseSegments = getCirclesGridEllipseOutlineSegments();
       for (i = 0; i < ellipseSegments.length; i++) {
         pushSegment(ellipseSegments[i]);
@@ -4644,7 +5087,7 @@
 
   /** Visible pattern line segments for render + export (grid + merge-hidden arcs). */
   function getVisiblePatternSegments() {
-    if (isCirclesGrid()) return getVisibleCirclesGridPatternSegments();
+    if (isCirclesLikeGrid()) return getVisibleCirclesGridPatternSegments();
     return getVisibleSegments(getAllSegmentsForTracing());
   }
 
@@ -4664,8 +5107,8 @@
    * @returns {{x1:number,y1:number,x2:number,y2:number}[]}
    */
   function getSegmentsForMergeRegionDetection() {
-    if (isCirclesGrid()) {
-      return CirclesGridGeometry.buildHopeMergeTessellationSegments(
+    if (isCirclesLikeGrid()) {
+      return getCirclesLikeGridGeometry().buildHopeMergeTessellationSegments(
         lastOctagonsN,
         CANVAS_W,
         CANVAS_H,
@@ -4694,8 +5137,8 @@
       }
       return getAllSegmentsForTracing();
     }
-    if (isCirclesGrid()) {
-      return CirclesGridGeometry.buildPrideCircleTessellationSegments(
+    if (isCirclesLikeGrid()) {
+      return getCirclesLikeGridGeometry().buildPrideCircleTessellationSegments(
         lastOctagonsN,
         CANVAS_W,
         CANVAS_H,
@@ -4800,7 +5243,7 @@
       return;
     }
     var visible;
-    if (isCirclesGrid()) {
+    if (isCirclesLikeGrid()) {
       visible = getVisibleCirclesGridPatternSegments();
     } else {
       var segments = isStarGrid()
@@ -4809,19 +5252,37 @@
       visible = getVisibleSegmentsFast(segments);
     }
     patternLayer.replaceChild(segmentsToGroup(visible), oldGroup);
-    if (isCirclesGrid()) {
-      var oldCircles = patternLayer.querySelector("#layer-structural-circles");
-      var intactCircles = getIntactStructuralCirclesForPattern();
-      if (!intactCircles.length) {
-        if (oldCircles) patternLayer.removeChild(oldCircles);
-      } else if (oldCircles) {
-        patternLayer.replaceChild(
-          structuralCirclesToGroup(intactCircles),
-          oldCircles
-        );
+    if (isCirclesLikeGrid()) {
+      if (isCirclesGrid()) {
+        var oldCircles = patternLayer.querySelector("#layer-structural-circles");
+        var intactCircles = getIntactStructuralCirclesForPattern();
+        if (!intactCircles.length) {
+          if (oldCircles) patternLayer.removeChild(oldCircles);
+        } else if (oldCircles) {
+          patternLayer.replaceChild(
+            structuralCirclesToGroup(intactCircles),
+            oldCircles
+          );
+        } else {
+          patternLayer.appendChild(structuralCirclesToGroup(intactCircles));
+        }
       } else {
-        patternLayer.appendChild(structuralCirclesToGroup(intactCircles));
+        var oldDiamonds = patternLayer.querySelector("#layer-structural-diamonds");
+        var intactDiamonds = getIntactStructuralCirclesForPattern();
+        if (!intactDiamonds.length) {
+          if (oldDiamonds) patternLayer.removeChild(oldDiamonds);
+        } else if (oldDiamonds) {
+          patternLayer.replaceChild(
+            structuralDiamondsToGroup(intactDiamonds),
+            oldDiamonds
+          );
+        } else {
+          patternLayer.appendChild(structuralDiamondsToGroup(intactDiamonds));
+        }
       }
+      var oldDots = patternLayer.querySelector(".circles-grid-frame-junction-dots");
+      if (oldDots) patternLayer.removeChild(oldDots);
+      appendCirclesGridFrameJunctionDots(patternLayer);
     }
   }
 
@@ -4858,6 +5319,37 @@
       }
     }
     return inside;
+  }
+
+  function hopePointInsideOrNearPolygonEdge(px, py, points, tolerancePx) {
+    if (hopePointInPolygon(px, py, points)) return true;
+    var tol = typeof tolerancePx === "number" ? tolerancePx : 2;
+    var i;
+    var j;
+    var dx;
+    var dy;
+    var len;
+    var t;
+    var closestX;
+    var closestY;
+    var dist;
+    for (i = 0; i < points.length; i++) {
+      j = (i + 1) % points.length;
+      dx = points[j].x - points[i].x;
+      dy = points[j].y - points[i].y;
+      len = Math.sqrt(dx * dx + dy * dy);
+      if (len < 1e-6) continue;
+      t = ((px - points[i].x) * dx + (py - points[i].y) * dy) / (len * len);
+      if (t < 0) t = 0;
+      else if (t > 1) t = 1;
+      closestX = points[i].x + t * dx;
+      closestY = points[i].y + t * dy;
+      dist = Math.sqrt(
+        (px - closestX) * (px - closestX) + (py - closestY) * (py - closestY)
+      );
+      if (dist <= tol) return true;
+    }
+    return false;
   }
 
   function getStarFillCentroid(outline) {
@@ -4925,7 +5417,7 @@
   function getCirclesGridHopeMergeMinAreaPx() {
     var tile = lastTileSize;
     if (!tile || tile <= 0) {
-      tile = CirclesGridGeometry.tileSizeFromN(lastOctagonsN, CANVAS_W);
+      tile = getCirclesLikeGridGeometry().tileSizeFromN(lastOctagonsN, CANVAS_W);
     }
     var frac =
       typeof CIRCLES_GRID_HOPE_MERGE_MIN_AREA_TILE_FRACTION !== "undefined"
@@ -4981,6 +5473,82 @@
   }
 
   /**
+   * Circles/diamonds tessellation creates many global false merge faces when one edge
+   * is removed; keep only regions that contain a removed edge midpoint.
+   * @param {{ points: { x: number, y: number }[] }[]} regions
+   * @returns {{ points: { x: number, y: number }[] }[]}
+   */
+  function filterMergeRegionsTouchingRemovedEdges(regions) {
+    if (!regions.length || !removedEdges.size) return regions;
+
+    var midpoints = [];
+    var segments = getSegmentsForHopeMerge();
+    var si;
+    var s;
+    var key;
+    for (si = 0; si < segments.length; si++) {
+      s = segments[si];
+      key = TopkapiGeometry.segmentKey(s.x1, s.y1, s.x2, s.y2);
+      if (!removedEdges.has(key)) continue;
+      midpoints.push({ x: (s.x1 + s.x2) * 0.5, y: (s.y1 + s.y2) * 0.5 });
+    }
+    if (!midpoints.length) return regions;
+
+    var out = [];
+    var ri;
+    var mi;
+    for (ri = 0; ri < regions.length; ri++) {
+      for (mi = 0; mi < midpoints.length; mi++) {
+        if (
+          hopePointInsideOrNearPolygonEdge(
+            midpoints[mi].x,
+            midpoints[mi].y,
+            regions[ri].points,
+            2
+          )
+        ) {
+          out.push(regions[ri]);
+          break;
+        }
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Octagon: grow seed holes (touching removed edges) into larger connected merges.
+   * @param {{ points: { x: number, y: number }[] }[]} allRegions
+   * @param {{ points: { x: number, y: number }[] }[]} seedRegions
+   * @returns {{ points: { x: number, y: number }[] }[]}
+   */
+  function expandHopeMergeRegionsFromSeeds(allRegions, seedRegions) {
+    if (!seedRegions.length || !allRegions.length) return seedRegions;
+
+    var out = seedRegions.slice();
+    var ri;
+    var si;
+    var c;
+    var found;
+    for (ri = 0; ri < allRegions.length; ri++) {
+      if (out.indexOf(allRegions[ri]) >= 0) continue;
+      found = false;
+      for (si = 0; si < seedRegions.length; si++) {
+        if (isMergeRegionContainedIn(seedRegions[si], allRegions[ri])) {
+          found = true;
+          break;
+        }
+        c = getMergeRegionCentroid(seedRegions[si].points);
+        if (hopePointInPolygon(c.x, c.y, allRegions[ri].points)) {
+          found = true;
+          break;
+        }
+      }
+      if (found) out.push(allRegions[ri]);
+    }
+    return dedupeContainedMergeRegions(out);
+  }
+
+  /**
    * Star grid: drop micro-faces and single-star false positives; keep real multi-star merges.
    * @param {{ points: { x: number, y: number }[] }[]} regions
    * @returns {{ points: { x: number, y: number }[] }[]}
@@ -4999,14 +5567,20 @@
       return out;
     }
 
-    if (isCirclesGrid()) {
+    if (isCirclesLikeGrid()) {
+      regions = filterMergeRegionsTouchingRemovedEdges(regions);
+      if (!regions.length) return regions;
+
       var circlesBounds = getGridContentBounds();
       var circlesMaxHoleArea =
         circlesBounds.width * circlesBounds.height * 0.4;
       var circlesMinArea = getCirclesGridHopeMergeMinAreaPx();
       var circlesTile = lastTileSize;
       if (!circlesTile || circlesTile <= 0) {
-        circlesTile = CirclesGridGeometry.tileSizeFromN(lastOctagonsN, CANVAS_W);
+        circlesTile = getCirclesLikeGridGeometry().tileSizeFromN(
+          lastOctagonsN,
+          CANVAS_W
+        );
       }
       var singleBlockMaxFrac =
         typeof CIRCLES_GRID_HOPE_SINGLE_BLOCK_MAX_AREA_TILE_FRACTION !==
@@ -5035,6 +5609,11 @@
       return circlesOut;
     }
 
+    var octagonRaw = regions;
+    var octagonSeeds = filterMergeRegionsTouchingRemovedEdges(octagonRaw);
+    regions = expandHopeMergeRegionsFromSeeds(octagonRaw, octagonSeeds);
+    if (!regions.length) return regions;
+
     var bounds = getGridContentBounds();
     var maxHoleArea = bounds.width * bounds.height * 0.4;
     var minArea = getOctagonHopeMergeMinAreaPx();
@@ -5059,10 +5638,14 @@
    */
   function filterStarGridPrideAutoMergeRegions(regions) {
     if (!isStarGrid() || !regions.length) return regions;
-    var minStars =
+    var baseMinStars =
       typeof STAR_GRID_PRIDE_MIN_STARS_INSIDE !== "undefined"
         ? STAR_GRID_PRIDE_MIN_STARS_INSIDE
         : 2;
+    var minStars = Math.max(
+      baseMinStars,
+      Math.round(baseMinStars * getPrideAutoMergeDensityAreaScale())
+    );
 
     var out = [];
     for (var i = 0; i < regions.length; i++) {
@@ -5082,11 +5665,15 @@
    * @returns {{ points: { x: number, y: number }[] }[]}
    */
   function filterCirclesGridPrideAutoMergeRegions(regions) {
-    if (!isCirclesGrid() || !regions.length) return regions;
-    var minCircles =
+    if (!isCirclesLikeGrid() || !regions.length) return regions;
+    var baseMinCircles =
       typeof CIRCLES_GRID_PRIDE_MIN_CIRCLES_INSIDE !== "undefined"
         ? CIRCLES_GRID_PRIDE_MIN_CIRCLES_INSIDE
         : 2;
+    var minCircles = Math.max(
+      baseMinCircles,
+      Math.round(baseMinCircles * getPrideAutoMergeDensityAreaScale())
+    );
 
     var out = [];
     for (var i = 0; i < regions.length; i++) {
@@ -5096,6 +5683,26 @@
 
       if (countStructuralCirclesInsideMergeRegion(region) < minCircles) continue;
       out.push(region);
+    }
+    return out;
+  }
+
+  /**
+   * Pride octagon grid: drop single square-cell orphan fills (4-vertex quads
+   * that read as scattered red diamonds on the canvas).
+   * @param {{ points: { x: number, y: number }[] }[]} regions
+   * @returns {{ points: { x: number, y: number }[] }[]}
+   */
+  function filterOctagonGridPrideAutoMergeRegions(regions) {
+    if (!isOctagonGrid() || !regions.length) return regions;
+    var minArea = getOctagonHopeMergeMinAreaPx();
+    var out = [];
+    var i;
+    for (i = 0; i < regions.length; i++) {
+      var pts = regions[i].points || [];
+      if (pts.length < 5) continue;
+      if (polygonAreaAbs(pts) < minArea) continue;
+      out.push(regions[i]);
     }
     return out;
   }
@@ -5210,7 +5817,7 @@
    * @returns {boolean}
    */
   function shouldLimitPrideAutoMergeAtLowInnerScale() {
-    if (isCirclesGrid()) return false;
+    if (isCirclesLikeGrid()) return false;
     var threshold =
       typeof PRIDE_LOW_INNER_SCALE_AUTO_MERGE_THRESHOLD !== "undefined"
         ? PRIDE_LOW_INNER_SCALE_AUTO_MERGE_THRESHOLD
@@ -5262,7 +5869,7 @@
     var ci;
     var fillRegion;
 
-    var circlesPrideFillOptions = isCirclesGrid()
+    var circlesPrideFillOptions = isCirclesLikeGrid()
       ? { skipOctagonSquareChecks: true }
       : null;
 
@@ -5289,16 +5896,22 @@
       );
     }
 
-    if (isCirclesGrid()) {
+    if (isCirclesLikeGrid()) {
       autoMergeFillRegions = filterCirclesGridPrideAutoMergeRegions(fillRegions);
     } else {
       autoMergeFillRegions = TopkapiGeometry.filterAutoMergeFillRegions(
         fillRegions,
         baselineFaces
       );
-      autoMergeFillRegions = filterStarGridPrideAutoMergeRegions(
-        autoMergeFillRegions
-      );
+      if (isOctagonGrid()) {
+        autoMergeFillRegions = filterOctagonGridPrideAutoMergeRegions(
+          autoMergeFillRegions
+        );
+      } else {
+        autoMergeFillRegions = filterStarGridPrideAutoMergeRegions(
+          autoMergeFillRegions
+        );
+      }
     }
 
     renderPatternAndVerticalLayers();
@@ -5378,8 +5991,8 @@
         height: y1 - y0,
       };
     }
-    if (isCirclesGrid()) {
-      return CirclesGridGeometry.getGridContentBounds(
+    if (isCirclesLikeGrid()) {
+      return getCirclesLikeGridGeometry().getGridContentBounds(
         lastOctagonsN,
         CANVAS_W,
         CANVAS_H
@@ -5632,6 +6245,15 @@
     return r.width * r.height;
   }
 
+  function beginColorDivisionGeneration() {
+    colorDivisionGenerationRng = createSeededRandom(colorDivisionShuffleSeed >>> 0);
+  }
+
+  function colorDivisionRand() {
+    if (colorDivisionGenerationRng) return colorDivisionGenerationRng();
+    return Math.random();
+  }
+
   function pickWeightedRectIndex(rects) {
     var total = 0;
     var i;
@@ -5639,7 +6261,7 @@
       total += rectArea(rects[i]);
     }
     if (total <= 0) return 0;
-    var pick = Math.random() * total;
+    var pick = colorDivisionRand() * total;
     var acc = 0;
     for (i = 0; i < rects.length; i++) {
       acc += rectArea(rects[i]);
@@ -5663,16 +6285,16 @@
     if (!canHorizontal) return "vertical";
     var aspect = rect.width / rect.height;
     if (aspect > 1.35) {
-      return Math.random() < 0.7 ? "vertical" : "horizontal";
+      return colorDivisionRand() < 0.7 ? "vertical" : "horizontal";
     }
     if (aspect < 0.75) {
-      return Math.random() < 0.7 ? "horizontal" : "vertical";
+      return colorDivisionRand() < 0.7 ? "horizontal" : "vertical";
     }
-    return Math.random() < 0.5 ? "vertical" : "horizontal";
+    return colorDivisionRand() < 0.5 ? "vertical" : "horizontal";
   }
 
   function splitColorDivisionRect(rect, orientation) {
-    var ratio = 0.2 + Math.random() * 0.6;
+    var ratio = 0.2 + colorDivisionRand() * 0.6;
     if (orientation === "vertical") {
       var w1 = rect.width * ratio;
       var w2 = rect.width - w1;
@@ -5690,6 +6312,7 @@
   }
 
   function generateColorDivisionRects(bounds) {
+    beginColorDivisionGeneration();
     var rects = [
       {
         x: bounds.x,
@@ -5842,7 +6465,7 @@
       if (!candidates.length) {
         candidates = remaining.slice();
       }
-      var pick = candidates[Math.floor(Math.random() * candidates.length)];
+      var pick = candidates[Math.floor(colorDivisionRand() * candidates.length)];
       order.push(pick);
       if (slot < maxColored) {
         active.push(pick);
@@ -5868,7 +6491,7 @@
         order.push(oi);
       }
       for (oi = n - 1; oi > 0; oi--) {
-        var oj = Math.floor(Math.random() * (oi + 1));
+        var oj = Math.floor(colorDivisionRand() * (oi + 1));
         var tmp = order[oi];
         order[oi] = order[oj];
         order[oj] = tmp;
@@ -6064,13 +6687,20 @@
   }
 
   function syncAnxietyVerticalStrokeOutput() {
-    var out = document.getElementById("anxiety-vertical-stroke-out");
-    if (!out) return;
-    var w = getVerticalGridStrokeWidth();
-    out.textContent =
-      (Math.abs(w - Math.round(w)) < 1e-6
-        ? String(Math.round(w))
-        : String(Math.round(w * 10) / 10)) + " px";
+    var min =
+      typeof ANXIETY_VERTICAL_STROKE_MIN !== "undefined"
+        ? ANXIETY_VERTICAL_STROKE_MIN
+        : 0;
+    var max =
+      typeof ANXIETY_VERTICAL_STROKE_MAX !== "undefined"
+        ? ANXIETY_VERTICAL_STROKE_MAX
+        : 100;
+    setFeelingsStepOutputById(
+      "anxiety-vertical-stroke-out",
+      getAnxietyVerticalStrokePercent(),
+      min,
+      max
+    );
   }
 
   /** Geometry only — merge/erase state must not invalidate vertical lines. */
@@ -6089,9 +6719,9 @@
         getInnerScale()
       );
     }
-    if (isCirclesGrid()) {
+    if (isCirclesLikeGrid()) {
       return (
-        "circles|" +
+        (isDiamondsGrid() ? "diamonds|" : "circles|") +
         lastOctagonsN +
         "|" +
         CANVAS_W +
@@ -6266,8 +6896,8 @@
 
     var xs = isStarGrid()
       ? collectStarGridVerticalAnchorXCoords()
-      : isCirclesGrid()
-        ? CirclesGridGeometry.buildUniformVerticalLineXs(
+      : isCirclesLikeGrid()
+        ? getCirclesLikeGridGeometry().buildUniformVerticalLineXs(
             lastOctagonsN,
             CANVAS_W,
             CANVAS_H
@@ -6300,7 +6930,7 @@
       }
     }
 
-    if (isCirclesGrid()) {
+    if (isCirclesLikeGrid()) {
       lines = insertCirclesGridFearMidpointLines(lines, yTop, yBottom);
     }
 
@@ -6329,23 +6959,29 @@
    * @param {SVGElement} layer
    */
   function appendVerticalGridLinesToLayer(layer) {
+    var fearColor = getFearVerticalStrokeColor();
+    var strokeW = getVerticalGridStrokeWidth();
     layer.setAttribute("fill", "none");
-    layer.setAttribute("stroke", sheetColor("F1"));
-    layer.setAttribute("stroke-width", String(getVerticalGridStrokeWidth()));
+    layer.setAttribute("stroke", "none");
+    layer.setAttribute("style", "mix-blend-mode:normal");
     for (var i = 0; i < cachedVerticalGridLines.length; i++) {
       var draw = resolveVerticalLineDrawCoords(cachedVerticalGridLines[i]);
       if (!draw) continue;
-      var line = elSvg("line");
-      line.setAttribute("x1", String(draw.x));
-      line.setAttribute("y1", String(draw.y1));
-      line.setAttribute("x2", String(draw.x));
-      line.setAttribute("y2", String(draw.y2));
-      layer.appendChild(line);
+      var bar = elSvg("rect");
+      bar.setAttribute("x", String(draw.x - strokeW / 2));
+      bar.setAttribute("y", String(draw.y1));
+      bar.setAttribute("width", String(strokeW));
+      bar.setAttribute("height", String(Math.max(0, draw.y2 - draw.y1)));
+      bar.setAttribute("fill", fearColor);
+      bar.setAttribute("stroke", "none");
+      bar.setAttribute("style", "mix-blend-mode:normal");
+      layer.appendChild(bar);
     }
   }
 
   function renderVerticalGridLayer() {
     if (!designSvg) return;
+    ensureFearVerticalGridMounted();
     clearInactiveVerticalGridLayer();
     var layer = getActiveVerticalGridLayer();
     if (!layer) return;
@@ -6358,9 +6994,44 @@
    * @param {string[]} lines
    */
   function pushStructuralCirclesExportLines(lines) {
-    if (!isCirclesGrid()) return;
-    var circles = getIntactStructuralCirclesForPattern();
-    if (!circles.length) return;
+    if (!isCirclesLikeGrid()) return;
+    var shapes = getIntactStructuralCirclesForPattern();
+    if (!shapes.length) return;
+    if (isDiamondsGrid()) {
+      lines.push(
+        '<g id="layer-structural-diamonds" fill="none" stroke="' +
+          getPatternStrokeColor() +
+          '" stroke-width="' +
+          getGridStrokeWidth() +
+          '" stroke-linejoin="miter">'
+      );
+      var di;
+      var d;
+      for (di = 0; di < shapes.length; di++) {
+        d = shapes[di];
+        lines.push(
+          '<polygon points="' +
+            d.cx +
+            "," +
+            (d.cy - d.ry) +
+            " " +
+            (d.cx + d.rx) +
+            "," +
+            d.cy +
+            " " +
+            d.cx +
+            "," +
+            (d.cy + d.ry) +
+            " " +
+            (d.cx - d.rx) +
+            "," +
+            d.cy +
+            '"/>'
+        );
+      }
+      lines.push("</g>");
+      return;
+    }
     lines.push(
       '<g id="layer-structural-circles" fill="none" stroke="' +
         getPatternStrokeColor() +
@@ -6370,8 +7041,8 @@
     );
     var i;
     var c;
-    for (i = 0; i < circles.length; i++) {
-      c = circles[i];
+    for (i = 0; i < shapes.length; i++) {
+      c = shapes[i];
       lines.push(
         '<ellipse cx="' +
           c.cx +
@@ -6395,28 +7066,28 @@
       return;
     }
     lines.push('<g clip-path="url(#inner-content-clip)">');
+    var fearColor = getFearVerticalStrokeColor();
+    var strokeW = getVerticalGridStrokeWidth();
     lines.push(
       '<g id="' +
         (isAlternateGrid() ? "layer-vertical-grid-overlay" : "layer-vertical-grid") +
-        '" fill="none" stroke="' +
-        sheetColor("F1") +
-        '" stroke-width="' +
-        getVerticalGridStrokeWidth() +
-        '">'
+        '" fill="none" stroke="none" style="mix-blend-mode:normal">'
     );
     for (var i = 0; i < cachedVerticalGridLines.length; i++) {
       var draw = resolveVerticalLineDrawCoords(cachedVerticalGridLines[i]);
       if (!draw) continue;
       lines.push(
-        '<line x1="' +
-          draw.x +
-          '" y1="' +
+        '<rect x="' +
+          (draw.x - strokeW / 2) +
+          '" y="' +
           draw.y1 +
-          '" x2="' +
-          draw.x +
-          '" y2="' +
-          draw.y2 +
-          '"/>'
+          '" width="' +
+          strokeW +
+          '" height="' +
+          Math.max(0, draw.y2 - draw.y1) +
+          '" fill="' +
+          fearColor +
+          '" stroke="none" style="mix-blend-mode:normal"/>'
       );
     }
     lines.push("</g>");
@@ -6452,15 +7123,10 @@
     if (isAlternateGrid()) {
       renderBackgroundLayer();
     }
-    if (shouldRenderPrideFillsBeforeCirclesGridPattern()) {
-      renderAutoMergeFillsLayer();
-    }
     renderVerticalGridLayer();
     renderPatternLayer();
     renderGridMaskLayer("renderPatternAndVerticalLayers");
-    if (!shouldRenderPrideFillsBeforeCirclesGridPattern()) {
-      renderAutoMergeFillsLayer();
-    }
+    renderAutoMergeFillsLayer();
     applyMergeReveal();
   }
 
@@ -7233,6 +7899,186 @@
   }
 
   /**
+   * Seeded random dots inside a margin cell (same Poisson-style spacing as fan triangles).
+   * @param {number} x
+   * @param {number} y
+   * @param {number} w
+   * @param {number} h
+   * @param {number} seed
+   * @returns {{ dots: { x: number, y: number }[], radius: number }}
+   */
+  function generateSeededStippleDotsInRect(x, y, w, h, seed) {
+    var radius = getBorderSideEmptyCellStippleDotRadius();
+    var minDist = getBorderSideEmptyCellStippleMinDotDistance();
+    var minDistSq = minDist * minDist;
+    var padding = radius + 1;
+    var area = Math.max(1, w * h);
+    var targetCount = Math.max(2, Math.round(area / (minDist * minDist * 0.65)));
+    var rng = createSeededRandom(seed);
+    var dots = [];
+    var maxAttempts = targetCount * 50;
+    var attempts = 0;
+    var dotX;
+    var dotY;
+    var ok;
+    var di;
+    var dx;
+    var dy;
+
+    while (dots.length < targetCount && attempts < maxAttempts) {
+      attempts++;
+      dotX = x - padding + rng() * (w + padding * 2);
+      dotY = y - padding + rng() * (h + padding * 2);
+      ok = true;
+      for (di = 0; di < dots.length; di++) {
+        dx = dotX - dots[di].x;
+        dy = dotY - dots[di].y;
+        if (dx * dx + dy * dy < minDistSq) {
+          ok = false;
+          break;
+        }
+      }
+      if (ok) dots.push({ x: dotX, y: dotY });
+    }
+
+    return { dots: dots, radius: radius };
+  }
+
+  /**
+   * @param {number} colIndex
+   * @param {number} rowIndex
+   * @param {number} x
+   * @returns {number}
+   */
+  function borderSideEmptyCellStippleSeed(colIndex, rowIndex, x) {
+    return hashFanMiddleBandSeed(
+      "border-empty-" + colIndex + "-" + rowIndex + "-" + x
+    );
+  }
+
+  /**
+   * Stipple dots in one whitened margin cell (color-fade empty cells only).
+   * @param {SVGElement} g
+   * @param {number} x
+   * @param {number} cellW
+   * @param {number} yTop
+   * @param {number} yBottom
+   * @param {number} colIndex
+   * @param {number} rowIndex
+   */
+  function appendBorderSideEmptyCellStippleAtX(
+    g,
+    x,
+    cellW,
+    yTop,
+    yBottom,
+    colIndex,
+    rowIndex
+  ) {
+    if (!isBorderSideCellWhitened(colIndex, rowIndex)) return;
+
+    var h = yBottom - yTop;
+    var clipId =
+      "border-empty-stipple-clip-" + colIndex + "-" + rowIndex + "-" + x;
+    var clip = elSvg("clipPath");
+    clip.setAttribute("id", clipId);
+    var clipRect = elSvg("rect");
+    clipRect.setAttribute("x", String(x));
+    clipRect.setAttribute("y", String(yTop));
+    clipRect.setAttribute("width", String(cellW));
+    clipRect.setAttribute("height", String(h));
+    clip.appendChild(clipRect);
+    g.appendChild(clip);
+
+    var seed = borderSideEmptyCellStippleSeed(colIndex, rowIndex, x);
+    var stipple = generateSeededStippleDotsInRect(x, yTop, cellW, h, seed);
+    var dotColor = getBorderSideEmptyCellStippleColor();
+    var dotGroup = elSvg("g");
+    dotGroup.setAttribute("class", "border-empty-cell-stipple");
+    dotGroup.setAttribute("clip-path", "url(#" + clipId + ")");
+    dotGroup.setAttribute("fill", dotColor);
+    dotGroup.setAttribute("stroke", "none");
+
+    var ci;
+    for (ci = 0; ci < stipple.dots.length; ci++) {
+      var circle = elSvg("circle");
+      circle.setAttribute("cx", String(stipple.dots[ci].x));
+      circle.setAttribute("cy", String(stipple.dots[ci].y));
+      circle.setAttribute("r", String(stipple.radius));
+      dotGroup.appendChild(circle);
+    }
+    g.appendChild(dotGroup);
+  }
+
+  /**
+   * @param {string[]} lines
+   * @param {number} x
+   * @param {number} cellW
+   * @param {number} yTop
+   * @param {number} yBottom
+   * @param {number} colIndex
+   * @param {number} rowIndex
+   */
+  function pushBorderSideEmptyCellStippleAtXExport(
+    lines,
+    x,
+    cellW,
+    yTop,
+    yBottom,
+    colIndex,
+    rowIndex
+  ) {
+    if (!isBorderSideCellWhitened(colIndex, rowIndex)) return;
+
+    var h = yBottom - yTop;
+    var clipId =
+      "border-empty-stipple-clip-" +
+      colIndex +
+      "-" +
+      rowIndex +
+      "-" +
+      x +
+      "-export";
+    var dotColor = getBorderSideEmptyCellStippleColor();
+    var seed = borderSideEmptyCellStippleSeed(colIndex, rowIndex, x);
+    var stipple = generateSeededStippleDotsInRect(x, yTop, cellW, h, seed);
+    var ci;
+
+    lines.push('<clipPath id="' + clipId + '">');
+    lines.push(
+      '<rect x="' +
+        x +
+        '" y="' +
+        yTop +
+        '" width="' +
+        cellW +
+        '" height="' +
+        h +
+        '"/>'
+    );
+    lines.push("</clipPath>");
+    lines.push(
+      '<g class="border-empty-cell-stipple" clip-path="url(#' +
+        clipId +
+        ')" fill="' +
+        dotColor +
+        '" stroke="none">'
+    );
+    for (ci = 0; ci < stipple.dots.length; ci++) {
+      lines.push(
+        '<circle cx="' +
+          stipple.dots[ci].x +
+          '" cy="' +
+          stipple.dots[ci].y +
+          '" r="' +
+          stipple.radius +
+          '"/>'
+      );
+    }
+    lines.push("</g>");
+  }
+
+  /**
    * Full cell frame (top, bottom, left, right) on top of white fill.
    * @param {SVGElement} g
    * @param {number} x
@@ -7993,6 +8839,16 @@
           h,
           getBorderSideColorFadeFillColor()
         );
+        appendBorderSideEmptyCellStippleAtX(g, 0, b, yTop, yBottom, 0, j);
+        appendBorderSideEmptyCellStippleAtX(
+          g,
+          rightX,
+          b,
+          yTop,
+          yBottom,
+          0,
+          j
+        );
         continue;
       }
 
@@ -8206,6 +9062,24 @@
         appendOverlayCellBase(rightX, yTop, b, h, overlayBaseFill);
 
         if (isBorderSideCellWhitened(c, j)) {
+          appendBorderSideEmptyCellStippleAtX(
+            g,
+            leftX,
+            b,
+            yTop,
+            yBottom,
+            c,
+            j
+          );
+          appendBorderSideEmptyCellStippleAtX(
+            g,
+            rightX,
+            b,
+            yTop,
+            yBottom,
+            c,
+            j
+          );
           appendBorderSideWhitenedCellOutlinesAtX(
             g,
             leftX,
@@ -8439,6 +9313,24 @@
         pushOverlayCellBase(rightX, yTop, b, h, overlayBaseFillExport);
 
         if (isBorderSideCellWhitened(c, j)) {
+          pushBorderSideEmptyCellStippleAtXExport(
+            lines,
+            leftX,
+            b,
+            yTop,
+            yBottom,
+            c,
+            j
+          );
+          pushBorderSideEmptyCellStippleAtXExport(
+            lines,
+            rightX,
+            b,
+            yTop,
+            yBottom,
+            c,
+            j
+          );
           pushBorderSideWhitenedCellOutlinesAtXExport(
             lines,
             leftX,
@@ -9392,6 +10284,7 @@
       "tag/tag03.svg": "tag03.svg",
       "tag/tag04.svg": "tag04.svg",
       "tag/tag05.2.svg": "tag05.2.svg",
+      "tag/reshet.svg": "reshet.svg",
     };
     if (tagAliases[filename] && embedded[tagAliases[filename]]) {
       return tagAliases[filename];
@@ -10548,6 +11441,7 @@
     if (!svgFile) return "—";
     base = svgFile.replace(/^tag\//, "").replace(/\.svg$/i, "");
     if (base === "lion") return "Lion";
+    if (base === "reshet") return "Reshet";
     if (/^tag0?(\d+(?:\.\d+)?)$/i.test(base)) {
       return "Tag " + base.replace(/^tag0?/i, "");
     }
@@ -10711,7 +11605,7 @@
   function getLabelBarCircleSvgFile() {
     return typeof LABEL_BAR_CIRCLE_SVG !== "undefined"
       ? LABEL_BAR_CIRCLE_SVG
-      : "sun.svg";
+      : "reshetsmall.svg";
   }
 
   function getLabelBarUnionSvgFile() {
@@ -10847,7 +11741,7 @@
   function getLabelBarLeftLionInnerRow1SunSvgFile() {
     return typeof LABEL_BAR_LEFT_LION_INNER_ROW1_SUN_SVG !== "undefined"
       ? LABEL_BAR_LEFT_LION_INNER_ROW1_SUN_SVG
-      : "sun.svg";
+      : "reshetsmall.svg";
   }
 
   function getLabelBarAgeSvgFile() {
@@ -12251,7 +13145,14 @@
   }
 
   function refreshBrownBarBannerAfterMount() {
-    refreshLabelBarContent();
+    var run = function () {
+      refreshLabelBarContent();
+    };
+    if (typeof requestIdleCallback === "function") {
+      requestIdleCallback(run, { timeout: 1500 });
+    } else {
+      setTimeout(run, 0);
+    }
   }
 
   function createBrownBarBannerTextGroup() {
@@ -12984,6 +13885,24 @@
               colorFadeFillExport +
               '"/>'
           );
+          pushBorderSideEmptyCellStippleAtXExport(
+            lines,
+            0,
+            b,
+            yTop,
+            yBottom,
+            0,
+            j
+          );
+          pushBorderSideEmptyCellStippleAtXExport(
+            lines,
+            rightX,
+            b,
+            yTop,
+            yBottom,
+            0,
+            j
+          );
           continue;
         }
         if (cellType === "outside") {
@@ -13225,6 +14144,139 @@
     return g;
   }
 
+  /** Keep Fear (F1) outside the color-division isolation group (no exclusion tint). */
+  function ensureFearVerticalGridMounted() {
+    if (!designSvg) return;
+    var fearRoot = designSvg.querySelector("#fear-vertical-grid-root");
+    if (!fearRoot) return;
+    var blendRoot = designSvg.querySelector("#color-divisions-blend-root");
+    if (!blendRoot || fearRoot.parentNode === blendRoot) {
+      var anchor = designSvg.querySelector("#layer-edge-brown-bars");
+      if (anchor && anchor.parentNode === designSvg) {
+        designSvg.insertBefore(fearRoot, anchor);
+      } else if (fearRoot.parentNode !== designSvg) {
+        designSvg.appendChild(fearRoot);
+      }
+    }
+    fearRoot.setAttribute("style", "mix-blend-mode:normal");
+  }
+
+  /**
+   * Pride auto-merge (P1) renders above all other emotion markers, including Fear verticals.
+   */
+  function createPrideAutoMergeBranch() {
+    var root = elSvg("g");
+    root.setAttribute("id", "pride-auto-merge-root");
+    root.setAttribute("transform", getInnerContentTransformAttr());
+    root.setAttribute("style", "mix-blend-mode:normal");
+
+    var clippedAutoMerge = createInnerContentClipGroup(
+      "inner-clipped-auto-merge-fills"
+    );
+    var autoMergeLayer = elSvg("g");
+    autoMergeLayer.setAttribute("id", "layer-auto-merge-fills");
+    autoMergeLayer.setAttribute("clip-path", "url(#canvas-clip)");
+    clippedAutoMerge.appendChild(autoMergeLayer);
+    root.appendChild(clippedAutoMerge);
+
+    return root;
+  }
+
+  /** Keep Pride above Fear verticals and below the fan overlay. */
+  function ensurePrideAutoMergeMounted() {
+    if (!designSvg) return;
+    var prideRoot = designSvg.querySelector("#pride-auto-merge-root");
+    if (!prideRoot) return;
+    var fearRoot = designSvg.querySelector("#fear-vertical-grid-root");
+    var fanRoot = designSvg.querySelector("#fan-half-circle-root");
+    var chromeAnchor = designSvg.querySelector("#layer-edge-brown-bars");
+    var insertBeforeNode =
+      fanRoot && fanRoot.parentNode === designSvg
+        ? fanRoot
+        : chromeAnchor;
+
+    if (fearRoot && fearRoot.parentNode === designSvg) {
+      if (prideRoot.previousSibling !== fearRoot) {
+        designSvg.insertBefore(prideRoot, fearRoot.nextSibling);
+      }
+    } else if (insertBeforeNode && insertBeforeNode.parentNode === designSvg) {
+      if (prideRoot.nextSibling !== insertBeforeNode) {
+        designSvg.insertBefore(prideRoot, insertBeforeNode);
+      }
+    } else if (prideRoot.parentNode !== designSvg) {
+      designSvg.appendChild(prideRoot);
+    }
+  }
+
+  /**
+   * Radial fan (half-circle) renders above all emotion markers and Pride.
+   */
+  function createFanHalfCircleBranch() {
+    var root = elSvg("g");
+    root.setAttribute("id", "fan-half-circle-root");
+    root.setAttribute("transform", getInnerContentTransformAttr());
+    root.setAttribute("style", "mix-blend-mode:normal");
+
+    var clippedHalfCircle = createInnerContentClipGroup("inner-clipped-half-circle");
+    var halfCircleLayer = elSvg("g");
+    halfCircleLayer.setAttribute("id", "layer-half-circle");
+    halfCircleLayer.setAttribute("clip-path", "url(#canvas-clip)");
+    clippedHalfCircle.appendChild(halfCircleLayer);
+    root.appendChild(clippedHalfCircle);
+
+    return root;
+  }
+
+  /** Keep the fan above Pride and below brown-bar chrome. */
+  function ensureFanLayerMounted() {
+    if (!designSvg) return;
+    var fanRoot = designSvg.querySelector("#fan-half-circle-root");
+    if (!fanRoot) return;
+    var prideRoot = designSvg.querySelector("#pride-auto-merge-root");
+    var anchor = designSvg.querySelector("#layer-edge-brown-bars");
+    if (prideRoot && prideRoot.parentNode === designSvg) {
+      if (fanRoot.parentNode !== designSvg) {
+        designSvg.insertBefore(fanRoot, prideRoot.nextSibling);
+      } else if (fanRoot.previousSibling !== prideRoot) {
+        designSvg.insertBefore(fanRoot, prideRoot.nextSibling);
+      }
+      return;
+    }
+    if (anchor && anchor.parentNode === designSvg) {
+      designSvg.insertBefore(fanRoot, anchor);
+    } else if (fanRoot.parentNode !== designSvg) {
+      designSvg.appendChild(fanRoot);
+    }
+  }
+
+  /**
+   * Fear verticals (F1) render above color-division blend tiles.
+   */
+  function createFearVerticalGridBranch() {
+    var root = elSvg("g");
+    root.setAttribute("id", "fear-vertical-grid-root");
+    root.setAttribute("transform", getInnerContentTransformAttr());
+    root.setAttribute("style", "mix-blend-mode:normal");
+
+    var clippedVertical = createInnerContentClipGroup("inner-clipped-vertical-grid");
+    var verticalLayer = elSvg("g");
+    verticalLayer.setAttribute("id", "layer-vertical-grid");
+    verticalLayer.setAttribute("clip-path", "url(#canvas-clip)");
+    clippedVertical.appendChild(verticalLayer);
+    root.appendChild(clippedVertical);
+
+    var clippedVerticalOverlay = createInnerContentClipGroup(
+      "inner-clipped-vertical-grid-overlay"
+    );
+    var verticalOverlayLayer = elSvg("g");
+    verticalOverlayLayer.setAttribute("id", "layer-vertical-grid-overlay");
+    verticalOverlayLayer.setAttribute("clip-path", "url(#canvas-clip)");
+    clippedVerticalOverlay.appendChild(verticalOverlayLayer);
+    root.appendChild(clippedVerticalOverlay);
+
+    return root;
+  }
+
   function appendInnerContentClipPath(defs) {
     var innerClip = elSvg("clipPath");
     innerClip.setAttribute("id", "inner-content-clip");
@@ -13326,31 +14378,6 @@
     clippedPattern.appendChild(pattern);
     innerContent.appendChild(clippedPattern);
 
-    var clippedVertical = createInnerContentClipGroup("inner-clipped-vertical-grid");
-    var verticalLayer = elSvg("g");
-    verticalLayer.setAttribute("id", "layer-vertical-grid");
-    verticalLayer.setAttribute("clip-path", "url(#canvas-clip)");
-    clippedVertical.appendChild(verticalLayer);
-    innerContent.appendChild(clippedVertical);
-
-    var clippedVerticalOverlay = createInnerContentClipGroup(
-      "inner-clipped-vertical-grid-overlay"
-    );
-    var verticalOverlayLayer = elSvg("g");
-    verticalOverlayLayer.setAttribute("id", "layer-vertical-grid-overlay");
-    verticalOverlayLayer.setAttribute("clip-path", "url(#canvas-clip)");
-    clippedVerticalOverlay.appendChild(verticalOverlayLayer);
-    innerContent.appendChild(clippedVerticalOverlay);
-
-    var clippedAutoMerge = createInnerContentClipGroup(
-      "inner-clipped-auto-merge-fills"
-    );
-    var autoMergeLayer = elSvg("g");
-    autoMergeLayer.setAttribute("id", "layer-auto-merge-fills");
-    autoMergeLayer.setAttribute("clip-path", "url(#canvas-clip)");
-    clippedAutoMerge.appendChild(autoMergeLayer);
-    innerContent.appendChild(clippedAutoMerge);
-
     var clippedAngerTriangles = createInnerContentClipGroup(
       "inner-clipped-anger-diamond-triangles"
     );
@@ -13362,13 +14389,6 @@
 
     innerContent.appendChild(createFrameInsetOverlayLayer());
 
-    var clippedHalfCircle = createInnerContentClipGroup("inner-clipped-half-circle");
-    var halfCircleLayer = elSvg("g");
-    halfCircleLayer.setAttribute("id", "layer-half-circle");
-    halfCircleLayer.setAttribute("clip-path", "url(#canvas-clip)");
-    clippedHalfCircle.appendChild(halfCircleLayer);
-    innerContent.appendChild(clippedHalfCircle);
-
     var colorDivisionsBlendRoot = elSvg("g");
     colorDivisionsBlendRoot.setAttribute("id", "color-divisions-blend-root");
     colorDivisionsBlendRoot.setAttribute("style", "isolation:isolate");
@@ -13378,6 +14398,9 @@
     // Medium/Thick margin columns paint over grid + boundary at shared edges.
     colorDivisionsBlendRoot.appendChild(createBorderDivisionOverlayGroup());
     svg.appendChild(colorDivisionsBlendRoot);
+    svg.appendChild(createFearVerticalGridBranch());
+    svg.appendChild(createPrideAutoMergeBranch());
+    svg.appendChild(createFanHalfCircleBranch());
 
     var edgeBrownBars = elSvg("g");
     edgeBrownBars.setAttribute("id", "layer-edge-brown-bars");
@@ -13431,12 +14454,8 @@
       typeof FAN_LEAF_SIZE_MAX !== "undefined" ? FAN_LEAF_SIZE_MAX : 100;
     var defaultPct =
       typeof FAN_LEAF_SIZE_DEFAULT !== "undefined" ? FAN_LEAF_SIZE_DEFAULT : 90;
-    var input = document.getElementById("fan-leaf-size");
-    var raw = input ? Number(input.value) : defaultPct;
-    if (!Number.isFinite(raw)) raw = defaultPct;
-    var pct = Math.max(min, Math.min(max, Math.round(raw)));
     if (max <= min) return 0;
-    return (pct - min) / (max - min);
+    return (defaultPct - min) / (max - min);
   }
 
   function fanLeafSizeLerp(atMin, atMax) {
@@ -13491,13 +14510,7 @@
   }
 
   function getHalfCircleMaxPetals() {
-    var radialType =
-      typeof FAN_TYPE_RADIAL !== "undefined" ? FAN_TYPE_RADIAL : "radial";
-    var ribCount =
-      getFanType() === radialType
-        ? getRadialFanRibCount()
-        : getHalfCircleRibCount();
-    return Math.max(0, ribCount - 1);
+    return Math.max(0, getRadialFanRibCount() - 1);
   }
 
   /** Petals actually drawn when fully open (end sectors trimmed from rib geometry). */
@@ -13506,99 +14519,25 @@
     return Math.max(0, getHalfCircleMaxPetals() - 2 * trim);
   }
 
+  /** Petals shown at slider step max − 1 (4 drawable ribs ⇒ 3 petals). */
+  function getFanClosingMinPetals() {
+    var minRibs =
+      typeof FAN_CLOSING_MIN_RIBS !== "undefined" ? FAN_CLOSING_MIN_RIBS : 4;
+    return Math.max(1, minRibs - 1);
+  }
+
   var FAN_SHARED_LEAVES_ID = "fan-leaves";
-  var FAN_SHARED_LEAF_SIZE_ID = "fan-leaf-size";
-  var FAN_SHARED_ARC_ID = "fan-arc";
-  var FAN_SHARED_STARS_ID = "fan-stars";
-  var FAN_RADIAL_OUTER_ARC_ID = "fan-radial-outer-arc";
-  var FAN_RADIAL_OUTER_ARC_ROW_ID = "fan-radial-outer-arc-row";
-  var FAN_TYPE_ORIGINAL_BTN_ID = "fan-type-original-btn";
-  var FAN_TYPE_RADIAL_BTN_ID = "fan-type-radial-btn";
 
   function getRadialFanOuterArcScale() {
-    var min =
-      typeof RADIAL_FAN_OUTER_ARC_SCALE_MIN !== "undefined"
-        ? RADIAL_FAN_OUTER_ARC_SCALE_MIN
-        : 0.7;
-    var max =
-      typeof RADIAL_FAN_OUTER_ARC_SCALE_MAX !== "undefined"
-        ? RADIAL_FAN_OUTER_ARC_SCALE_MAX
-        : 1;
-    var defaultScale =
-      typeof RADIAL_FAN_OUTER_ARC_SCALE_DEFAULT !== "undefined"
-        ? RADIAL_FAN_OUTER_ARC_SCALE_DEFAULT
-        : 1;
-    var input = document.getElementById(FAN_RADIAL_OUTER_ARC_ID);
-    var sliderMin = Math.round(min * 100);
-    var sliderMax = Math.round(max * 100);
-    var defaultSlider = Math.round(defaultScale * 100);
-    var raw = input ? Number(input.value) : defaultSlider;
-    if (!Number.isFinite(raw)) raw = defaultSlider;
-    raw = Math.max(sliderMin, Math.min(sliderMax, Math.round(raw)));
-    return raw / 100;
-  }
-
-  function updateFanRadialOnlyControlsVisibility() {
-    var radialType =
-      typeof FAN_TYPE_RADIAL !== "undefined" ? FAN_TYPE_RADIAL : "radial";
-    var isRadial = getFanType() === radialType;
-    var row = document.getElementById(FAN_RADIAL_OUTER_ARC_ROW_ID);
-    if (row) {
-      row.hidden = !isRadial;
-    }
-  }
-
-  function getFanType() {
-    var radialBtn = document.getElementById(FAN_TYPE_RADIAL_BTN_ID);
-    var radialType =
-      typeof FAN_TYPE_RADIAL !== "undefined" ? FAN_TYPE_RADIAL : "radial";
-    if (radialBtn && radialBtn.classList.contains("is-active")) {
-      return radialType;
-    }
-    return typeof FAN_TYPE_ORIGINAL !== "undefined"
-      ? FAN_TYPE_ORIGINAL
-      : "original";
-  }
-
-  function bindFanTypeToggle() {
-    var originalBtn = document.getElementById(FAN_TYPE_ORIGINAL_BTN_ID);
-    var radialBtn = document.getElementById(FAN_TYPE_RADIAL_BTN_ID);
-    if (!originalBtn || !radialBtn) return;
-
-    var originalType =
-      typeof FAN_TYPE_ORIGINAL !== "undefined" ? FAN_TYPE_ORIGINAL : "original";
-    var radialType =
-      typeof FAN_TYPE_RADIAL !== "undefined" ? FAN_TYPE_RADIAL : "radial";
-
-    function setFanType(type) {
-      var isRadial = type === radialType;
-      originalBtn.classList.toggle("is-active", !isRadial);
-      radialBtn.classList.toggle("is-active", isRadial);
-      originalBtn.setAttribute("aria-pressed", String(!isRadial));
-      radialBtn.setAttribute("aria-pressed", String(isRadial));
-      updateFanRadialOnlyControlsVisibility();
-      renderHalfCircleLayer();
-    }
-
-    originalBtn.addEventListener("click", function () {
-      setFanType(originalType);
-    });
-    radialBtn.addEventListener("click", function () {
-      setFanType(radialType);
-    });
-
-    var defaultType =
-      typeof FAN_TYPE_DEFAULT !== "undefined" ? FAN_TYPE_DEFAULT : originalType;
-    setFanType(defaultType);
-    updateFanRadialOnlyControlsVisibility();
+    return typeof RADIAL_FAN_OUTER_ARC_SCALE_DEFAULT !== "undefined"
+      ? RADIAL_FAN_OUTER_ARC_SCALE_DEFAULT
+      : 1;
   }
 
   /** @param {"top" | "bottom"} idPrefix */
   function getFanSliderIds(idPrefix) {
     return {
       leaves: FAN_SHARED_LEAVES_ID,
-      arc: FAN_SHARED_ARC_ID,
-      stars: FAN_SHARED_STARS_ID,
     };
   }
 
@@ -13616,6 +14555,7 @@
 
   function getFanLeavesPetalCount(sliderId) {
     var maxPetals = getFanEffectiveMaxPetals();
+    var minPetals = getFanClosingMinPetals();
     var step = getFanLeavesOpeningStep(sliderId);
     var maxStep =
       typeof WEAR_CONTROL_OPENING_STEP_MAX !== "undefined"
@@ -13623,85 +14563,25 @@
         : 10;
     if (maxPetals <= 0 || step >= maxStep) return 0;
     if (step <= 0) return maxPetals;
-    // Step maxStep - 1 shows exactly one drawable petal (same as innermost open sector).
-    var petals =
-      1 + ((maxPetals - 1) * (maxStep - step - 1)) / (maxStep - 1);
-    return Math.max(1, Math.round(petals));
+    if (step >= maxStep - 1) return minPetals;
+    var openFraction = (maxStep - step - 1) / (maxStep - 1);
+    var petals = minPetals + (maxPetals - minPetals) * openFraction;
+    return Math.max(minPetals, Math.round(petals));
   }
 
   /** @param {"top" | "bottom"} idPrefix */
   function getFanInnerArcRadiusRatio(idPrefix) {
-    var sliderId = getFanSliderIds(idPrefix).arc;
-    var input = document.getElementById(sliderId);
-    var min =
-      typeof FAN_INNER_ARC_PERCENT_MIN !== "undefined"
-        ? FAN_INNER_ARC_PERCENT_MIN
-        : 20;
-    var max =
-      typeof FAN_INNER_ARC_PERCENT_MAX !== "undefined"
-        ? FAN_INNER_ARC_PERCENT_MAX
-        : 80;
     var defaultPct =
       typeof FAN_INNER_ARC_PERCENT_DEFAULT !== "undefined"
         ? FAN_INNER_ARC_PERCENT_DEFAULT
         : 50;
-    var raw = input ? Number(input.value) : defaultPct;
-    if (!Number.isFinite(raw)) raw = defaultPct;
-    var pct = Math.max(min, Math.min(max, Math.round(raw)));
-    return pct / 100;
+    return defaultPct / 100;
   }
 
   function getFanOutsideExtraArcGapPx() {
-    var input = document.getElementById("fan-outside-extra-arc");
-    var min =
-      typeof FAN_OUTSIDE_EXTRA_ARC_GAP_MIN !== "undefined"
-        ? FAN_OUTSIDE_EXTRA_ARC_GAP_MIN
-        : 0;
-    var max =
-      typeof FAN_OUTSIDE_EXTRA_ARC_GAP_MAX !== "undefined"
-        ? FAN_OUTSIDE_EXTRA_ARC_GAP_MAX
-        : 80;
-    var defaultGap =
-      typeof FAN_OUTSIDE_EXTRA_ARC_GAP_DEFAULT !== "undefined"
-        ? FAN_OUTSIDE_EXTRA_ARC_GAP_DEFAULT
-        : 24;
-    var raw = input ? Number(input.value) : defaultGap;
-    if (!Number.isFinite(raw)) raw = defaultGap;
-    return Math.max(min, Math.min(max, Math.round(raw)));
-  }
-
-  /** @param {"top" | "bottom"} idPrefix @returns {number} */
-  function getFanStarPointCount(idPrefix) {
-    if (idPrefix === "bottom") {
-      return typeof FAN_BOTTOM_STAR_POINT_COUNT !== "undefined"
-        ? FAN_BOTTOM_STAR_POINT_COUNT
-        : 4;
-    }
-    return typeof FAN_TOP_STAR_POINT_COUNT !== "undefined"
-      ? FAN_TOP_STAR_POINT_COUNT
-      : 5;
-  }
-
-  /** @param {"top" | "bottom"} idPrefix */
-  function getFanStarInnerRadiusRatio(idPrefix) {
-    var sliderId = getFanSliderIds(idPrefix).stars;
-    var input = document.getElementById(sliderId);
-    var min =
-      typeof FAN_STAR_INNER_PERCENT_MIN !== "undefined"
-        ? FAN_STAR_INNER_PERCENT_MIN
-        : 50;
-    var max =
-      typeof FAN_STAR_INNER_PERCENT_MAX !== "undefined"
-        ? FAN_STAR_INNER_PERCENT_MAX
-        : 95;
-    var defaultPct =
-      typeof FAN_STAR_INNER_PERCENT_DEFAULT !== "undefined"
-        ? FAN_STAR_INNER_PERCENT_DEFAULT
-        : 75;
-    var raw = input ? Number(input.value) : defaultPct;
-    if (!Number.isFinite(raw)) raw = defaultPct;
-    var pct = Math.max(min, Math.min(max, Math.round(raw)));
-    return pct / 100;
+    return typeof FAN_OUTSIDE_EXTRA_ARC_GAP_DEFAULT !== "undefined"
+      ? FAN_OUTSIDE_EXTRA_ARC_GAP_DEFAULT
+      : 24;
   }
 
   function snapFanLeavesSlider(slider) {
@@ -13745,70 +14625,8 @@
   }
 
   function bindFanTuningSliders() {
-    var arcMin =
-      typeof FAN_INNER_ARC_PERCENT_MIN !== "undefined"
-        ? FAN_INNER_ARC_PERCENT_MIN
-        : 20;
-    var arcMax =
-      typeof FAN_INNER_ARC_PERCENT_MAX !== "undefined"
-        ? FAN_INNER_ARC_PERCENT_MAX
-        : 80;
-    var starMin =
-      typeof FAN_STAR_INNER_PERCENT_MIN !== "undefined"
-        ? FAN_STAR_INNER_PERCENT_MIN
-        : 50;
-    var starMax =
-      typeof FAN_STAR_INNER_PERCENT_MAX !== "undefined"
-        ? FAN_STAR_INNER_PERCENT_MAX
-        : 95;
-
     bindFanTuningSlider(document.getElementById(FAN_SHARED_LEAVES_ID), {
       snap: "leaves",
-    });
-    var leafSizeMin =
-      typeof FAN_LEAF_SIZE_MIN !== "undefined" ? FAN_LEAF_SIZE_MIN : 0;
-    var leafSizeMax =
-      typeof FAN_LEAF_SIZE_MAX !== "undefined" ? FAN_LEAF_SIZE_MAX : 100;
-    bindFanTuningSlider(document.getElementById(FAN_SHARED_LEAF_SIZE_ID), {
-      snap: "percent",
-      min: leafSizeMin,
-      max: leafSizeMax,
-    });
-    bindFanTuningSlider(document.getElementById(FAN_SHARED_ARC_ID), {
-      snap: "percent",
-      min: arcMin,
-      max: arcMax,
-    });
-    bindFanTuningSlider(document.getElementById(FAN_SHARED_STARS_ID), {
-      snap: "percent",
-      min: starMin,
-      max: starMax,
-    });
-    var extraArcMin =
-      typeof FAN_OUTSIDE_EXTRA_ARC_GAP_MIN !== "undefined"
-        ? FAN_OUTSIDE_EXTRA_ARC_GAP_MIN
-        : 0;
-    var extraArcMax =
-      typeof FAN_OUTSIDE_EXTRA_ARC_GAP_MAX !== "undefined"
-        ? FAN_OUTSIDE_EXTRA_ARC_GAP_MAX
-        : 80;
-    bindFanTuningSlider(document.getElementById("fan-outside-extra-arc"), {
-      snap: "percent",
-      min: extraArcMin,
-      max: extraArcMax,
-    });
-    var outerArcMin =
-      typeof RADIAL_FAN_OUTER_ARC_SCALE_MIN !== "undefined"
-        ? Math.round(RADIAL_FAN_OUTER_ARC_SCALE_MIN * 100)
-        : 70;
-    var outerArcMax =
-      typeof RADIAL_FAN_OUTER_ARC_SCALE_MAX !== "undefined"
-        ? Math.round(RADIAL_FAN_OUTER_ARC_SCALE_MAX * 100)
-        : 100;
-    bindFanTuningSlider(document.getElementById(FAN_RADIAL_OUTER_ARC_ID), {
-      snap: "percent",
-      min: outerArcMin,
-      max: outerArcMax,
     });
   }
 
@@ -14004,11 +14822,9 @@
     var firstRib;
     var lastRib;
     if (anchor === "right") {
-      // Right-anchored: keep the right drawable edge fixed; fold away from the left.
       firstRib = maxPetals - trim - petalCount;
       lastRib = maxPetals - trim;
     } else {
-      // Left-anchored: keep the left drawable edge fixed; fold away from the right.
       firstRib = trim;
       lastRib = trim + petalCount;
     }
@@ -14024,6 +14840,30 @@
     };
   }
 
+  /** All rib endpoints (0…maxPetals) for static fan geometry; trim applied later via getFanDrawAngles. */
+  function buildHalfCircleFullRibLayout(cx, y, r, ribs, anchor) {
+    var full = buildHalfCircleFullEndpoints(cx, y, r, ribs);
+    var maxPetals = ribs - 1;
+    if (maxPetals <= 0) {
+      return {
+        endpoints: [],
+        deltaTheta: full.deltaTheta,
+        startAngle: Math.PI,
+        endAngle: Math.PI,
+        visiblePetals: 0,
+      };
+    }
+
+    return {
+      endpoints: full.endpoints,
+      deltaTheta: full.deltaTheta,
+      startAngle: full.endpoints[0].a,
+      endAngle: full.endpoints[maxPetals].a,
+      visiblePetals: maxPetals,
+      firstRib: 0,
+    };
+  }
+
   /** Clip layout follows the leaves slider; full layout keeps all fan geometry static. */
   function buildHalfCircleFanClipAndFullLayouts(
     cx,
@@ -14033,7 +14873,6 @@
     visiblePetals,
     anchor
   ) {
-    var maxPetals = Math.max(0, ribs - 1);
     var resolvedAnchor = anchor || "left";
     var clipLayout = buildHalfCircleVisibleFanLayout(
       cx,
@@ -14043,14 +14882,7 @@
       visiblePetals,
       resolvedAnchor
     );
-    var fullLayout = buildHalfCircleVisibleFanLayout(
-      cx,
-      y,
-      r,
-      ribs,
-      maxPetals,
-      resolvedAnchor
-    );
+    var fullLayout = buildHalfCircleFullRibLayout(cx, y, r, ribs, resolvedAnchor);
     return {
       clipLayout: clipLayout,
       fullLayout: fullLayout,
@@ -15523,397 +16355,6 @@
     return circles;
   }
 
-  function buildHalfCirclePetals(cx, y, ribs, inset, cuspGap, r, endpoints, deltaTheta) {
-    var petals = [];
-    var pj;
-    for (pj = 0; pj < ribs - 1; pj++) {
-      var tLeft = endpoints[pj].a;
-      var tRight = endpoints[pj + 1].a;
-      var leftInsetAngle;
-      var rightInsetAngle;
-      if (tLeft < tRight) {
-        leftInsetAngle = tLeft + inset * deltaTheta;
-        rightInsetAngle = tRight - inset * deltaTheta;
-        if (leftInsetAngle >= rightInsetAngle) {
-          petals.push(null);
-          continue;
-        }
-      } else {
-        leftInsetAngle = tLeft - inset * deltaTheta;
-        rightInsetAngle = tRight + inset * deltaTheta;
-        if (leftInsetAngle <= rightInsetAngle) {
-          petals.push(null);
-          continue;
-        }
-      }
-
-      var rInner = halfCircleInnerEndpointRadiusForGap(
-        cx,
-        y,
-        Math.min(leftInsetAngle, rightInsetAngle),
-        Math.max(leftInsetAngle, rightInsetAngle),
-        endpoints[pj],
-        endpoints[pj + 1],
-        cuspGap,
-        r
-      );
-      var lengthScale = getFanInnerLeafLengthScale();
-      var rInnerMin = 4;
-      rInner = rInnerMin + (rInner - rInnerMin) * lengthScale;
-
-      var inLeft = halfCirclePolarPoint(cx, y, rInner, leftInsetAngle);
-      var inRight = halfCirclePolarPoint(cx, y, rInner, rightInsetAngle);
-
-      petals.push({
-        inLeft: inLeft,
-        inRight: inRight,
-        rInner: rInner,
-        inLeftAngle: leftInsetAngle,
-        inRightAngle: rightInsetAngle,
-      });
-    }
-    return petals;
-  }
-
-  function appendHalfCircleFan(
-    parentGroup,
-    idPrefix,
-    cx,
-    focalY,
-    r,
-    ribs,
-    visiblePetals,
-    anchor
-  ) {
-    var fanLayouts = buildHalfCircleFanClipAndFullLayouts(
-      cx,
-      focalY,
-      r,
-      ribs,
-      visiblePetals,
-      anchor
-    );
-    if (!fanLayouts.clipLayout.endpoints.length) return;
-
-    var endpoints = fanLayouts.fullLayout.endpoints;
-    var visibleRibs = endpoints.length;
-    var deltaTheta = fanLayouts.fullLayout.deltaTheta;
-    var drawAngles = fanLayouts.fullDrawAngles;
-    var sectorPath = halfCircleSectorPath(
-      cx,
-      focalY,
-      r,
-      fanLayouts.clipDrawAngles.startAngle,
-      fanLayouts.clipDrawAngles.endAngle
-    );
-
-    if (idPrefix === "top" && designSvg) {
-      var defs = designSvg.querySelector("defs");
-      if (defs) {
-        var existingClip = defs.querySelector("#half-circle-clip");
-        if (existingClip && existingClip.parentNode) {
-          existingClip.parentNode.removeChild(existingClip);
-        }
-
-        var halfCircleClip = elSvg("clipPath");
-        halfCircleClip.setAttribute("id", "half-circle-clip");
-        var clipPath = elSvg("path");
-        clipPath.setAttribute("d", sectorPath);
-        halfCircleClip.appendChild(clipPath);
-        defs.appendChild(halfCircleClip);
-      }
-    }
-
-    var inset = getHalfCircleInset();
-    var cuspGap = getHalfCircleCuspGapPx() * HALF_CIRCLE_RADIUS_SCALE;
-    var fanStrokeOuter = sheetColor("D1");
-    var fanStrokeInnerArc = sheetColor("D2");
-    var fanStrokeInnerRib = sheetColor("D3");
-    var fanStrokeDiagonal = sheetColor("D4");
-    var fanFillPetalFace = sheetColor("D6");
-    var fanFillRibStrip = sheetColor("D7");
-    var fanFillArcBand = sheetColor("D9");
-
-    var bgFill = elSvg("path");
-    bgFill.setAttribute("id", "half-circle-background-" + idPrefix);
-    bgFill.setAttribute("d", sectorPath);
-    bgFill.setAttribute("fill", sheetColor("A2"));
-    bgFill.setAttribute("stroke", "none");
-    parentGroup.appendChild(bgFill);
-
-    var sectorClipId = appendRadialFanSectorClipPath(
-      parentGroup,
-      idPrefix,
-      sectorPath
-    );
-    var fanContentGroup = elSvg("g");
-    fanContentGroup.setAttribute("id", "half-circle-content-" + idPrefix);
-    fanContentGroup.setAttribute("clip-path", "url(#" + sectorClipId + ")");
-    parentGroup.appendChild(fanContentGroup);
-
-    var outer = elSvg("path");
-    var trim = drawAngles.trimCount;
-    var pts =
-      trim > 0
-        ? endpoints.slice(trim, endpoints.length - trim)
-        : endpoints;
-    var dOuter = "M " + pts[0].x + " " + pts[0].y;
-    var k;
-    for (k = 0; k < pts.length - 1; k++) {
-      dOuter = appendHalfCircleInwardCuspArc(dOuter, pts[k], pts[k + 1]);
-    }
-    outer.setAttribute("d", dOuter);
-    outer.setAttribute("fill", "none");
-    outer.setAttribute("stroke", fanStrokeOuter);
-    outer.setAttribute("stroke-width", String(HALF_CIRCLE_FAN_STROKE_WIDTH));
-    fanContentGroup.appendChild(outer);
-
-    var leftBoundary = elSvg("line");
-    leftBoundary.setAttribute("x1", String(cx));
-    leftBoundary.setAttribute("y1", String(focalY));
-    leftBoundary.setAttribute("x2", String(pts[0].x));
-    leftBoundary.setAttribute("y2", String(pts[0].y));
-    leftBoundary.setAttribute("stroke", fanStrokeOuter);
-    leftBoundary.setAttribute("stroke-width", String(HALF_CIRCLE_FAN_STROKE_WIDTH));
-    fanContentGroup.appendChild(leftBoundary);
-
-    var rightBoundary = elSvg("line");
-    rightBoundary.setAttribute("x1", String(cx));
-    rightBoundary.setAttribute("y1", String(focalY));
-    rightBoundary.setAttribute("x2", String(pts[pts.length - 1].x));
-    rightBoundary.setAttribute("y2", String(pts[pts.length - 1].y));
-    rightBoundary.setAttribute("stroke", fanStrokeOuter);
-    rightBoundary.setAttribute("stroke-width", String(HALF_CIRCLE_FAN_STROKE_WIDTH));
-    fanContentGroup.appendChild(rightBoundary);
-
-    var innerArcRadius = r * getFanInnerArcRadiusRatio(idPrefix);
-    var outerArcRadius = getHalfCircleArcPairOuterRadius(innerArcRadius);
-    var extraArcPair = getFanOutsideExtraArcPair(outerArcRadius, r);
-    var innerArcPair = elSvg("g");
-    innerArcPair.setAttribute("id", "half-circle-inner-arc-pair-" + idPrefix);
-
-    appendHalfCircleInnerArcPairStrokes(
-      innerArcPair,
-      idPrefix,
-      "",
-      cx,
-      focalY,
-      innerArcRadius,
-      outerArcRadius,
-      drawAngles.startAngle,
-      drawAngles.endAngle,
-      fanStrokeInnerArc,
-      HALF_CIRCLE_FAN_STROKE_WIDTH
-    );
-
-    if (extraArcPair) {
-      appendHalfCircleInnerArcPairStrokes(
-        innerArcPair,
-        idPrefix,
-        "-extra",
-        cx,
-        focalY,
-        extraArcPair.inner,
-        extraArcPair.outer,
-        drawAngles.startAngle,
-        drawAngles.endAngle,
-        fanStrokeInnerArc,
-        HALF_CIRCLE_FAN_STROKE_WIDTH
-      );
-    }
-
-    fanContentGroup.appendChild(innerArcPair);
-
-    var petals = buildHalfCirclePetals(
-      cx,
-      focalY,
-      visibleRibs,
-      inset,
-      cuspGap,
-      r,
-      endpoints,
-      deltaTheta
-    );
-
-    var petalFillsGroup = elSvg("g");
-    petalFillsGroup.setAttribute("id", "half-circle-petal-fills-" + idPrefix);
-    var pfi;
-    for (pfi = 0; pfi < petals.length; pfi++) {
-      var fillPetal = petals[pfi];
-      if (!fillPetal) continue;
-
-      var petalFace = elSvg("path");
-      petalFace.setAttribute(
-        "d",
-        halfCirclePetalFaceFillPath(
-          cx,
-          focalY,
-          endpoints[pfi],
-          endpoints[pfi + 1],
-          fillPetal.inLeft,
-          fillPetal.inRight,
-          fillPetal.rInner
-        )
-      );
-      petalFace.setAttribute("fill", fanFillPetalFace);
-      petalFace.setAttribute("fill-rule", "evenodd");
-      petalFace.setAttribute("stroke", "none");
-      petalFillsGroup.appendChild(petalFace);
-
-      var bandCell = elSvg("path");
-      bandCell.setAttribute(
-        "d",
-        halfCircleInnerArcBandCellPath(
-          cx,
-          focalY,
-          innerArcRadius,
-          outerArcRadius,
-          fillPetal.inLeftAngle,
-          fillPetal.inRightAngle
-        )
-      );
-      bandCell.setAttribute("fill", fanFillArcBand);
-      bandCell.setAttribute("stroke", "none");
-      petalFillsGroup.appendChild(bandCell);
-
-      if (extraArcPair) {
-        var extraBandCell = elSvg("path");
-        extraBandCell.setAttribute(
-          "d",
-          halfCircleInnerArcBandCellPath(
-            cx,
-            focalY,
-            extraArcPair.inner,
-            extraArcPair.outer,
-            fillPetal.inLeftAngle,
-            fillPetal.inRightAngle
-          )
-        );
-        extraBandCell.setAttribute("fill", fanFillArcBand);
-        extraBandCell.setAttribute("stroke", "none");
-        petalFillsGroup.appendChild(extraBandCell);
-      }
-    }
-    fanContentGroup.insertBefore(petalFillsGroup, outer);
-
-    if (getHalfCircleInnerArcDiagonalsVisible()) {
-      var diagonalGroup = elSvg("g");
-      diagonalGroup.setAttribute("id", "half-circle-inner-arc-diagonals-" + idPrefix);
-      var cellIndex = appendHalfCircleInnerArcBandDiagonals(
-        diagonalGroup,
-        cx,
-        focalY,
-        innerArcRadius,
-        outerArcRadius,
-        petals,
-        fanStrokeDiagonal,
-        HALF_CIRCLE_FAN_STROKE_WIDTH,
-        0
-      );
-      if (extraArcPair) {
-        appendHalfCircleInnerArcBandDiagonals(
-          diagonalGroup,
-          cx,
-          focalY,
-          extraArcPair.inner,
-          extraArcPair.outer,
-          petals,
-          fanStrokeDiagonal,
-          HALF_CIRCLE_FAN_STROKE_WIDTH,
-          cellIndex
-        );
-      }
-      fanContentGroup.appendChild(diagonalGroup);
-    }
-
-    var innerGroup = elSvg("g");
-    innerGroup.setAttribute("id", "half-circle-inner-petals-" + idPrefix);
-    var pj;
-    for (pj = 0; pj < petals.length; pj++) {
-      var petal = petals[pj];
-      if (!petal) continue;
-
-      var inLeft = petal.inLeft;
-      var inRight = petal.inRight;
-
-      var leftStripFill = elSvg("path");
-      leftStripFill.setAttribute(
-        "d",
-        halfCircleRibStripFillPath(
-          cx,
-          focalY,
-          endpoints[pj].a,
-          inLeft,
-          petal.rInner,
-          "left"
-        )
-      );
-      leftStripFill.setAttribute("fill", fanFillRibStrip);
-      leftStripFill.setAttribute("stroke", "none");
-      innerGroup.appendChild(leftStripFill);
-
-      var rightStripFill = elSvg("path");
-      rightStripFill.setAttribute(
-        "d",
-        halfCircleRibStripFillPath(
-          cx,
-          focalY,
-          endpoints[pj + 1].a,
-          inRight,
-          petal.rInner,
-          "right"
-        )
-      );
-      rightStripFill.setAttribute("fill", fanFillRibStrip);
-      rightStripFill.setAttribute("stroke", "none");
-      innerGroup.appendChild(rightStripFill);
-
-      var innerLeftRib = elSvg("line");
-      innerLeftRib.setAttribute("x1", String(cx));
-      innerLeftRib.setAttribute("y1", String(focalY));
-      innerLeftRib.setAttribute("x2", String(inLeft.x));
-      innerLeftRib.setAttribute("y2", String(inLeft.y));
-      innerLeftRib.setAttribute("stroke", fanStrokeInnerRib);
-      innerLeftRib.setAttribute("stroke-width", String(HALF_CIRCLE_FAN_STROKE_WIDTH));
-      innerGroup.appendChild(innerLeftRib);
-
-      var innerRightRib = elSvg("line");
-      innerRightRib.setAttribute("x1", String(cx));
-      innerRightRib.setAttribute("y1", String(focalY));
-      innerRightRib.setAttribute("x2", String(inRight.x));
-      innerRightRib.setAttribute("y2", String(inRight.y));
-      innerRightRib.setAttribute("stroke", fanStrokeInnerRib);
-      innerRightRib.setAttribute("stroke-width", String(HALF_CIRCLE_FAN_STROKE_WIDTH));
-      innerGroup.appendChild(innerRightRib);
-
-      var topCapFill = elSvg("path");
-      topCapFill.setAttribute(
-        "d",
-        halfCircleInnerPetalTopCapPath(cx, focalY, petal.rInner, inLeft, inRight)
-      );
-      topCapFill.setAttribute("fill", fanFillRibStrip);
-      topCapFill.setAttribute("stroke", "none");
-      innerGroup.appendChild(topCapFill);
-
-      var dInnerCusp = "M " + inLeft.x + " " + inLeft.y;
-      dInnerCusp = appendHalfCircleInnerPetalTipArc(
-        dInnerCusp,
-        cx,
-        focalY,
-        petal.rInner,
-        inLeft,
-        inRight
-      );
-      var innerCusp = elSvg("path");
-      innerCusp.setAttribute("d", dInnerCusp);
-      innerCusp.setAttribute("fill", "none");
-      innerCusp.setAttribute("stroke", fanStrokeInnerRib);
-      innerCusp.setAttribute("stroke-width", String(HALF_CIRCLE_FAN_STROKE_WIDTH));
-      innerGroup.appendChild(innerCusp);
-    }
-    fanContentGroup.appendChild(innerGroup);
-  }
-
   function getRadialFanStrokeWidth() {
     return typeof RADIAL_FAN_STROKE_WIDTH !== "undefined"
       ? RADIAL_FAN_STROKE_WIDTH
@@ -16085,9 +16526,207 @@
     setRadialFanMiddleStandaloneArcRadius(innerArcRadii, seat.centerDist);
   }
 
+  /** Valid radius range for the 6th inner arc (largest in the tight inner group). */
+  function getRadialFanSixthInnerArcBounds(innerArcRadii) {
+    var sixthIndex =
+      typeof RADIAL_FAN_SIXTH_ARC_DIAGONAL_ARC_INDEX !== "undefined"
+        ? RADIAL_FAN_SIXTH_ARC_DIAGONAL_ARC_INDEX
+        : (typeof RADIAL_FAN_INNER_ARC_COUNT !== "undefined"
+            ? RADIAL_FAN_INNER_ARC_COUNT
+            : 6) - 1;
+    if (!innerArcRadii || innerArcRadii.length <= sixthIndex) {
+      return { minRadius: 0, maxRadius: 0, sixthIndex: sixthIndex };
+    }
+
+    var innerCount =
+      typeof RADIAL_FAN_INNER_ARC_COUNT !== "undefined"
+        ? RADIAL_FAN_INNER_ARC_COUNT
+        : 6;
+    var prevIdx = sixthIndex - 1;
+    var nextIdx = innerCount;
+    var minRadius = prevIdx >= 0 ? innerArcRadii[prevIdx] + 0.51 : 0;
+    var maxRadius =
+      innerArcRadii.length > nextIdx
+        ? innerArcRadii[nextIdx] - 0.51
+        : innerArcRadii[sixthIndex] + 1e6;
+
+    return { minRadius: minRadius, maxRadius: maxRadius, sixthIndex: sixthIndex };
+  }
+
+  /** Move the 6th inner arc so it passes through base-row ring centers. */
+  function setRadialFanSixthInnerArcRadius(innerArcRadii, radius) {
+    if (!innerArcRadii || radius <= 0) return;
+
+    var bounds = getRadialFanSixthInnerArcBounds(innerArcRadii);
+    if (
+      bounds.sixthIndex < 0 ||
+      bounds.sixthIndex >= innerArcRadii.length ||
+      radius <= bounds.minRadius ||
+      radius >= bounds.maxRadius
+    ) {
+      return;
+    }
+
+    innerArcRadii[bounds.sixthIndex] = radius;
+  }
+
+  /** 6th inner arc passes through every base-row ring center (3rd-arc seat + ring radius). */
+  function syncRadialFanSixthInnerArcWithBaseRowRings(innerArcRadii, endpoints) {
+    if (!innerArcRadii || !endpoints || endpoints.length < 5) return;
+
+    var thirdArcIndex =
+      typeof RADIAL_FAN_THIRD_ARC_RING_ARC_INDEX !== "undefined"
+        ? RADIAL_FAN_THIRD_ARC_RING_ARC_INDEX
+        : 2;
+    if (innerArcRadii.length <= thirdArcIndex) return;
+
+    var ringCount =
+      typeof RADIAL_FAN_THIRD_ARC_RING_COUNT !== "undefined"
+        ? RADIAL_FAN_THIRD_ARC_RING_COUNT
+        : 5;
+    var thirdArcRadius = innerArcRadii[thirdArcIndex];
+    var baseLayout = getRadialFanBaseRowRingLayout(
+      endpoints,
+      thirdArcRadius,
+      ringCount
+    );
+    if (!baseLayout || baseLayout.ringRadius <= 0) return;
+
+    setRadialFanSixthInnerArcRadius(
+      innerArcRadii,
+      thirdArcRadius + baseLayout.ringRadius
+    );
+  }
+
+  function getRadialFanMiddleBandDotRadius() {
+    var dotSize =
+      typeof RADIAL_FAN_MIDDLE_BAND_DOT_SIZE !== "undefined"
+        ? RADIAL_FAN_MIDDLE_BAND_DOT_SIZE
+        : 2;
+    return dotSize / 2;
+  }
+
+  function getRadialFanMiddleBandMinDotDistance() {
+    var dotSize =
+      typeof RADIAL_FAN_MIDDLE_BAND_DOT_SIZE !== "undefined"
+        ? RADIAL_FAN_MIDDLE_BAND_DOT_SIZE
+        : 2;
+    var spacing =
+      typeof RADIAL_FAN_MIDDLE_BAND_DOT_SPACING !== "undefined"
+        ? RADIAL_FAN_MIDDLE_BAND_DOT_SPACING
+        : 2;
+    return dotSize + spacing;
+  }
+
+  function hashFanMiddleBandSeed(str) {
+    var h = 2166136261;
+    var i;
+    for (i = 0; i < str.length; i++) {
+      h ^= str.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return h >>> 0;
+  }
+
+  function getRadialFanMiddleBandTriangleBbox(points) {
+    var minX = Infinity;
+    var minY = Infinity;
+    var maxX = -Infinity;
+    var maxY = -Infinity;
+    var i;
+    for (i = 0; i < points.length; i++) {
+      var p = points[i];
+      if (p.x < minX) minX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y > maxY) maxY = p.y;
+    }
+    return {
+      minX: minX,
+      minY: minY,
+      maxX: maxX,
+      maxY: maxY,
+      width: maxX - minX,
+      height: maxY - minY,
+    };
+  }
+
+  /** Random dots clipped to one middle-band triangle (seeded for stable re-renders). */
+  function appendRadialFanMiddleBandTriangleStipple(
+    parentGroup,
+    triangleId,
+    pathD,
+    bboxPoints,
+    dotColor,
+    seed
+  ) {
+    var clipId = "radial-fan-middle-band-clip-" + triangleId;
+    var clip = elSvg("clipPath");
+    clip.setAttribute("id", clipId);
+    var clipPath = elSvg("path");
+    clipPath.setAttribute("d", pathD);
+    clip.appendChild(clipPath);
+    parentGroup.appendChild(clip);
+
+    var bbox = getRadialFanMiddleBandTriangleBbox(bboxPoints);
+    var radius = getRadialFanMiddleBandDotRadius();
+    var minDist = getRadialFanMiddleBandMinDotDistance();
+    var minDistSq = minDist * minDist;
+    var padding = radius + 1;
+    var area = Math.max(1, bbox.width * bbox.height);
+    var targetCount = Math.max(2, Math.round(area / (minDist * minDist * 0.65)));
+    var rng = createSeededRandom(seed);
+    var dots = [];
+    var maxAttempts = targetCount * 50;
+    var attempts = 0;
+
+    while (dots.length < targetCount && attempts < maxAttempts) {
+      attempts++;
+      var x = bbox.minX - padding + rng() * (bbox.width + padding * 2);
+      var y = bbox.minY - padding + rng() * (bbox.height + padding * 2);
+      var ok = true;
+      var di;
+      for (di = 0; di < dots.length; di++) {
+        var dx = x - dots[di].x;
+        var dy = y - dots[di].y;
+        if (dx * dx + dy * dy < minDistSq) {
+          ok = false;
+          break;
+        }
+      }
+      if (ok) dots.push({ x: x, y: y });
+    }
+
+    var dotGroup = elSvg("g");
+    dotGroup.setAttribute("id", "radial-fan-middle-band-dots-" + triangleId);
+    dotGroup.setAttribute("clip-path", "url(#" + clipId + ")");
+    dotGroup.setAttribute("fill", dotColor);
+    dotGroup.setAttribute("stroke", "none");
+
+    var ci;
+    for (ci = 0; ci < dots.length; ci++) {
+      var circle = elSvg("circle");
+      circle.setAttribute("cx", String(dots[ci].x));
+      circle.setAttribute("cy", String(dots[ci].y));
+      circle.setAttribute("r", String(radius));
+      dotGroup.appendChild(circle);
+    }
+    parentGroup.appendChild(dotGroup);
+  }
+
   function getRadialFanMiddleRibIndex(endpoints) {
     if (!endpoints || endpoints.length < 3) return -1;
     return Math.floor((endpoints.length - 1) * 0.5);
+  }
+
+  /** Rib endpoint index counted from a fan end (same convention as elevated rings). */
+  function getRadialFanRibIndexFromFanEnd(endpoints, offsetFromEnd, fromLeftEnd) {
+    if (!endpoints || offsetFromEnd < 0) return -1;
+    var endpointCount = endpoints.length;
+    var idx = fromLeftEnd
+      ? offsetFromEnd
+      : endpointCount - 1 - offsetFromEnd;
+    return idx >= 0 && idx < endpointCount ? idx : -1;
   }
 
   /**
@@ -16191,7 +16830,7 @@
     outerRadius,
     endpoints,
     pairStartCell,
-    fillColor,
+    dotColor,
     stroke,
     strokeWidth
   ) {
@@ -16231,43 +16870,41 @@
       endpoints[sharedRib + 1].a
     );
 
+    var leftTriangleId = idPrefix + "-" + leftCell;
+    var leftPath = radialFanMiddleRibLowerTriangleFillPath(
+      cx,
+      focalY,
+      innerRadius,
+      innerAtLeft,
+      innerAtShared,
+      outerAtLeft
+    );
     var leftFill = elSvg("path");
     leftFill.setAttribute(
       "id",
-      "radial-fan-middle-band-fill-" + idPrefix + "-" + leftCell
+      "radial-fan-middle-band-fill-" + leftTriangleId
     );
-    leftFill.setAttribute(
-      "d",
-      radialFanMiddleRibLowerTriangleFillPath(
-        cx,
-        focalY,
-        innerRadius,
-        innerAtLeft,
-        innerAtShared,
-        outerAtLeft
-      )
-    );
-    leftFill.setAttribute("fill", fillColor);
+    leftFill.setAttribute("d", leftPath);
+    leftFill.setAttribute("fill", dotColor);
     leftFill.setAttribute("stroke", "none");
     parentGroup.appendChild(leftFill);
 
+    var rightTriangleId = idPrefix + "-" + rightCell;
+    var rightPath = radialFanMiddleRibLowerTriangleFillPath(
+      cx,
+      focalY,
+      innerRadius,
+      innerAtShared,
+      innerAtRight,
+      outerAtRight
+    );
     var rightFill = elSvg("path");
     rightFill.setAttribute(
       "id",
-      "radial-fan-middle-band-fill-" + idPrefix + "-" + rightCell
+      "radial-fan-middle-band-fill-" + rightTriangleId
     );
-    rightFill.setAttribute(
-      "d",
-      radialFanMiddleRibLowerTriangleFillPath(
-        cx,
-        focalY,
-        innerRadius,
-        innerAtShared,
-        innerAtRight,
-        outerAtRight
-      )
-    );
-    rightFill.setAttribute("fill", fillColor);
+    rightFill.setAttribute("d", rightPath);
+    rightFill.setAttribute("fill", dotColor);
     rightFill.setAttribute("stroke", "none");
     parentGroup.appendChild(rightFill);
 
@@ -16298,8 +16935,193 @@
     parentGroup.appendChild(rightDiag);
   }
 
+  /** One stippled end-cap triangle + diagonal in the middle band. */
+  function appendRadialFanMiddleBandEndCapTriangle(
+    parentGroup,
+    idPrefix,
+    cx,
+    focalY,
+    innerRadius,
+    outerRadius,
+    endpoints,
+    outerFromEnd,
+    innerFromEnd,
+    fromLeftEnd,
+    capSuffix,
+    fillColor,
+    stroke,
+    strokeWidth,
+    flipDiagonal
+  ) {
+    var outerRibIdx = getRadialFanRibIndexFromFanEnd(
+      endpoints,
+      outerFromEnd,
+      fromLeftEnd
+    );
+    var innerRibIdx = getRadialFanRibIndexFromFanEnd(
+      endpoints,
+      innerFromEnd,
+      fromLeftEnd
+    );
+    if (outerRibIdx < 0 || innerRibIdx < 0 || outerRibIdx === innerRibIdx) {
+      return;
+    }
+
+    var arcLeftIdx = Math.min(outerRibIdx, innerRibIdx);
+    var arcRightIdx = Math.max(outerRibIdx, innerRibIdx);
+    var innerAtLeft = halfCirclePolarPoint(
+      cx,
+      focalY,
+      innerRadius,
+      endpoints[arcLeftIdx].a
+    );
+    var innerAtRight = halfCirclePolarPoint(
+      cx,
+      focalY,
+      innerRadius,
+      endpoints[arcRightIdx].a
+    );
+
+    var diagTopRibIdx = flipDiagonal ? innerRibIdx : outerRibIdx;
+    var diagBottomRibIdx = flipDiagonal ? outerRibIdx : innerRibIdx;
+    var outerAtStart = halfCirclePolarPoint(
+      cx,
+      focalY,
+      outerRadius,
+      endpoints[diagTopRibIdx].a
+    );
+    var innerAtEnd = halfCirclePolarPoint(
+      cx,
+      focalY,
+      innerRadius,
+      endpoints[diagBottomRibIdx].a
+    );
+
+    var sideSuffix = fromLeftEnd ? "start" : "end";
+    var idSuffix = capSuffix ? sideSuffix + "-" + capSuffix : sideSuffix;
+    var fillPath = radialFanMiddleRibLowerTriangleFillPath(
+      cx,
+      focalY,
+      innerRadius,
+      innerAtLeft,
+      innerAtRight,
+      outerAtStart
+    );
+    var endCapTriangleId = idPrefix + "-" + idSuffix;
+    appendRadialFanMiddleBandTriangleStipple(
+      parentGroup,
+      endCapTriangleId,
+      fillPath,
+      [innerAtLeft, innerAtRight, outerAtStart],
+      fillColor,
+      hashFanMiddleBandSeed("middle-band-end-cap-" + endCapTriangleId)
+    );
+
+    var diagonal = elSvg("line");
+    diagonal.setAttribute(
+      "id",
+      "radial-fan-middle-band-end-cap-diagonal-" + idPrefix + "-" + idSuffix
+    );
+    diagonal.setAttribute("x1", String(outerAtStart.x));
+    diagonal.setAttribute("y1", String(outerAtStart.y));
+    diagonal.setAttribute("x2", String(innerAtEnd.x));
+    diagonal.setAttribute("y2", String(innerAtEnd.y));
+    diagonal.setAttribute("stroke", stroke);
+    diagonal.setAttribute("stroke-width", String(strokeWidth));
+    parentGroup.appendChild(diagonal);
+  }
+
   /**
-   * Lower-triangle fills + diagonals on the band between the middle standalone arc
+   * End-cap diagonals + stippled right triangles at each fan end
+   * (inner pair + outermost last/first rib pair).
+   */
+  function appendRadialFanMiddleBandEndCapDiagonals(
+    parentGroup,
+    idPrefix,
+    cx,
+    focalY,
+    innerArcRadii,
+    endpoints,
+    stroke,
+    strokeWidth
+  ) {
+    var frameArcs = getRadialFanFrameArcRadii(innerArcRadii);
+    var innerRadius = frameArcs.middleStandalone;
+    var outerRadius = frameArcs.almostOuter;
+    if (
+      innerRadius <= 0 ||
+      outerRadius <= 0 ||
+      innerRadius >= outerRadius - 0.5 ||
+      !endpoints ||
+      endpoints.length < 4
+    ) {
+      return;
+    }
+
+    var innerCapOuterFromEnd =
+      typeof RADIAL_FAN_MIDDLE_BAND_END_CAP_DIAG_OUTER_RIB_FROM_END !==
+      "undefined"
+        ? RADIAL_FAN_MIDDLE_BAND_END_CAP_DIAG_OUTER_RIB_FROM_END
+        : 8;
+    var innerCapInnerFromEnd =
+      typeof RADIAL_FAN_MIDDLE_BAND_END_CAP_DIAG_INNER_RIB_FROM_END !==
+      "undefined"
+        ? RADIAL_FAN_MIDDLE_BAND_END_CAP_DIAG_INNER_RIB_FROM_END
+        : 7;
+    var outermostCapOuterFromEnd =
+      typeof RADIAL_FAN_MIDDLE_BAND_OUTERMOST_CAP_DIAG_OUTER_RIB_FROM_END !==
+      "undefined"
+        ? RADIAL_FAN_MIDDLE_BAND_OUTERMOST_CAP_DIAG_OUTER_RIB_FROM_END
+        : Math.max(1, getFanEndSectorTrimCount());
+    var outermostCapInnerFromEnd =
+      typeof RADIAL_FAN_MIDDLE_BAND_OUTERMOST_CAP_DIAG_INNER_RIB_FROM_END !==
+      "undefined"
+        ? RADIAL_FAN_MIDDLE_BAND_OUTERMOST_CAP_DIAG_INNER_RIB_FROM_END
+        : outermostCapOuterFromEnd + 1;
+    var fillColor = stroke;
+    var endSpecs = [{ fromLeftEnd: true }, { fromLeftEnd: false }];
+    var capPairs = [
+      {
+        outerFromEnd: innerCapOuterFromEnd,
+        innerFromEnd: innerCapInnerFromEnd,
+        capSuffix: "",
+        flipDiagonal: false,
+      },
+      {
+        outerFromEnd: outermostCapOuterFromEnd,
+        innerFromEnd: outermostCapInnerFromEnd,
+        capSuffix: "outermost",
+        flipDiagonal: true,
+      },
+    ];
+    var si;
+    var ci;
+
+    for (si = 0; si < endSpecs.length; si++) {
+      for (ci = 0; ci < capPairs.length; ci++) {
+        appendRadialFanMiddleBandEndCapTriangle(
+          parentGroup,
+          idPrefix,
+          cx,
+          focalY,
+          innerRadius,
+          outerRadius,
+          endpoints,
+          capPairs[ci].outerFromEnd,
+          capPairs[ci].innerFromEnd,
+          endSpecs[si].fromLeftEnd,
+          capPairs[ci].capSuffix,
+          fillColor,
+          stroke,
+          strokeWidth,
+          capPairs[ci].flipDiagonal
+        );
+      }
+    }
+  }
+
+  /**
+   * Solid-filled lower triangles + diagonals on the band between the middle standalone arc
    * and the almost-outer arc — center pair plus mirrored pairs every 2+gap cells.
    */
   function appendRadialFanMiddleRibAdjacentDiagonals(
@@ -16329,7 +17151,7 @@
     var cellCount = endpoints.length - 1;
     if (midIdx < 1 || midIdx >= cellCount) return;
 
-    var fillColor = sheetColor("D1");
+    var dotColor = stroke;
     var pairStarts = getRadialFanMiddleBandFillPairStarts(midIdx, cellCount);
     var pi;
     for (pi = 0; pi < pairStarts.length; pi++) {
@@ -16342,11 +17164,177 @@
         outerRadius,
         endpoints,
         pairStarts[pi],
-        fillColor,
+        dotColor,
         stroke,
         strokeWidth
       );
     }
+  }
+
+  /**
+   * Mirrored center diagonals: almost-outer arc top → inner-arc bottom one rib toward center.
+   * Left: two ribs left of middle → one rib left; right: two ribs right → one rib right.
+   */
+  function appendRadialFanMiddleRibCenterDiagonals(
+    parentGroup,
+    idPrefix,
+    cx,
+    focalY,
+    outerRadius,
+    innerArcRadii,
+    endpoints,
+    stroke,
+    strokeWidth
+  ) {
+    if (!endpoints || endpoints.length < 4 || !innerArcRadii) return;
+
+    var frameArcs = getRadialFanFrameArcRadii(innerArcRadii);
+    var innerRadius = frameArcs.middleStandalone;
+    var startRadius = frameArcs.almostOuter;
+    if (
+      innerRadius <= 0 ||
+      startRadius <= 0 ||
+      startRadius <= innerRadius
+    ) {
+      return;
+    }
+
+    var midIdx = getRadialFanMiddleRibIndex(endpoints);
+    var diag1StartOffset =
+      typeof RADIAL_FAN_CENTER_DIAG_1_START_RIB_OFFSET !== "undefined"
+        ? RADIAL_FAN_CENTER_DIAG_1_START_RIB_OFFSET
+        : 2;
+    var diag1EndOffset =
+      typeof RADIAL_FAN_CENTER_DIAG_1_END_RIB_OFFSET !== "undefined"
+        ? RADIAL_FAN_CENTER_DIAG_1_END_RIB_OFFSET
+        : 1;
+    var diag2StartOffset =
+      typeof RADIAL_FAN_CENTER_DIAG_2_START_RIB_OFFSET !== "undefined"
+        ? RADIAL_FAN_CENTER_DIAG_2_START_RIB_OFFSET
+        : -2;
+    var diag2EndOffset =
+      typeof RADIAL_FAN_CENTER_DIAG_2_END_RIB_OFFSET !== "undefined"
+        ? RADIAL_FAN_CENTER_DIAG_2_END_RIB_OFFSET
+        : -1;
+
+    var diag1StartIdx = midIdx + diag1StartOffset;
+    var diag1EndIdx = midIdx + diag1EndOffset;
+    var diag2StartIdx = midIdx + diag2StartOffset;
+    var diag2EndIdx = midIdx + diag2EndOffset;
+
+    if (
+      diag1StartIdx < 0 ||
+      diag1StartIdx >= endpoints.length ||
+      diag1EndIdx < 0 ||
+      diag1EndIdx >= endpoints.length ||
+      diag2StartIdx < 0 ||
+      diag2StartIdx >= endpoints.length ||
+      diag2EndIdx < 0 ||
+      diag2EndIdx >= endpoints.length
+    ) {
+      return;
+    }
+
+    var diag1Start = halfCirclePolarPoint(
+      cx,
+      focalY,
+      startRadius,
+      endpoints[diag1StartIdx].a
+    );
+    var diag1End = halfCirclePolarPoint(
+      cx,
+      focalY,
+      innerRadius,
+      endpoints[diag1EndIdx].a
+    );
+    var diag2Start = halfCirclePolarPoint(
+      cx,
+      focalY,
+      startRadius,
+      endpoints[diag2StartIdx].a
+    );
+    var diag2End = halfCirclePolarPoint(
+      cx,
+      focalY,
+      innerRadius,
+      endpoints[diag2EndIdx].a
+    );
+
+    var innerAtDiag1Start = halfCirclePolarPoint(
+      cx,
+      focalY,
+      innerRadius,
+      endpoints[diag1StartIdx].a
+    );
+    var innerAtDiag2Start = halfCirclePolarPoint(
+      cx,
+      focalY,
+      innerRadius,
+      endpoints[diag2StartIdx].a
+    );
+    var fillColor = stroke;
+
+    var rightTriangleId = idPrefix + "-center-right";
+    var rightPath = radialFanMiddleRibLowerTriangleFillPath(
+      cx,
+      focalY,
+      innerRadius,
+      diag1End,
+      innerAtDiag1Start,
+      diag1Start
+    );
+    appendRadialFanMiddleBandTriangleStipple(
+      parentGroup,
+      rightTriangleId,
+      rightPath,
+      [diag1End, innerAtDiag1Start, diag1Start],
+      fillColor,
+      hashFanMiddleBandSeed("middle-band-" + rightTriangleId)
+    );
+
+    var leftTriangleId = idPrefix + "-center-left";
+    var leftPath = radialFanMiddleRibLowerTriangleFillPath(
+      cx,
+      focalY,
+      innerRadius,
+      diag2End,
+      innerAtDiag2Start,
+      diag2Start
+    );
+    appendRadialFanMiddleBandTriangleStipple(
+      parentGroup,
+      leftTriangleId,
+      leftPath,
+      [diag2End, innerAtDiag2Start, diag2Start],
+      fillColor,
+      hashFanMiddleBandSeed("middle-band-" + leftTriangleId)
+    );
+
+    var diagonal1 = elSvg("line");
+    diagonal1.setAttribute(
+      "id",
+      "radial-fan-center-diagonal-" + idPrefix + "-1"
+    );
+    diagonal1.setAttribute("x1", String(diag1Start.x));
+    diagonal1.setAttribute("y1", String(diag1Start.y));
+    diagonal1.setAttribute("x2", String(diag1End.x));
+    diagonal1.setAttribute("y2", String(diag1End.y));
+    diagonal1.setAttribute("stroke", stroke);
+    diagonal1.setAttribute("stroke-width", String(strokeWidth));
+    parentGroup.appendChild(diagonal1);
+
+    var diagonal2 = elSvg("line");
+    diagonal2.setAttribute(
+      "id",
+      "radial-fan-center-diagonal-" + idPrefix + "-2"
+    );
+    diagonal2.setAttribute("x1", String(diag2Start.x));
+    diagonal2.setAttribute("y1", String(diag2Start.y));
+    diagonal2.setAttribute("x2", String(diag2End.x));
+    diagonal2.setAttribute("y2", String(diag2End.y));
+    diagonal2.setAttribute("stroke", stroke);
+    diagonal2.setAttribute("stroke-width", String(strokeWidth));
+    parentGroup.appendChild(diagonal2);
   }
 
   /**
@@ -17452,6 +18440,10 @@
       fullLayout.endpoints,
       frameArcsForSync.almostOuter
     );
+    syncRadialFanSixthInnerArcWithBaseRowRings(
+      innerArcRadii,
+      fullLayout.endpoints
+    );
     var innerArcsGroup = elSvg("g");
     innerArcsGroup.setAttribute("id", "radial-fan-inner-arcs-" + idPrefix);
     var ai;
@@ -17508,6 +18500,29 @@
       idPrefix,
       cx,
       focalY,
+      innerArcRadii,
+      endpoints,
+      fanStroke,
+      strokeWidth
+    );
+
+    appendRadialFanMiddleBandEndCapDiagonals(
+      strokesGroup,
+      idPrefix,
+      cx,
+      focalY,
+      innerArcRadii,
+      endpoints,
+      fanStroke,
+      strokeWidth
+    );
+
+    appendRadialFanMiddleRibCenterDiagonals(
+      strokesGroup,
+      idPrefix,
+      cx,
+      focalY,
+      outerArcRadius,
       innerArcRadii,
       endpoints,
       fanStroke,
@@ -17661,6 +18676,7 @@
 
   function renderHalfCircleLayer() {
     if (!designSvg) return;
+    ensureFanLayerMounted();
     var layer = designSvg.querySelector("#layer-half-circle");
     if (!layer) return;
 
@@ -17683,15 +18699,10 @@
       return;
     }
 
-    var radialType =
-      typeof FAN_TYPE_RADIAL !== "undefined" ? FAN_TYPE_RADIAL : "radial";
-    var appendFan =
-      getFanType() === radialType ? appendRadialBaseFan : appendHalfCircleFan;
-
     if (showTop && topVisiblePetals > 0) {
       var topG = elSvg("g");
       topG.setAttribute("id", "half-circle-top");
-      appendFan(
+      appendRadialBaseFan(
         topG,
         "top",
         cx,
@@ -17707,7 +18718,7 @@
       var bottomG = elSvg("g");
       bottomG.setAttribute("id", "half-circle-bottom");
       bottomG.setAttribute("transform", getHalfCircleVerticalMirrorTransform());
-      appendFan(
+      appendRadialBaseFan(
         bottomG,
         "bottom",
         cx,
@@ -17837,6 +18848,15 @@
           structuralCirclesToGroup(intactStructuralCircles)
         );
       }
+      appendCirclesGridFrameJunctionDots(patternLayer);
+    } else if (isDiamondsGrid()) {
+      var intactStructuralDiamonds = getIntactStructuralCirclesForPattern();
+      if (intactStructuralDiamonds.length) {
+        patternLayer.appendChild(
+          structuralDiamondsToGroup(intactStructuralDiamonds)
+        );
+      }
+      appendCirclesGridFrameJunctionDots(patternLayer);
     }
     var helplessnessMarks = getActiveHelplessnessMarks();
     if (helplessnessMarks.length) {
@@ -17872,21 +18892,88 @@
   }
 
   function updateStrengthDensityOutput() {
-    var strengthDensityOut = document.getElementById("strength-density-out");
-    if (strengthDensityOut) {
-      strengthDensityOut.textContent = String(getStrengthDensity()) + "%";
-    }
+    var min =
+      typeof STRENGTH_DENSITY_MIN !== "undefined"
+        ? STRENGTH_DENSITY_MIN
+        : CIRCLE_DENSITY_MIN;
+    setFeelingsStepOutputById(
+      "strength-density-out",
+      getStrengthDensity(),
+      min,
+      getJunctionEmotionDensityMaxForActiveGrid()
+    );
   }
 
-  function renderCirclesGrid() {
+  function syncAllFeelingsSliderOutputs() {
+    var junctionMax = getJunctionEmotionDensityMaxForActiveGrid();
+    setFeelingsStepOutputById(
+      "circle-density-out",
+      getCircleDensity(),
+      CIRCLE_DENSITY_MIN,
+      CIRCLE_DENSITY_MAX
+    );
+    setFeelingsStepOutputById(
+      "longing-circle-density-out",
+      getLongingCircleDensity(),
+      CIRCLE_DENSITY_MIN,
+      junctionMax
+    );
+    setFeelingsStepOutputById(
+      "grief-circle-density-out",
+      getGriefCircleDensity(),
+      CIRCLE_DENSITY_MIN,
+      junctionMax
+    );
+    updateStrengthDensityOutput();
+    setFeelingsStepOutputById(
+      "helplessness-percent-out",
+      getHelplessnessPercent(),
+      typeof HELPLESSNESS_PERCENT_MIN !== "undefined"
+        ? HELPLESSNESS_PERCENT_MIN
+        : 0,
+      getHelplessnessPercentMaxForActiveGrid()
+    );
+    setFeelingsStepOutputById(
+      "pride-fill-percent-out",
+      getPrideFillPercent(),
+      PRIDE_FILL_PERCENT_MIN,
+      getPrideFillPercentMaxForActiveGrid()
+    );
+    setFeelingsStepOutputById(
+      "guilt-shame-fill-percent-out",
+      getGuiltShameFillPercent(),
+      typeof GUILT_SHAME_FILL_PERCENT_MIN !== "undefined"
+        ? GUILT_SHAME_FILL_PERCENT_MIN
+        : 0,
+      getGuiltShameFillPercentMaxForActiveGrid()
+    );
+    setFeelingsStepOutputById(
+      "anger-triangle-density-out",
+      getAngerTriangleDensity(),
+      typeof ANGER_TRIANGLE_DENSITY_MIN !== "undefined"
+        ? ANGER_TRIANGLE_DENSITY_MIN
+        : 0,
+      getAngerTriangleDensityMaxForActiveGrid()
+    );
+    updateAutoMergeIntensityOutput();
+    setFeelingsStepOutputById(
+      "anger-vertical-length-out",
+      getAngerVerticalLengthPercent(),
+      ANGER_VERTICAL_LENGTH_MIN,
+      ANGER_VERTICAL_LENGTH_MAX
+    );
+    syncAnxietyVerticalStrokeOutput();
+  }
+
+  function renderCirclesLikeGrid(gridLabel) {
     applyOctagonGridLayerVisibility();
     updateInnerContentTransformForGridType();
 
     var innerScale = getInnerScale();
     var outInner = document.getElementById("inner-scale-out");
-    if (outInner) outInner.textContent = String(innerScale);
+    if (outInner) outInner.textContent = String(getInnerScaleStepDisplay());
 
-    var layout = CirclesGridGeometry.computeLayout(
+    var layout = getCirclesLikeGridGeometry().computeLayout(
       lastOctagonsN,
       CANVAS_W,
       CANVAS_H
@@ -17900,7 +18987,9 @@
         (lastOctagonsN + 1) +
         " across · " +
         (layout.m + 1) +
-        " down (circles grid)";
+        " down (" +
+        gridLabel +
+        ")";
     }
 
     var layoutSig = buildCircleLayoutSignature();
@@ -17928,47 +19017,7 @@
       syncAngerTriangleSelection(false);
     }
 
-    var densityOut = document.getElementById("circle-density-out");
-    if (densityOut) densityOut.textContent = String(getCircleDensity()) + "%";
-
-    var longingDensityOut = document.getElementById("longing-circle-density-out");
-    if (longingDensityOut) {
-      longingDensityOut.textContent = String(getLongingCircleDensity()) + "%";
-    }
-
-    var griefDensityOut = document.getElementById("grief-circle-density-out");
-    if (griefDensityOut) {
-      griefDensityOut.textContent = String(getGriefCircleDensity()) + "%";
-    }
-    updateStrengthDensityOutput();
-
-    var helplessnessOut = document.getElementById("helplessness-percent-out");
-    if (helplessnessOut) {
-      helplessnessOut.textContent = String(getHelplessnessPercent()) + "%";
-    }
-
-    var prideFillOut = document.getElementById("pride-fill-percent-out");
-    if (prideFillOut) {
-      prideFillOut.textContent = String(getPrideFillPercent()) + "%";
-    }
-
-    var guiltShameFillOut = document.getElementById("guilt-shame-fill-percent-out");
-    if (guiltShameFillOut) {
-      guiltShameFillOut.textContent = String(getGuiltShameFillPercent()) + "%";
-    }
-
-    var angerTriangleOut = document.getElementById("anger-triangle-density-out");
-    if (angerTriangleOut) {
-      angerTriangleOut.textContent = String(getAngerTriangleDensity()) + "%";
-    }
-
-    updateAutoMergeIntensityOutput();
-
-    var angerLengthOut = document.getElementById("anger-vertical-length-out");
-    if (angerLengthOut) {
-      angerLengthOut.textContent = String(getAngerVerticalLengthPercent()) + "%";
-    }
-    syncAnxietyVerticalStrokeOutput();
+    syncAllFeelingsSliderOutputs();
 
     var borderSideOut = document.getElementById("border-side-segments-out");
     if (borderSideOut) {
@@ -18001,19 +19050,25 @@
     }
   }
 
+  function renderCirclesGrid() {
+    renderCirclesLikeGrid("circles grid");
+  }
+
+  function renderDiamondsGrid() {
+    renderCirclesLikeGrid("diamonds grid");
+  }
+
   function renderStarGrid() {
     applyAlternateGridLayerVisibility();
     updateInnerContentTransformForGridType();
 
     var outInner = document.getElementById("inner-scale-out");
-    if (outInner) outInner.textContent = String(getInnerScale());
+    if (outInner) outInner.textContent = String(getInnerScaleStepDisplay());
 
     var starLayout = getStarLayout();
-    var slider = document.getElementById("octagons-n");
-    if (slider) slider.value = String(starLayout.n);
 
     var outN = document.getElementById("octagons-n-out");
-    if (outN) outN.textContent = String(starLayout.n);
+    if (outN) outN.textContent = String(getOctagonsNStepDisplay());
 
     var actualT =
       typeof NestedStarOctagonsGeometry !== "undefined" &&
@@ -18040,12 +19095,6 @@
     }
     syncBorderSideWhiteFillOutput();
 
-    var angerLengthOut = document.getElementById("anger-vertical-length-out");
-    if (angerLengthOut) {
-      angerLengthOut.textContent = String(getAngerVerticalLengthPercent()) + "%";
-    }
-    syncAnxietyVerticalStrokeOutput();
-
     var circleSig = buildCircleLayoutSignature();
     syncSadnessCircleLayoutOnSignatureChange();
     if (circleSig !== lastLongingCircleLayoutSignature) {
@@ -18071,39 +19120,7 @@
       syncAngerTriangleSelection(false);
     }
 
-    var densityOut = document.getElementById("circle-density-out");
-    if (densityOut) densityOut.textContent = String(getCircleDensity()) + "%";
-
-    var longingDensityOut = document.getElementById("longing-circle-density-out");
-    if (longingDensityOut) {
-      longingDensityOut.textContent = String(getLongingCircleDensity()) + "%";
-    }
-
-    var griefDensityOut = document.getElementById("grief-circle-density-out");
-    if (griefDensityOut) {
-      griefDensityOut.textContent = String(getGriefCircleDensity()) + "%";
-    }
-    updateStrengthDensityOutput();
-
-    var helplessnessOut = document.getElementById("helplessness-percent-out");
-    if (helplessnessOut) {
-      helplessnessOut.textContent = String(getHelplessnessPercent()) + "%";
-    }
-
-    var prideFillOut = document.getElementById("pride-fill-percent-out");
-    if (prideFillOut) {
-      prideFillOut.textContent = String(getPrideFillPercent()) + "%";
-    }
-
-    var guiltShameFillOut = document.getElementById("guilt-shame-fill-percent-out");
-    if (guiltShameFillOut) {
-      guiltShameFillOut.textContent = String(getGuiltShameFillPercent()) + "%";
-    }
-
-    var angerTriangleOut = document.getElementById("anger-triangle-density-out");
-    if (angerTriangleOut) {
-      angerTriangleOut.textContent = String(getAngerTriangleDensity()) + "%";
-    }
+    syncAllFeelingsSliderOutputs();
 
     var fill = designSvg.querySelector("#canvas-background-fill");
     if (fill) fill.setAttribute("fill", getCanvasBackgroundColor());
@@ -18123,6 +19140,10 @@
     updateColorDivisionsLayer();
     layoutStage();
     updateHopeResetButton();
+
+    if (getAutoMergeIntensity() > 0 && !hasActivePrideAutoMergeRegions()) {
+      scheduleDeferredAutoMerge();
+    }
   }
 
   function applySheetPaletteToDom() {
@@ -18140,7 +19161,7 @@
     updateLayoutState();
 
     var outN = document.getElementById("octagons-n-out");
-    if (outN) outN.textContent = String(lastOctagonsN);
+    if (outN) outN.textContent = String(getOctagonsNStepDisplay());
 
     if (!designSvg) {
       designSvg = createDesignSvg();
@@ -18161,12 +19182,17 @@
       return;
     }
 
+    if (isDiamondsGrid()) {
+      renderDiamondsGrid();
+      return;
+    }
+
     applyOctagonGridLayerVisibility();
     updateInnerContentTransformForGridType();
 
     var innerScale = getInnerScale();
     var outInner = document.getElementById("inner-scale-out");
-    if (outInner) outInner.textContent = String(innerScale);
+    if (outInner) outInner.textContent = String(getInnerScaleStepDisplay());
 
     var layout = TopkapiGeometry.computeLayout(
       lastOctagonsN,
@@ -18210,47 +19236,7 @@
       syncAngerTriangleSelection(false);
     }
 
-    var densityOut = document.getElementById("circle-density-out");
-    if (densityOut) densityOut.textContent = String(getCircleDensity()) + "%";
-
-    var longingDensityOut = document.getElementById("longing-circle-density-out");
-    if (longingDensityOut) {
-      longingDensityOut.textContent = String(getLongingCircleDensity()) + "%";
-    }
-
-    var griefDensityOut = document.getElementById("grief-circle-density-out");
-    if (griefDensityOut) {
-      griefDensityOut.textContent = String(getGriefCircleDensity()) + "%";
-    }
-    updateStrengthDensityOutput();
-
-    var helplessnessOut = document.getElementById("helplessness-percent-out");
-    if (helplessnessOut) {
-      helplessnessOut.textContent = String(getHelplessnessPercent()) + "%";
-    }
-
-    var prideFillOut = document.getElementById("pride-fill-percent-out");
-    if (prideFillOut) {
-      prideFillOut.textContent = String(getPrideFillPercent()) + "%";
-    }
-
-    var guiltShameFillOut = document.getElementById("guilt-shame-fill-percent-out");
-    if (guiltShameFillOut) {
-      guiltShameFillOut.textContent = String(getGuiltShameFillPercent()) + "%";
-    }
-
-    var angerTriangleOut = document.getElementById("anger-triangle-density-out");
-    if (angerTriangleOut) {
-      angerTriangleOut.textContent = String(getAngerTriangleDensity()) + "%";
-    }
-
-    updateAutoMergeIntensityOutput();
-
-    var angerLengthOut = document.getElementById("anger-vertical-length-out");
-    if (angerLengthOut) {
-      angerLengthOut.textContent = String(getAngerVerticalLengthPercent()) + "%";
-    }
-    syncAnxietyVerticalStrokeOutput();
+    syncAllFeelingsSliderOutputs();
 
     var borderSideOut = document.getElementById("border-side-segments-out");
     if (borderSideOut) {
@@ -18277,6 +19263,14 @@
     updateFrameInsetOverlayLayer();
     layoutStage();
     updateHopeResetButton();
+
+    if (getAutoMergeIntensity() > 0 && !hasActivePrideAutoMergeRegions()) {
+      if (appStartupBootstrapping) {
+        scheduleDeferredAutoMerge();
+      } else {
+        runAutoMerge();
+      }
+    }
   }
 
   function commitSliderRelease(hadPreview, previewWasInFlight) {
@@ -18403,10 +19397,12 @@
   /** Re-apply every layer that reads palette slots (after sheet load / reload). */
   function refreshUiFromSheetPalettes() {
     if (!window.SheetPalettes) return;
+    clearBlendAreaColorOverrides();
     window.SheetPalettes.syncBorderGlobals();
     syncBlendAreaSwatchInputs();
+    if (appStartupBootstrapping) return;
     applySheetPaletteToDom();
-    if (designSvg) render();
+    render();
   }
 
   var sheetPaletteInitComplete = false;
@@ -18417,7 +19413,11 @@
     if (!window.SheetPalettes || !sheetPaletteInitComplete) return;
     clearTimeout(sheetPaletteReloadTimer);
     sheetPaletteReloadTimer = setTimeout(function () {
-      window.SheetPalettes.loadSheetPalettes();
+      if (window.SheetPalettes.refreshSheetPalettesIfChanged) {
+        window.SheetPalettes.refreshSheetPalettesIfChanged();
+      } else {
+        window.SheetPalettes.loadSheetPalettes();
+      }
     }, 200);
   }
 
@@ -18440,47 +19440,7 @@
   }
 
   function syncFeelingsSliderOutputs() {
-    var angerLengthOut = document.getElementById("anger-vertical-length-out");
-    if (angerLengthOut) {
-      angerLengthOut.textContent = String(getAngerVerticalLengthPercent()) + "%";
-    }
-    syncAnxietyVerticalStrokeOutput();
-
-    var densityOut = document.getElementById("circle-density-out");
-    if (densityOut) densityOut.textContent = String(getCircleDensity()) + "%";
-
-    var longingDensityOut = document.getElementById("longing-circle-density-out");
-    if (longingDensityOut) {
-      longingDensityOut.textContent = String(getLongingCircleDensity()) + "%";
-    }
-
-    var griefDensityOut = document.getElementById("grief-circle-density-out");
-    if (griefDensityOut) {
-      griefDensityOut.textContent = String(getGriefCircleDensity()) + "%";
-    }
-    updateStrengthDensityOutput();
-
-    var helplessnessOut = document.getElementById("helplessness-percent-out");
-    if (helplessnessOut) {
-      helplessnessOut.textContent = String(getHelplessnessPercent()) + "%";
-    }
-
-    var prideFillOut = document.getElementById("pride-fill-percent-out");
-    if (prideFillOut) {
-      prideFillOut.textContent = String(getPrideFillPercent()) + "%";
-    }
-
-    var guiltShameFillOut = document.getElementById("guilt-shame-fill-percent-out");
-    if (guiltShameFillOut) {
-      guiltShameFillOut.textContent = String(getGuiltShameFillPercent()) + "%";
-    }
-
-    var angerTriangleOut = document.getElementById("anger-triangle-density-out");
-    if (angerTriangleOut) {
-      angerTriangleOut.textContent = String(getAngerTriangleDensity()) + "%";
-    }
-
-    updateAutoMergeIntensityOutput();
+    syncAllFeelingsSliderOutputs();
   }
 
   function applyFeelingsControlState(options) {
@@ -18497,11 +19457,18 @@
     syncAngerShapes();
 
     if (getAutoMergeIntensity() > 0) {
-      runAutoMerge();
-      return;
+      if (options.skipRender) {
+        /* deferred until after startup render or idle callback */
+      } else {
+        runAutoMerge();
+        return;
+      }
+    } else {
+      clearAutoMergeState();
     }
 
-    clearAutoMergeState();
+    if (options.skipRender) return;
+
     syncVerticalGridLines(false);
     renderVerticalGridLayer();
     renderPatternLayer();
@@ -18761,7 +19728,7 @@
     lines.push(
       '<svg xmlns="' +
         NS +
-        '" width="70cm" height="180cm" viewBox="0 0 ' +
+        '" width="68cm" height="180cm" viewBox="0 0 ' +
         CANVAS_W +
         " " +
         CANVAS_H +
@@ -18859,11 +19826,6 @@
     var circleStroke = getCircleStrokeWidth();
     lines.push('<g clip-path="url(#inner-content-clip)">');
 
-    if (shouldRenderPrideFillsBeforeCirclesGridPattern()) {
-      pushAutoMergeShadowExportLines(lines);
-      pushAutoMergeFillOnlyExportLines(lines);
-    }
-
     lines.push(
       '<g fill="none" stroke="' +
         getPatternStrokeColor() +
@@ -18890,6 +19852,7 @@
     lines.push("</g>");
 
     pushStructuralCirclesExportLines(lines);
+    pushCirclesGridFrameJunctionDotsExport(lines);
 
     pushHelplessnessExportLines(lines);
 
@@ -19036,20 +19999,11 @@
       lines.push("</g>");
     }
 
-    pushVerticalGridExportLines(lines);
-
-    if (!shouldRenderPrideFillsBeforeCirclesGridPattern()) {
-      pushAutoMergeShadowExportLines(lines);
-      pushAutoMergeFillOnlyExportLines(lines);
-    }
-
     pushAngerTriangleExportLines(lines);
 
     if (isFrameInsetOverlayVisibleOnCanvas()) {
       pushFrameInsetOverlayExportLines(lines, { nestedInInnerContent: true });
     }
-
-    pushHalfCircleExportLines(lines);
 
     lines.push("</g>");
     lines.push("</g>");
@@ -19058,6 +20012,20 @@
     pushGridBoundaryExportBars(lines, gridBoundaryLayout);
     lines.push("</g>");
     pushBorderDivisionOverlayExportLines(lines);
+    lines.push("</g>");
+    lines.push('<g transform="' + getInnerContentTransformAttr() + '" style="mix-blend-mode:normal">');
+    pushVerticalGridExportLines(lines);
+    lines.push("</g>");
+    lines.push('<g transform="' + getInnerContentTransformAttr() + '" style="mix-blend-mode:normal">');
+    lines.push('<g clip-path="url(#inner-content-clip)">');
+    pushAutoMergeShadowExportLines(lines);
+    pushAutoMergeFillOnlyExportLines(lines);
+    lines.push("</g>");
+    lines.push("</g>");
+    lines.push('<g transform="' + getInnerContentTransformAttr() + '" style="mix-blend-mode:normal">');
+    lines.push('<g clip-path="url(#inner-content-clip)">');
+    pushHalfCircleExportLines(lines);
+    lines.push("</g>");
     lines.push("</g>");
     lines.push('<g id="layer-edge-brown-bars">');
     pushCanvasEdgeBrownBarExportLines(lines);
@@ -19111,7 +20079,7 @@
           var blob = new Blob([markup], {
             type: "image/svg+xml;charset=utf-8",
           });
-          downloadBlob(blob, "octagon-export-70x180cm.svg");
+          downloadBlob(blob, "octagon-export-68x180cm.svg");
         } catch (e) {
           console.error(e);
           alert("SVG export failed.");
@@ -19135,7 +20103,7 @@
           var blob = new Blob([markup], {
             type: "image/svg+xml;charset=utf-8",
           });
-          downloadBlob(blob, "octagon-export-70x180cm.svg");
+          downloadBlob(blob, "octagon-export-68x180cm.svg");
         } catch (e) {
           console.error(e);
           alert("SVG export failed.");
@@ -19197,8 +20165,8 @@
 
   function applyDanglingPrune() {
     if (isAlternateGrid()) return false;
-    // Circles tessellation: dangling prune cascades across ellipse chords → false merge holes.
-    if (isCirclesGrid()) return false;
+    // Circles/diamonds tessellation: dangling prune cascades across shape chords → false merge holes.
+    if (isCirclesLikeGrid()) return false;
     var changed = false;
     var pruneKeys = TopkapiGeometry.findDanglingPruneKeys(
       getSegmentsForHopeMerge(),
@@ -19347,6 +20315,7 @@
     hopeInteractionMode = mode;
     updateHopeInteractionModeUi();
     if (isHopeDragInteractionMode()) {
+      ensureHopeStippleReady();
       bindInteractionPointerListeners();
     } else {
       unbindInteractionPointerListeners();
@@ -19448,18 +20417,22 @@
 
     var slider = document.getElementById("octagons-n");
     if (slider) {
-      slider.min = String(OCTAGONS_N_MIN);
-      slider.max = String(OCTAGONS_N_MAX);
-      slider.value = String(OCTAGONS_N_DEFAULT);
+      var octSteps = getOctagonsNSteps();
+      slider.min = "1";
+      slider.max = String(octSteps);
+      slider.step = "1";
+      slider.value = String(octagonsNStepFromValue(OCTAGONS_N_DEFAULT));
       slider.addEventListener("input", scheduleSliderRender);
       slider.addEventListener("change", renderAfterSliderRelease);
     }
 
     var innerSlider = document.getElementById("inner-scale");
     if (innerSlider) {
-      innerSlider.min = String(INNER_SCALE_MIN);
-      innerSlider.max = String(INNER_SCALE_MAX);
-      innerSlider.value = String(INNER_SCALE_DEFAULT);
+      var innerSteps = getInnerScaleSteps();
+      innerSlider.min = "1";
+      innerSlider.max = String(innerSteps);
+      innerSlider.step = "1";
+      innerSlider.value = String(innerScaleStepFromValue(INNER_SCALE_DEFAULT));
       innerSlider.addEventListener("input", scheduleSliderRender);
       innerSlider.addEventListener("change", renderAfterSliderRelease);
     }
@@ -19602,7 +20575,6 @@
       });
     }
     bindFanTuningSliders();
-    bindFanTypeToggle();
 
     var halfCircleInnerArcPosition = document.getElementById(
       "half-circle-inner-arc-position"
@@ -19720,8 +20692,7 @@
       CIRCLE_DENSITY_DEFAULT,
       function () {
         syncCircleSelection(false);
-        var densityOut = document.getElementById("circle-density-out");
-        if (densityOut) densityOut.textContent = String(getCircleDensity()) + "%";
+        syncAllFeelingsSliderOutputs();
         renderPatternLayer();
       }
     );
@@ -19733,10 +20704,7 @@
       CIRCLE_DENSITY_DEFAULT,
       function () {
         syncLongingCircleSelection(false);
-        var longingDensityOut = document.getElementById("longing-circle-density-out");
-        if (longingDensityOut) {
-          longingDensityOut.textContent = String(getLongingCircleDensity()) + "%";
-        }
+        syncAllFeelingsSliderOutputs();
         renderPatternLayer();
       }
     );
@@ -19748,10 +20716,7 @@
       CIRCLE_DENSITY_DEFAULT,
       function () {
         syncGriefCircleSelection(false);
-        var griefDensityOut = document.getElementById("grief-circle-density-out");
-        if (griefDensityOut) {
-          griefDensityOut.textContent = String(getGriefCircleDensity()) + "%";
-        }
+        syncAllFeelingsSliderOutputs();
         renderPatternLayer();
       }
     );
@@ -19767,7 +20732,7 @@
         : CIRCLE_DENSITY_DEFAULT,
       function () {
         syncStrengthSelection(false);
-        updateStrengthDensityOutput();
+        syncAllFeelingsSliderOutputs();
         renderPatternLayer();
       }
     );
@@ -19778,11 +20743,7 @@
       ANGER_VERTICAL_LENGTH_MAX,
       ANGER_VERTICAL_LENGTH_DEFAULT,
       function () {
-        var angerLengthOut = document.getElementById("anger-vertical-length-out");
-        if (angerLengthOut) {
-          angerLengthOut.textContent =
-            String(getAngerVerticalLengthPercent()) + "%";
-        }
+        syncAllFeelingsSliderOutputs();
         renderVerticalGridLayer();
       }
     );
@@ -19793,7 +20754,7 @@
       ANXIETY_VERTICAL_STROKE_MAX,
       ANXIETY_VERTICAL_STROKE_DEFAULT,
       function () {
-        syncAnxietyVerticalStrokeOutput();
+        syncAllFeelingsSliderOutputs();
         renderVerticalGridLayer();
       }
     );
@@ -19809,10 +20770,7 @@
       getPrideFillPercentMaxForActiveGrid(),
       PRIDE_FILL_PERCENT_DEFAULT,
       function () {
-        var prideFillOut = document.getElementById("pride-fill-percent-out");
-        if (prideFillOut) {
-          prideFillOut.textContent = String(getPrideFillPercent()) + "%";
-        }
+        syncAllFeelingsSliderOutputs();
         syncDiamondFill(false);
         renderPatternLayer();
       }
@@ -19826,13 +20784,7 @@
       getGuiltShameFillPercentMaxForActiveGrid(),
       GUILT_SHAME_FILL_PERCENT_DEFAULT,
       function () {
-        var guiltShameFillOut = document.getElementById(
-          "guilt-shame-fill-percent-out"
-        );
-        if (guiltShameFillOut) {
-          guiltShameFillOut.textContent =
-            String(getGuiltShameFillPercent()) + "%";
-        }
+        syncAllFeelingsSliderOutputs();
         syncGuiltShameDiamondFill(false);
         renderPatternLayer();
       }
@@ -19846,10 +20798,7 @@
       getAngerTriangleDensityMaxForActiveGrid(),
       ANGER_TRIANGLE_DENSITY_DEFAULT,
       function () {
-        var angerTriangleOut = document.getElementById("anger-triangle-density-out");
-        if (angerTriangleOut) {
-          angerTriangleOut.textContent = String(getAngerTriangleDensity()) + "%";
-        }
+        syncAllFeelingsSliderOutputs();
         syncAngerTriangleSelection(false);
         renderPatternLayer();
       }
@@ -19862,10 +20811,7 @@
       HELPLESSNESS_PERCENT_DEFAULT,
       function () {
         syncHelplessnessSelection(false);
-        var helplessnessOut = document.getElementById("helplessness-percent-out");
-        if (helplessnessOut) {
-          helplessnessOut.textContent = String(getHelplessnessPercent()) + "%";
-        }
+        syncAllFeelingsSliderOutputs();
         renderPatternLayer();
       }
     );
@@ -19905,7 +20851,7 @@
           ? AUTO_MERGE_INTENSITY_DEFAULT
           : 0;
       function onAutoMergeIntensityInteract() {
-        updateAutoMergeIntensityOutput();
+        syncAllFeelingsSliderOutputs();
         runAutoMerge();
       }
       initFeelingsSteppedSlider(
@@ -19923,14 +20869,16 @@
         );
       }
     })();
-    updateAutoMergeIntensityOutput();
-
-    loadHopeStippleSvg();
+    syncAllFeelingsSliderOutputs();
 
     initSheetPaletteAutoRefresh();
 
     if (window.SheetPalettes) {
-      await window.SheetPalettes.loadSheetPalettes();
+      if (window.SheetPalettes.loadEmbeddedPalettesFast) {
+        await window.SheetPalettes.loadEmbeddedPalettesFast();
+      } else {
+        await window.SheetPalettes.loadSheetPalettes();
+      }
       var restoredPalette =
         window.SheetPalettes.getRememberedActivePalette &&
         window.SheetPalettes.getRememberedActivePalette();
@@ -19939,6 +20887,92 @@
     }
 
     sheetPaletteInitComplete = true;
+
+    window.UnderCoverComboBridge = {
+      applyColorDivisionLayout: function (seed, areaOrderStr) {
+        var parsedSeed = parseInt(String(seed), 10);
+        colorDivisionShuffleSeed = isFinite(parsedSeed) ? parsedSeed : 0;
+        lastColorDivisionLayoutSignature = "";
+        cachedColorDivisionNormalizedRects = null;
+        cachedColorDivisionRectOrder = null;
+        ensureColorDivisionRects(true);
+        if (areaOrderStr && String(areaOrderStr).trim()) {
+          var parts = String(areaOrderStr)
+            .split(",")
+            .map(function (s) {
+              return parseInt(s.trim(), 10);
+            })
+            .filter(function (n) {
+              return isFinite(n);
+            });
+          if (parts.length === 5) {
+            cachedColorDivisionRectOrder = parts;
+          }
+        }
+        updateColorDivisionsLayer();
+      },
+      setHopeMode: setHopeInteractionMode,
+      setLabelBarTagIndex: setLabelBarEndCapSvgByIndex,
+      resetHopeMergeState: function () {
+        removedEdges.clear();
+        updateHopeInteractionModeUi();
+      },
+      getFeelingsSliderBounds: getFeelingsSliderBoundsForCombo,
+      finalizeApplySilent: function () {
+        syncColorDivisionsOutput();
+        syncBorderSideWhiteFillOutput();
+        syncJunctionEmotionSliderRangesForGridType();
+        syncAngerPainGuiltSliderRangesForGridType();
+        resetFeelingsLayoutSignatures();
+        applyFeelingsControlState({ skipRender: true });
+        refreshLocationCoordinates();
+      },
+      finalizeApply: function () {
+        syncColorDivisionsOutput();
+        syncBorderSideWhiteFillOutput();
+        syncJunctionEmotionSliderRangesForGridType();
+        syncAngerPainGuiltSliderRangesForGridType();
+        resetFeelingsLayoutSignatures();
+        applyFeelingsControlState();
+        refreshLocationCoordinates();
+        refreshLabelBarContent();
+        render();
+      },
+      applyPrideLayers: function () {
+        syncAllFeelingsSliderOutputs();
+        if (getAutoMergeIntensity() > 0) {
+          runAutoMerge();
+        } else {
+          clearAutoMergeState();
+          renderAutoMergeFillsLayer();
+        }
+        syncDiamondFill(false);
+        renderPatternLayer();
+      },
+    };
+
+    if (
+      window.HandkerchiefCombinations &&
+      window.HandkerchiefCombinations.init
+    ) {
+      window.HandkerchiefCombinations.init();
+    }
+    if (
+      window.HandkerchiefCombinations &&
+      window.HandkerchiefCombinations.loadAndApplyInitialCombo
+    ) {
+      await window.HandkerchiefCombinations.loadAndApplyInitialCombo();
+    }
+
+    if (window.SheetPalettes && window.SheetPalettes.startLiveSync) {
+      window.SheetPalettes.startLiveSync(3000);
+    }
+
+    if (window.SheetPalettes && window.SheetPalettes.refreshSheetPalettesIfChanged) {
+      window.SheetPalettes.refreshSheetPalettesIfChanged().catch(function () {
+        /* background Google sync; embedded palette already applied */
+      });
+    }
 
     document.addEventListener("visibilitychange", function () {
       if (document.visibilityState === "hidden") {
@@ -20000,6 +21034,7 @@
     lastHelplessnessLayoutSignature = "";
     lastDiamondLayoutSignature = "";
     render();
+    appStartupBootstrapping = false;
     syncFrameOverlayToggleButton();
     initMagnifier();
     initSidebarScrollFocus();

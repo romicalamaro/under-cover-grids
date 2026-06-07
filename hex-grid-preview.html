@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hex Heart Grid — Preview &amp; Tuning</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #2c2b6b;
+        --paper: #f7f1e7;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        background: #e9e4da;
+        color: #1d1d1d;
+        display: grid;
+        grid-template-columns: 300px 1fr;
+        min-height: 100vh;
+      }
+      .panel {
+        padding: 20px;
+        background: #fff;
+        border-right: 1px solid #d8d2c6;
+        overflow-y: auto;
+      }
+      .panel h1 {
+        font-size: 16px;
+        margin: 0 0 4px;
+      }
+      .panel p.hint {
+        font-size: 12px;
+        color: #666;
+        margin: 0 0 18px;
+        line-height: 1.4;
+      }
+      .control {
+        margin-bottom: 16px;
+      }
+      .control label {
+        display: flex;
+        justify-content: space-between;
+        font-size: 13px;
+        font-weight: 600;
+        margin-bottom: 6px;
+      }
+      .control label output {
+        font-weight: 400;
+        color: #2c2b6b;
+        font-variant-numeric: tabular-nums;
+      }
+      .control input[type="range"] {
+        width: 100%;
+      }
+      .control--row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+      }
+      .stage {
+        display: flex;
+        align-items: flex-start;
+        justify-content: center;
+        padding: 24px;
+        overflow: auto;
+      }
+      .stage svg {
+        width: min(80vh, 760px);
+        height: min(80vh, 760px);
+        background: var(--paper);
+        border: 1px solid #cfc8bb;
+        box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
+      }
+      .ref-wrap {
+        margin-top: 18px;
+        border-top: 1px solid #e3ddd2;
+        padding-top: 14px;
+      }
+      .ref-wrap img {
+        width: 100%;
+        border-radius: 6px;
+        border: 1px solid #ddd;
+      }
+    </style>
+  </head>
+  <body>
+    <aside class="panel">
+      <h1>Hex Heart Grid</h1>
+      <p class="hint">
+        Standalone tuning page for <code>js/hexGridGeometry.js</code>. Adjust the
+        knobs until the shape matches the reference image below, then we lock the
+        defaults into the geometry module.
+      </p>
+
+      <div class="control">
+        <label for="n">Density (hearts per row) <output id="n-out">5</output></label>
+        <input id="n" type="range" min="2" max="12" value="5" step="1" />
+      </div>
+
+      <div class="control">
+        <label for="notch">Notch depth (heart dip) <output id="notch-out">0.60</output></label>
+        <input id="notch" type="range" min="0" max="1.4" value="0.6" step="0.01" />
+      </div>
+
+      <div class="control">
+        <label for="ribbon">Ribbon width <output id="ribbon-out">0.16</output></label>
+        <input id="ribbon" type="range" min="0.02" max="0.4" value="0.16" step="0.005" />
+      </div>
+
+      <div class="control">
+        <label for="stroke">Stroke width (px) <output id="stroke-out">8</output></label>
+        <input id="stroke" type="range" min="1" max="20" value="8" step="0.5" />
+      </div>
+
+      <div class="control control--row">
+        <input id="show-skeleton" type="checkbox" />
+        <label for="show-skeleton" style="margin:0;font-weight:400;">Show skeleton (raw hearts)</label>
+      </div>
+
+      <div class="control control--row">
+        <input id="show-ref" type="checkbox" checked />
+        <label for="show-ref" style="margin:0;font-weight:400;">Show reference image</label>
+      </div>
+
+      <div class="ref-wrap" id="ref-wrap">
+        <img
+          id="ref-img"
+          alt="reference pattern"
+          src="assets/hex-heart-reference.png"
+          onerror="this.style.display='none'"
+        />
+      </div>
+    </aside>
+
+    <main class="stage">
+      <svg id="svg" viewBox="0 0 827 827" preserveAspectRatio="xMidYMid meet"></svg>
+    </main>
+
+    <script defer src="js/constants.js"></script>
+    <script defer src="js/hexGridGeometry.js"></script>
+    <script defer>
+      (function () {
+        var SVG_NS = "http://www.w3.org/2000/svg";
+        // Square preview window into the (tall) production canvas.
+        var VIEW = 827;
+
+        var svg = document.getElementById("svg");
+        var inputs = {
+          n: document.getElementById("n"),
+          notch: document.getElementById("notch"),
+          ribbon: document.getElementById("ribbon"),
+          stroke: document.getElementById("stroke"),
+          skeleton: document.getElementById("show-skeleton"),
+          ref: document.getElementById("show-ref"),
+        };
+        var outs = {
+          n: document.getElementById("n-out"),
+          notch: document.getElementById("notch-out"),
+          ribbon: document.getElementById("ribbon-out"),
+          stroke: document.getElementById("stroke-out"),
+        };
+
+        function el(name, attrs) {
+          var node = document.createElementNS(SVG_NS, name);
+          var k;
+          for (k in attrs) {
+            node.setAttribute(k, attrs[k]);
+          }
+          return node;
+        }
+
+        function clear(node) {
+          while (node.firstChild) {
+            node.removeChild(node.firstChild);
+          }
+        }
+
+        function render() {
+          clear(svg);
+          var n = parseInt(inputs.n.value, 10);
+          var notchRatio = parseFloat(inputs.notch.value);
+          var ribbonRatio = parseFloat(inputs.ribbon.value);
+          var strokeW = parseFloat(inputs.stroke.value);
+          var showSkeleton = inputs.skeleton.checked;
+
+          outs.n.textContent = String(n);
+          outs.notch.textContent = notchRatio.toFixed(2);
+          outs.ribbon.textContent = ribbonRatio.toFixed(3);
+          outs.stroke.textContent = String(strokeW);
+
+          var g = el("g", {
+            stroke: "var(--ink)",
+            "stroke-width": String(strokeW),
+            "stroke-linecap": "round",
+            "stroke-linejoin": "round",
+            fill: "none",
+          });
+
+          var segments = HexGridGeometry.buildPatternSegments(
+            0,
+            VIEW,
+            VIEW,
+            n,
+            1,
+            { notchRatio: notchRatio, ribbonRatio: ribbonRatio }
+          );
+          var i;
+          for (i = 0; i < segments.length; i++) {
+            g.appendChild(
+              el("line", {
+                x1: segments[i].x1,
+                y1: segments[i].y1,
+                x2: segments[i].x2,
+                y2: segments[i].y2,
+              })
+            );
+          }
+          svg.appendChild(g);
+
+          if (showSkeleton) {
+            var sk = el("g", {
+              stroke: "#d23",
+              "stroke-width": "1.5",
+              "stroke-dasharray": "4 3",
+              fill: "none",
+              opacity: "0.7",
+            });
+            var hearts = HexGridGeometry.buildHeartCatalog(n, VIEW, VIEW, {
+              notchRatio: notchRatio,
+            });
+            var h;
+            var p;
+            for (h = 0; h < hearts.length; h++) {
+              var pts = hearts[h].points;
+              var d = "M" + pts[0].x + " " + pts[0].y;
+              for (p = 1; p < pts.length; p++) {
+                d += "L" + pts[p].x + " " + pts[p].y;
+              }
+              d += "Z";
+              sk.appendChild(el("path", { d: d }));
+            }
+            svg.appendChild(sk);
+          }
+        }
+
+        function syncRef() {
+          document.getElementById("ref-wrap").style.display = inputs.ref.checked
+            ? ""
+            : "none";
+        }
+
+        Object.keys(inputs).forEach(function (k) {
+          inputs[k].addEventListener("input", function () {
+            render();
+            syncRef();
+          });
+        });
+
+        function start() {
+          if (typeof HexGridGeometry === "undefined") {
+            window.setTimeout(start, 30);
+            return;
+          }
+          render();
+          syncRef();
+        }
+        start();
+      })();
+    </script>
+  </body>
+</html>

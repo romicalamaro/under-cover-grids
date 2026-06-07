@@ -15,6 +15,7 @@ const TAG_ALIASES = {
   "tag/tag03.svg": "tag03.svg",
   "tag/tag04.svg": "tag04.svg",
   "tag/tag05.2.svg": "tag05.2.svg",
+  "tag/reshet.svg": "reshet.svg",
 };
 
 function readAssetList() {

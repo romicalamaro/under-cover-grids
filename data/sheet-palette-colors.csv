@@ -1,74 +1,78 @@
-﻿Category,Division,Slot,Element,Palette 1,Palette 2,Palette 3,Palette 4,Palette 5,Palette 6,Palette 7,Palette 8
-BACKGROUND,1,A1,רקע קנבס כללי,#fffce8,#fffce9,FFC8E2,685450,FF3C3C,D9D9D9,FFEBF0,D6F6FF
-BACKGROUND,1,A2,רקע לבן של המניפה,#fffce8,#fffce9,FFC8E2,685450,D9D9D9,D9D9D9,FFEBF0,D6F6FF
-GRID,1,B1,קווי גריד (octagon/star),FF3C3C,3C06A7,FF3C3C,B5D0FF,B5D0FF,3C06A7,685450,685450
-GRID,1,B2,מתאר גבול הגריד (5px),3C06A7,3C06A7,FF3C3C,B5D0FF,B5D0FF,3C06A7,685450,FFFB00
-BORDER / FRAME,1,C1,משולשי X פנימי — עליון + תחתון,#685450,#685450,FF3C3C,B5D0FF,D0FFC4,D0FFC4,685450,FFFB00
-BORDER / FRAME,1,C2,משולשי X פנימי — שמאל + ימין,FF3C3C,FF80FF,0C6664,685450,685450,685450,#fffce9,D9D9D9
-BORDER / FRAME,2,C3,משולשי X חיצוני — עליון + תחתון,3C06A7,3C06A7,0C6664,685450,685450,685450,2575FF,685450
-BORDER / FRAME,2,C4,משולשי X חיצוני — שמאל + ימין,FF3C3C,FF80FF,D9D9D9,2575FF,D9D9D9,D9D9D9,2575FF,FFFB00
-BORDER / FRAME,3,C5,רקע תא — שורה אפורה (grey),#f7cecd,#f7cecd,D9D9D9,D9D9D9,D9D9D9,D9D9D9,D9D9D9,D9D9D9
-BORDER / FRAME,3,C6,רקע תא — שורה בז' (beige),#685450,#685450,FF3C3C,B5D0FF,B5D0FF,00973A,D9D9D9,685450
-BORDER / FRAME,4,C7,מילוי מעוין על תאי grey,#685450,#685450,#685450,FFFB00,2575FF,3C06A7,1453A5,D9D9D9
-BORDER / FRAME,4,C8,מילוי מעוין על תאי beige,#f7cecd,#f7cecd,#685450,FFFB00,2575FF,685450,685450,685450
-BORDER / FRAME,5,C9,קווי border אופקיים (stroke),FF3C3C,FF80FF,FF3C3C,B5D0FF,B5D0FF,00973A,#fffce9,685450
+Category,Division,Slot,Element,Palette 1,Palette 2,Palette 3,Palette 4,Palette 5,Palette 6,Palette 7,Palette 8,Palette 9
+BACKGROUND,1,A1,רקע קנבס כללי,#fffce8,#fffce9,FFC8E2,685450,FF3C3C,D9D9D9,FFEBF0,FFEBF0,FFEBF0
+BACKGROUND,1,A2,רקע לבן של המניפה,#f7cecd,#fffce9,#fffce9,685450,D9D9D9,D9D9D9,FFEBF0,D6F6FF,D6F6FF
+GRID,1,B1,קווי גריד (octagon/star),FF3C3C,3C06A7,FF3C3C,B5D0FF,B5D0FF,3C06A7,685450,685450,685450
+GRID,1,B2,מתאר גבול הגריד (5px),3C06A7,3C06A7,FF3C3C,B5D0FF,B5D0FF,3C06A7,685450,FFFB00,FFFB00
+BORDER / FRAME,1,C1,משולשי X פנימי — עליון + תחתון,#685450,#685450,D9D9D9,B5D0FF,D0FFC4,D0FFC4,685450,FFFB00,FFFB00
+BORDER / FRAME,1,C2,משולשי X פנימי — שמאל + ימין,FF3C3C,FF80FF,0C6664,685450,685450,685450,#fffce9,D9D9D9,D9D9D9
+BORDER / FRAME,2,C3,משולשי X חיצוני — עליון + תחתון,3C06A7,3C06A7,0C6664,685450,685450,685450,#fffce9,685450,685450
+BORDER / FRAME,2,C4,משולשי X חיצוני — שמאל + ימין,FF3C3C,FF80FF,D9D9D9,2575FF,D9D9D9,D9D9D9,2575FF,FFFB00,FFFB00
+BORDER / FRAME,3,C5,רקע תא — שורה אפורה (grey),#f7cecd,#f7cecd,D9D9D9,D9D9D9,D9D9D9,D9D9D9,D9D9D9,D9D9D9,D9D9D9
+BORDER / FRAME,3,C6,רקע תא — שורה בז' (beige),#685450,#685450,FF3C3C,B5D0FF,B5D0FF,00973A,D9D9D9,D9D9D9,D9D9D9
+BORDER / FRAME,4,C7,מילוי מעוין על תאי grey,#685450,#685450,#685450,FFFB00,2575FF,3C06A7,1453A5,685450,685450
+BORDER / FRAME,4,C8,מילוי מעוין על תאי beige,#f7cecd,#f7cecd,#685450,FFFB00,2575FF,685450,685450,D6F6FF,D6F6FF
+BORDER / FRAME,5,C9,קווי border אופקיים (stroke),FF3C3C,FF3C3C,FF3C3C,B5D0FF,B5D0FF,3C06A7,685450,685450,685450
 "BORDER / FRAME
-",6,C10,Color fade — רקע תא שאיבד צבע,#fffce8,#fffce8,FFC8E2,685450,FF3C3C,D9D9D9,#f7cecd,D6F6FF
-FAN — מבנה,1,,◆ חלוקה 1 — קווי מניפה (D1–D5 אותו צבע),,,,,,,,
-FAN — מבנה,1,D1,קשתות חיצוניות + קרניים (stroke),#685450,#685450,#685450,FFFB00,B5D0FF,00973A,2575FF,685450
-FAN — מבנה,1,D2,קשתות פנימיות (stroke),FF3C3C,#f7cecd,#fffce9,FFFCE9,B5D0FF,00973A,2575FF,685450
-FAN — מבנה,1,D3,קווי rib פנימיים (stroke),#685450,#685450,685450,FFFCE9,B5D0FF,00973A,2575FF,685450
-FAN — מבנה,1,D4,אלכסונים בין הקשתות (stroke),FF3C3C,#f7cecd,#fffce9,FFFB00,B5D0FF,00973A,2575FF,685450
-FAN — מבנה,1,D5,קשת shelf על העיגולים (stroke),#685450,#685450,#685450,685450,B5D0FF,00973A,2575FF,685450
-FAN — fills,1,,◆ חלוקה 1 — מילוי מניפה (D6–D11 אותו צבע),,,,,,,,
-FAN — fills,1,D6,מילוי פנים הכפות (petal face fills),#685450,#685450,#fffce9,#fffce9,#fffce9,685450,#fffce9,685450
-FAN — fills,1,D7,רצועות rib שמאל + ימין,#685450,#685450,#fffce9,#fffce9,#fffce9,685450,#fffce9,685450
-FAN — fills,1,D8,cusp cap fills,#685450,#685450,#fffce9,#fffce9,#fffce9,685450,#fffce9,685450
-FAN — fills,1,D9,תאי band בין הקשתות,#685450,#685450,#fffce9,#fffce9,#fffce9,685450,#fffce9,685450
-FAN — fills,1,D10,gap בין עיגולים לעיגולים,#685450,#685450,#fffce9,#fffce9,#fffce9,685450,#fffce9,685450
-FAN — fills,1,D11,gap עיגול ↔ עלה,#685450,#685450,#fffce9,#fffce9,#fffce9,685450,#fffce9,685450
-עיגולים + כוכבים + מחומש,1,,◆ חלוקה 1 — עיגולי valley,,,,,,,,
-עיגולים + כוכבים + מחומש,1,E1,עיגולי valley — fill,#685450,#685450,#685450,685450,2575FF,685450,2575FF,685450
-עיגולים + כוכבים + מחומש,1,E2,עיגולי valley — stroke,FF3C3C,f7cecd,f7cecd,#fffce9,B5D0FF,00973A,#fffce9,#fffce9
-עיגולים + כוכבים + מחומש,2,E3,כוכב חיצוני — fill,#ffffff,685450,685450,685450,2575FF,685450,2575FF,685450
-עיגולים + כוכבים + מחומש,2,E4,כוכב חיצוני — stroke,FF3C3C,f7cecd,f7cecd,#fffce9,B5D0FF,00973A,#fffce9,#fffce9
-עיגולים + כוכבים + מחומש,3,E5,כוכב פנימי — fill,#ffffff,685450,685450,685450,2575FF,685450,2575FF,685450
-עיגולים + כוכבים + מחומש,3,E6,כוכב פנימי — stroke,FF3C3C,f7cecd,f7cecd,#fffce9,B5D0FF,00973A,#fffce9,#fffce9
-עיגולים + כוכבים + מחומש,4,E7,מחומש — fill,#ffffff,685450,685450,685450,2575FF,685450,2575FF,685450
-עיגולים + כוכבים + מחומש,4,E8,מחומש — stroke,FF3C3C,f7cecd,f7cecd,#fffce9,B5D0FF,00973A,#fffce9,#fffce9
-עיגולים + כוכבים + מחומש,5,E9,משולשים בין עלים (star arms) — fill,#685450,685450,685450,685450,2575FF,685450,2575FF,685450
-עיגולים + כוכבים + מחומש,5,E10,משולשים בין עלים — stroke,FF3C3C,f7cecd,f7cecd,#fffce9,B5D0FF,00973A,#fffce9,#fffce9
-FEELINGS,1,F1,קווי Fear (אנכיים),3C06A7,3C06A7,FF3C3C,B5D0FF,B5D0FF,00973A,685450,FFFB00
-FEELINGS,2,F2,Pain — מילוי מעוינים,FF3C3C,f7cecd,FF3C3C,2575FF,D0FFC4,00973A,1453A5,685450
-FEELINGS,3,F3,Sadness — מילוי עיגולים,3C06A7,3C06A7,B2FF00,#fffce9,D0FFC4,685450,B2FF00,FFFB00
-FEELINGS,3,F4,Sadness — קו עיגולים,FF3C3C,FF80FF,FF3C3C,2575FF,B5D0FF,D0FFC4,685450,685450
-FEELINGS,4,F5,Pride — מילוי auto-merge,FF3C3C,f7cecd,FF3C3C,B5D0FF,B5D0FF,00973A,685450,685450
-FEELINGS,4,F6,Pride — קו מתאר,3C06A7,3C06A7,B2FF00,#fffce9,#fffce9,3C06A7,B2FF00,FFFB00
-FEELINGS,4,F7,Pride — צל,FF3C3C,f7cecd,FF3C3C,FFFB00,D0FFC4,D0FFC4,2575FF,FFFB00
-FEELINGS,6,F8,Hope — נקודות stipple,3C06A7,3C06A7,0C6664,B5D0FF,B5D0FF,D0FFC4,685450,685450
-FEELINGS,6,F9,שכבת צבע מתחת לנקודות (hope),FF3C3C,f7cecd,FF3C3C,B5D0FF,B5D0FF,D0FFC4,685450,D6F6FF
-FEELINGS,7,F10,Guilt / Shame — מעוינים חלולים,FF3C3C,f7cecd,FF3C3C,B5D0FF,B5D0FF,D0FFC4,685450,685450
+",6,C10,Color fade — רקע תא שאיבד צבע,#f7cecd,#fffce8,D9D9D9,#fffce9,FF3C3C,D9D9D9,#f7cecd,D6F6FF,D6F6FF
+FAN — מבנה,1,,◆ חלוקה 1 — קווי מניפה (D1–D5 אותו צבע),,,,,,,,,
+FAN — מבנה,1,D1,קשתות חיצוניות + קרניים (stroke),#685450,#685450,#685450,FFFB00,2575FF,00973A,2575FF,685450,685450
+FAN — מבנה,1,D2,קשתות פנימיות (stroke),FF3C3C,#f7cecd,#fffce9,FFFCE9,2575FF,00973A,2575FF,685450,685450
+FAN — מבנה,1,D3,קווי rib פנימיים (stroke),#685450,#685450,685450,FFFCE9,2575FF,00973A,2575FF,685450,685450
+FAN — מבנה,1,D4,אלכסונים בין הקשתות (stroke),FF3C3C,#f7cecd,#fffce9,FFFB00,2575FF,00973A,2575FF,685450,685450
+FAN — מבנה,1,D5,קשת shelf על העיגולים (stroke),#685450,#685450,#685450,685450,2575FF,00973A,2575FF,685450,685450
+FAN — fills,1,,◆ חלוקה 1 — מילוי מניפה (D6–D11 אותו צבע),,,,,,,,,
+FAN — fills,1,D6,מילוי פנים הכפות (petal face fills),#685450,#685450,#fffce9,#fffce9,#fffce9,685450,#fffce9,685450,685450
+FAN — fills,1,D7,רצועות rib שמאל + ימין,#685450,#685450,#fffce9,#fffce9,#fffce9,685450,#fffce9,685450,685450
+FAN — fills,1,D8,cusp cap fills,#685450,#685450,#fffce9,#fffce9,#fffce9,685450,#fffce9,685450,685450
+FAN — fills,1,D9,תאי band בין הקשתות,#685450,#685450,#fffce9,#fffce9,#fffce9,685450,#fffce9,685450,685450
+FAN — fills,1,D10,gap בין עיגולים לעיגולים,#685450,#685450,#fffce9,#fffce9,#fffce9,685450,#fffce9,685450,685450
+FAN — fills,1,D11,gap עיגול ↔ עלה,#685450,#685450,#fffce9,#fffce9,#fffce9,685450,#fffce9,685450,685450
+עיגולים + כוכבים + מחומש,1,,◆ חלוקה 1 — עיגולי valley,,,,,,,,,
+עיגולים + כוכבים + מחומש,1,E1,עיגולי valley — fill,#685450,#685450,#685450,685450,2575FF,685450,2575FF,685450,685450
+עיגולים + כוכבים + מחומש,1,E2,עיגולי valley — stroke,FF3C3C,f7cecd,f7cecd,#fffce9,B5D0FF,00973A,#fffce9,#fffce9,#fffce9
+עיגולים + כוכבים + מחומש,2,E3,כוכב חיצוני — fill,#ffffff,685450,685450,685450,2575FF,685450,2575FF,685450,685450
+עיגולים + כוכבים + מחומש,2,E4,כוכב חיצוני — stroke,FF3C3C,f7cecd,f7cecd,#fffce9,B5D0FF,00973A,#fffce9,#fffce9,#fffce9
+עיגולים + כוכבים + מחומש,3,E5,כוכב פנימי — fill,#ffffff,685450,685450,685450,2575FF,685450,2575FF,685450,685450
+עיגולים + כוכבים + מחומש,3,E6,כוכב פנימי — stroke,FF3C3C,f7cecd,f7cecd,#fffce9,B5D0FF,00973A,#fffce9,#fffce9,#fffce9
+עיגולים + כוכבים + מחומש,4,E7,מחומש — fill,#ffffff,685450,685450,685450,2575FF,685450,2575FF,685450,685450
+עיגולים + כוכבים + מחומש,4,E8,מחומש — stroke,FF3C3C,f7cecd,f7cecd,#fffce9,B5D0FF,00973A,#fffce9,#fffce9,#fffce9
+עיגולים + כוכבים + מחומש,5,E9,משולשים בין עלים (star arms) — fill,#685450,685450,685450,685450,2575FF,685450,2575FF,685450,685450
+עיגולים + כוכבים + מחומש,5,E10,משולשים בין עלים — stroke,FF3C3C,f7cecd,f7cecd,#fffce9,B5D0FF,00973A,#fffce9,#fffce9,#fffce9
+FEELINGS,1,F1,קווי Fear (אנכיים),3C06A7,3C06A7,FF3C3C,B5D0FF,B5D0FF,00973A,685450,685450,685450
+FEELINGS,2,F2,Pain — מילוי מעוינים,FF3C3C,f7cecd,FF3C3C,2575FF,D0FFC4,00973A,1453A5,685450,685450
+FEELINGS,3,F3,Sadness — מילוי עיגולים,3C06A7,3C06A7,B2FF00,#fffce9,D0FFC4,685450,B2FF00,FFFB00,FFFB00
+FEELINGS,3,F4,Sadness — קו עיגולים,FF3C3C,FF80FF,FF3C3C,2575FF,B5D0FF,D0FFC4,685450,685450,685450
+FEELINGS,4,F5,Pride — מילוי auto-merge,FF3C3C,f7cecd,FF3C3C,B5D0FF,B5D0FF,00973A,685450,685450,685450
+FEELINGS,4,F6,Pride — קו מתאר,3C06A7,3C06A7,B2FF00,#fffce9,#fffce9,3C06A7,B2FF00,FFFB00,FFFB00
+FEELINGS,4,F7,Pride — צל,FF3C3C,f7cecd,FF3C3C,FFFB00,D0FFC4,D0FFC4,2575FF,FFFB00,FFFB00
+FEELINGS,6,F8,Hope — נקודות stipple,3C06A7,3C06A7,0C6664,B5D0FF,B5D0FF,D0FFC4,685450,685450,685450
+FEELINGS,6,F9,שכבת צבע מתחת לנקודות (hope),#fffce8,#fffce9,FFC8E2,685450,FF3C3C,D9D9D9,FFEBF0,D6F6FF,D6F6FF
+FEELINGS,7,F10,Guilt / Shame — מעוינים חלולים,FF3C3C,f7cecd,FF3C3C,B5D0FF,B5D0FF,D0FFC4,685450,685450,685450
 FEELINGS,8,F11,"Strength / Power- מילוי ריבוע
-",FF3C3C,f7cecd,B2FF00,#fffce9,D9D9D9,D0FFC4,B2FF00,685450
+",FF3C3C,f7cecd,B2FF00,#fffce9,D9D9D9,D0FFC4,B2FF00,685450,685450
 FEELINGS,8,F12,"Strength / Power- מילוי עיגול
-",3C06A7,3C06A7,0C6664,685450,685450,685450,2575FF,FFFB00
+",3C06A7,3C06A7,0C6664,685450,685450,685450,2575FF,D9D9D9,D9D9D9
 FEELINGS,8,F13,"Strength / Power- קווי מתאר עיגול וריבוע
-",3C06A7,3C06A7,0C6664,685450,685450,00973A,2575FF,FFFB00
-FEELINGS,9,F14,Helplessness,3C06A7,3C06A7,0C6664,#fffce9,685450,3C06A7,2575FF,FFFB00
+",3C06A7,3C06A7,0C6664,685450,685450,00973A,2575FF,FFFB00,FFFB00
+FEELINGS,9,F14,Helplessness,3C06A7,3C06A7,0C6664,#fffce9,685450,3C06A7,2575FF,FFFB00,FFFB00
 FEELINGS,10,F15,"Anger
-",FF3C3C,FF80FF,FF3C3C,FFFB00,2575FF,3C06A7,685450,FFFB00
-FEELINGS,11,F16,Longing- קו מתאר עיגולים,3C06A7,3C06A7,FF3C3C,B5D0FF,B5D0FF,00973A,685450,685450
+",FF3C3C,FF80FF,FF3C3C,FFFB00,2575FF,3C06A7,685450,FFFB00,FFFB00
+FEELINGS,11,F16,Longing- קו מתאר עיגולים,3C06A7,3C06A7,FF3C3C,B5D0FF,B5D0FF,00973A,685450,685450,685450
 FEELINGS,12,F17,"Grief- קווי מתאר עיגולים
-",FF3C3C,FF80FF,FF3C3C,B5D0FF,B5D0FF,00973A,685450,685450
-LABEL BAR,1,,◆ חלוקה 1 — פס חום + לוח כהה (G1+G2),,,,,,,,
-LABEL BAR,1,G1,בר עליון + תחתון (fill),FF3C3C,FFC5E3,#fffce9,#fffce9,B5D0FF,D0FFC4,685450,685450
-LABEL BAR,1,G2,checkerboard — תאים כהים,FF3C3C,FFC5E3,#fffce9,#fffce9,B5D0FF,D0FFC4,685450,685450
-LABEL BAR,2,,◆ חלוקה 2 — טקסט + אייקונים (G3+G4),,,,,,,,
-LABEL BAR,2,G3,checkerboard — תאים בהירים,3C06A7,3C06A7,0C6664,685450,685450,2575FF,B2FF00,FFFB00
-LABEL BAR,2,G4,אייקונים + טקסט (fill),3C06A7,3C06A7,0C6664,685450,685450,2575FF,B2FF00,FFFB00
-LABEL BAR,3,G5,נקודות בקצוות התווית,3C06A7,3C06A7,0C6664,FFFB00,685450,2575FF,2575FF,685450
-COLOR DIVISIONS,1,H1,אזור 1 — exclusion rect,00FF89,00FF89,00FF89,00FF89,8849,00973A,00973A,00973A
-COLOR DIVISIONS,2,H2,אזור 2 — exclusion rect,B2FF00,B2FF00,B2FF00,B2FF00,8849,D9D9D9,D9D9D9,D9D9D9
-COLOR DIVISIONS,3,H3,אזור 3 — exclusion rect,00FFF9,00FFF9,00FFF9,00FFF9,3C06A7,3C06A7,3C06A7,3C06A7
-COLOR DIVISIONS,4,H4,אזור 4 — exclusion rect,#000000,#000000,#000000,#000000,#000000,#000000,#000000,#000000
-COLOR DIVISIONS,5,H5,אזור 5 — exclusion rect,303030,303030,303030,303030,303030,303030,303030,303030
+",FF3C3C,FF80FF,FF3C3C,B5D0FF,B5D0FF,00973A,685450,685450,685450
+LABEL BAR,1,,◆ חלוקה 1 — פס חום + לוח כהה (G1+G2),,,,,,,,,
+LABEL BAR,1,G1,בר עליון + תחתון (fill),FF3C3C,FFC5E3,#fffce9,#fffce9,B5D0FF,D0FFC4,685450,685450,685450
+LABEL BAR,1,G2,checkerboard — תאים כהים,FF3C3C,FFC5E3,#fffce9,#fffce9,B5D0FF,D0FFC4,685450,685450,685450
+LABEL BAR,2,,◆ חלוקה 2 — טקסט + אייקונים (G3+G4),,,,,,,,,
+LABEL BAR,2,G3,checkerboard — תאים בהירים,3C06A7,3C06A7,0C6664,685450,685450,2575FF,B2FF00,FFFB00,FFFB00
+LABEL BAR,2,G4,אייקונים + טקסט (fill),3C06A7,3C06A7,0C6664,685450,685450,2575FF,B2FF00,FFFB00,FFFB00
+LABEL BAR,3,G5,נקודות בקצוות התווית,3C06A7,3C06A7,0C6664,FFFB00,685450,2575FF,2575FF,685450,685450
+COLOR DIVISIONS,1,H1,אזור 1 — exclusion rect,00FF89,#99ff00,#99ff00,00FF89,8849,00973A,00973A,00973A,00973A
+COLOR DIVISIONS,2,H2,אזור 2 — exclusion rect,#fffce8,#5600af,#5600af,B2FF00,8849,D9D9D9,D9D9D9,D9D9D9,D9D9D9
+COLOR DIVISIONS,3,H3,אזור 3 — exclusion rect,00FFF9,#380000,#380000,00FFF9,3C06A7,3C06A7,3C06A7,3C06A7,3C06A7
+COLOR DIVISIONS,4,H4,אזור 4 — exclusion rect,#000000,#000000,#000000,#000000,#000000,#000000,#000000,#000000,#000000
+COLOR DIVISIONS,5,H5,אזור 5 — exclusion rect,303030,303030,303030,303030,303030,303030,303030,303030,303030
+,,,,,,,,,,,,
+,,,,,#99ff00,,,,,,,
+,,,,,#5600af,,,,,,,
+,,,,,#380000,,,,,,,

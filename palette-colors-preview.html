@@ -157,6 +157,7 @@
       </table>
     </div>
 
+    <script src="js/embeddedPaletteCsv.js"></script>
     <script>
       (function () {
         "use strict";
@@ -169,6 +170,12 @@
           "/export?format=csv&gid=" +
           SHEET_GID;
         var LOCAL_CSV_URL = "data/sheet-palette-colors.csv";
+        var SHEET_CSV_PROXY_URL =
+          "http://127.0.0.1:8080/api/google-sheet-palette.csv";
+        var GVIZ_SCRIPT_ATTR = "data-palette-preview-gviz";
+        var gvizLoadGeneration = 0;
+        /** gviz returns Palette 8–9 as numbers — hex with letters is null; need CSV export. */
+        var CSV_ONLY_PALETTE_LABELS = ["Palette 8", "Palette 9"];
 
         var statusEl = document.getElementById("status");
         var thead = document.getElementById("palette-thead");
@@ -177,9 +184,13 @@
         var colorColumnLabels = ["Palette 1"];
 
         function normalizeHex(value) {
-          if (!value || typeof value !== "string") return null;
-          var v = value.trim();
+          if (value == null || value === "") return null;
+          var v = String(value).trim();
           if (!v) return null;
+          /** gviz returns numeric hex cells as floats, e.g. 685450.0 */
+          if (/^\d+(\.0+)?$/.test(v)) {
+            v = v.split(".")[0];
+          }
           if (v.charAt(0) !== "#") v = "#" + v;
           v = v.toLowerCase();
           if (/^#[0-9a-f]{3}$/.test(v)) {
@@ -462,41 +473,464 @@
           });
         }
 
-        function load() {
-          setStatus("טוען…");
-          tbody.textContent = "";
-          fetchText(SHEET_CSV_URL)
-            .then(function (text) {
-              if (
-                text.indexOf("Category,") === -1 ||
-                (text.indexOf(",Slot,") === -1 &&
-                  text.indexOf(",Division,Slot,") === -1)
-              ) {
-                throw new Error("Invalid sheet CSV");
+        function gvizCellValue(cell) {
+          if (!cell) return "";
+          if (cell.f != null && String(cell.f).trim() !== "") {
+            return String(cell.f);
+          }
+          if (cell.v == null || cell.v === "") return "";
+          if (typeof cell.v === "number") {
+            if (Number.isInteger(cell.v)) return String(cell.v);
+            if (cell.v === Math.floor(cell.v)) return String(Math.trunc(cell.v));
+          }
+          return String(cell.v);
+        }
+
+        function escapeCsvField(value) {
+          if (!value) return "";
+          if (
+            value.indexOf(",") >= 0 ||
+            value.indexOf('"') >= 0 ||
+            value.indexOf("\n") >= 0
+          ) {
+            return '"' + value.replace(/"/g, '""') + '"';
+          }
+          return value;
+        }
+
+        function gvizResponseToCsv(response) {
+          if (
+            !response ||
+            response.status !== "ok" ||
+            !response.table ||
+            !response.table.rows
+          ) {
+            throw new Error("Invalid Google Sheet gviz response");
+          }
+          var tableCols = response.table.cols || [];
+          var colCount = tableCols.length || 5;
+          var headerParts = [];
+          var hi;
+          for (hi = 0; hi < colCount; hi++) {
+            var label = tableCols[hi] && tableCols[hi].label;
+            headerParts.push(escapeCsvField(label != null ? String(label) : ""));
+          }
+          var lines = [headerParts.join(",")];
+          var rows = response.table.rows;
+          var ri;
+          for (ri = 0; ri < rows.length; ri++) {
+            var cells = rows[ri].c || [];
+            var cols = [];
+            var ci;
+            for (ci = 0; ci < colCount; ci++) {
+              cols.push(escapeCsvField(gvizCellValue(cells[ci])));
+            }
+            lines.push(cols.join(","));
+          }
+          return lines.join("\n");
+        }
+
+        function getGoogleSheetGvizUrl(generation) {
+          return (
+            "https://docs.google.com/spreadsheets/d/" +
+            SHEET_DOC_ID +
+            "/gviz/tq?tqx=out:json&headers=1&gid=" +
+            SHEET_GID +
+            "&_=" +
+            Date.now() +
+            "." +
+            generation
+          );
+        }
+
+        function removeStaleGvizScripts() {
+          var stale = document.querySelectorAll("script[" + GVIZ_SCRIPT_ATTR + "]");
+          var i;
+          for (i = 0; i < stale.length; i++) {
+            if (stale[i].parentNode) stale[i].parentNode.removeChild(stale[i]);
+          }
+        }
+
+        /** JSONP via gviz — works on file:// where fetch() to Google/local CSV is blocked. */
+        function fetchGoogleSheetViaGviz() {
+          gvizLoadGeneration += 1;
+          var generation = gvizLoadGeneration;
+          return new Promise(function (resolve, reject) {
+            var timeoutMs = 20000;
+            var timeoutId = setTimeout(function () {
+              restoreGvizHandler();
+              reject(new Error("Google Sheet gviz timeout"));
+            }, timeoutMs);
+
+            var previousSetResponse = null;
+            if (
+              window.google &&
+              window.google.visualization &&
+              window.google.visualization.Query
+            ) {
+              previousSetResponse = window.google.visualization.Query.setResponse;
+            } else {
+              if (!window.google) window.google = {};
+              if (!window.google.visualization) window.google.visualization = {};
+              if (!window.google.visualization.Query) {
+                window.google.visualization.Query = {};
               }
-              renderTable(parseRows(text));
-              setStatus("נטען מ-Google Sheet (עדכני)");
+            }
+
+            function restoreGvizHandler() {
+              clearTimeout(timeoutId);
+              if (
+                window.google &&
+                window.google.visualization &&
+                window.google.visualization.Query &&
+                previousSetResponse
+              ) {
+                window.google.visualization.Query.setResponse = previousSetResponse;
+              }
+            }
+
+            window.google.visualization.Query.setResponse = function (response) {
+              if (generation !== gvizLoadGeneration) return;
+              restoreGvizHandler();
+              if (previousSetResponse) {
+                try {
+                  previousSetResponse.call(window.google.visualization.Query, response);
+                } catch (ignore) {
+                  /* ignore chained handler errors */
+                }
+              }
+              try {
+                var csvText = gvizResponseToCsv(response);
+                resolve(csvText);
+              } catch (e) {
+                reject(e);
+              }
+            };
+
+            removeStaleGvizScripts();
+            var script = document.createElement("script");
+            script.setAttribute(GVIZ_SCRIPT_ATTR, "1");
+            script.onerror = function () {
+              if (generation !== gvizLoadGeneration) return;
+              restoreGvizHandler();
+              reject(new Error("Google Sheet gviz script failed"));
+            };
+            script.src = getGoogleSheetGvizUrl(generation);
+            (document.head || document.documentElement).appendChild(script);
+          });
+        }
+
+        /** JSONP proxy — works on file:// where fetch() to localhost is blocked. */
+        function fetchCsvViaJsonpProxy() {
+          return new Promise(function (resolve, reject) {
+            var cb =
+              "palettePreviewCsv_" +
+              Date.now() +
+              "_" +
+              Math.floor(Math.random() * 1e6);
+            var timeoutId = setTimeout(function () {
+              cleanup();
+              reject(new Error("proxy JSONP timeout"));
+            }, 15000);
+            var script = document.createElement("script");
+            function cleanup() {
+              clearTimeout(timeoutId);
+              try {
+                delete window[cb];
+              } catch (ignore) {
+                window[cb] = undefined;
+              }
+              if (script.parentNode) script.parentNode.removeChild(script);
+            }
+            window[cb] = function (text) {
+              cleanup();
+              if (typeof text !== "string" || !isValidPaletteCsvHeader(text)) {
+                reject(new Error("Invalid proxy JSONP CSV"));
+                return;
+              }
+              resolve(text);
+            };
+            script.onerror = function () {
+              cleanup();
+              reject(new Error("proxy JSONP failed"));
+            };
+            script.src =
+              SHEET_CSV_PROXY_URL +
+              (SHEET_CSV_PROXY_URL.indexOf("?") >= 0 ? "&" : "?") +
+              "callback=" +
+              encodeURIComponent(cb) +
+              "&_=" +
+              Date.now();
+            (document.head || document.documentElement).appendChild(script);
+          });
+        }
+
+        function fetchLiveSheetCsvText() {
+          return fetchText(SHEET_CSV_URL)
+            .then(function (text) {
+              return { text: text, source: "csv" };
             })
             .catch(function () {
-              return fetchText(LOCAL_CSV_URL).then(function (text) {
-                if (
-                  text.indexOf("Category,") === -1 ||
-                  (text.indexOf(",Slot,") === -1 &&
-                    text.indexOf(",Division,Slot,") === -1)
-                ) {
-                  throw new Error("Invalid local CSV");
-                }
-                renderTable(parseRows(text));
-                setStatus("נטען מקובץ מקומי: data/sheet-palette-colors.csv");
+              return fetchText(
+                SHEET_CSV_PROXY_URL +
+                  (SHEET_CSV_PROXY_URL.indexOf("?") >= 0 ? "&" : "?") +
+                  "_=" +
+                  Date.now()
+              ).then(function (text) {
+                return { text: text, source: "proxy" };
               });
             })
-            .catch(function (err) {
-              setStatus("שגיאה בטעינה: " + (err && err.message ? err.message : err), true);
+            .catch(function () {
+              return fetchCsvViaJsonpProxy().then(function (text) {
+                return { text: text, source: "proxy-jsonp" };
+              });
+            })
+            .catch(function () {
+              return fetchGoogleSheetViaGviz().then(function (text) {
+                return { text: text, source: "gviz" };
+              });
             });
         }
 
-        reloadBtn.addEventListener("click", load);
+        function isEmptyPaletteCell(value) {
+          if (value == null) return true;
+          var v = String(value).trim();
+          return !v || !normalizeHex(v);
+        }
+
+        function countCsvOnlyPaletteGaps(text) {
+          if (!text) return 0;
+          var records = parseCsvRecords(text);
+          if (records.length < 2) return 0;
+          var layout = getCsvLayout(records[0].join(","));
+          var headerCols = parseCsvLine(records[0].join(","));
+          var colIndices = [];
+          var li;
+          for (li = 0; li < CSV_ONLY_PALETTE_LABELS.length; li++) {
+            var hi;
+            for (hi = 0; hi < headerCols.length; hi++) {
+              if ((headerCols[hi] || "").trim() === CSV_ONLY_PALETTE_LABELS[li]) {
+                colIndices.push(hi);
+                break;
+              }
+            }
+          }
+          if (!colIndices.length) return 0;
+          var gaps = 0;
+          var ri;
+          for (ri = 1; ri < records.length; ri++) {
+            var cols = records[ri];
+            if (!(cols[layout.slot] || "").trim()) continue;
+            var ci;
+            for (ci = 0; ci < colIndices.length; ci++) {
+              if (isEmptyPaletteCell(cols[colIndices[ci]])) gaps++;
+            }
+          }
+          return gaps;
+        }
+
+        /** Fill empty Palette 8–9 cells from authority CSV (embedded/local snapshot). */
+        function supplementCsvOnlyPaletteColumns(liveText, authorityText) {
+          if (!liveText || !authorityText) {
+            return {
+              text: liveText,
+              filled: 0,
+              gapsRemaining: countCsvOnlyPaletteGaps(liveText),
+            };
+          }
+          var liveRecords = parseCsvRecords(liveText);
+          var authRecords = parseCsvRecords(authorityText);
+          if (liveRecords.length < 2 || authRecords.length < 2) {
+            return {
+              text: liveText,
+              filled: 0,
+              gapsRemaining: countCsvOnlyPaletteGaps(liveText),
+            };
+          }
+          var layout = getCsvLayout(liveRecords[0].join(","));
+          var authLayout = getCsvLayout(authRecords[0].join(","));
+          var headerCols = parseCsvLine(liveRecords[0].join(","));
+          var colIndices = [];
+          var li;
+          for (li = 0; li < CSV_ONLY_PALETTE_LABELS.length; li++) {
+            var hi;
+            for (hi = 0; hi < headerCols.length; hi++) {
+              if ((headerCols[hi] || "").trim() === CSV_ONLY_PALETTE_LABELS[li]) {
+                colIndices.push(hi);
+                break;
+              }
+            }
+          }
+          if (!colIndices.length) {
+            return {
+              text: liveText,
+              filled: 0,
+              gapsRemaining: countCsvOnlyPaletteGaps(liveText),
+            };
+          }
+          var authBySlot = {};
+          var ri;
+          for (ri = 1; ri < authRecords.length; ri++) {
+            var authCols = authRecords[ri];
+            var slot = (authCols[authLayout.slot] || "").trim();
+            if (slot) authBySlot[slot] = authCols;
+          }
+          var filled = 0;
+          for (ri = 1; ri < liveRecords.length; ri++) {
+            var cols = liveRecords[ri];
+            slot = (cols[layout.slot] || "").trim();
+            if (!slot || !authBySlot[slot]) continue;
+            var ci;
+            for (ci = 0; ci < colIndices.length; ci++) {
+              var colIdx = colIndices[ci];
+              if (isEmptyPaletteCell(cols[colIdx])) {
+                var authVal = (authBySlot[slot][colIdx] || "").trim();
+                if (authVal && normalizeHex(authVal)) {
+                  cols[colIdx] = authVal;
+                  filled++;
+                }
+              }
+            }
+          }
+          if (!filled) {
+            return {
+              text: liveText,
+              filled: 0,
+              gapsRemaining: countCsvOnlyPaletteGaps(liveText),
+            };
+          }
+          var lines = [];
+          for (ri = 0; ri < liveRecords.length; ri++) {
+            lines.push(liveRecords[ri].map(escapeCsvField).join(","));
+          }
+          return {
+            text: lines.join("\n"),
+            filled: filled,
+            gapsRemaining: countCsvOnlyPaletteGaps(lines.join("\n")),
+          };
+        }
+
+        function buildLiveSourceLabel(source, supplementMeta) {
+          supplementMeta = supplementMeta || {};
+          var interval = Math.round(previewLiveSyncMs / 1000);
+          if (source === "csv" || source === "proxy" || source === "proxy-jsonp") {
+            return (
+              "נטען מ-Google Sheet (CSV מלא · עדכון חי כל " + interval + " שניות)"
+            );
+          }
+          var label =
+            "נטען מ-Google Sheet (gviz · עדכון חי כל " + interval + " שניות)";
+          if (supplementMeta.filled) {
+            label += " · Palette 8–9: " + supplementMeta.filled + " תאים מ-snapshot";
+          }
+          if (supplementMeta.gapsRemaining) {
+            label +=
+              " · הרץ npm run serve לעדכון מלא של Palette 8–9";
+          }
+          return label;
+        }
+
+        var lastSheetCsvFingerprint = null;
+
+        function isValidPaletteCsvHeader(text) {
+          if (!text || text.indexOf("Category,") === -1) return false;
+          return (
+            text.indexOf(",Slot,") !== -1 ||
+            text.indexOf(",Division,Slot,") !== -1
+          );
+        }
+
+        function getEmbeddedPaletteCsvText() {
+          if (
+            window.EMBEDDED_PALETTE_CSV_TEXT &&
+            typeof window.EMBEDDED_PALETTE_CSV_TEXT === "string" &&
+            window.EMBEDDED_PALETTE_CSV_TEXT.length
+          ) {
+            return window.EMBEDDED_PALETTE_CSV_TEXT;
+          }
+          return null;
+        }
+
+        function applySheetCsvText(text, sourceLabel, options) {
+          options = options || {};
+          if (text === lastSheetCsvFingerprint) return false;
+          lastSheetCsvFingerprint = text;
+          renderTable(parseRows(text));
+          if (!options.silent) {
+            setStatus(sourceLabel);
+          }
+          return true;
+        }
+
+        function load(options) {
+          options = options || {};
+          if (!options.silent) {
+            setStatus("טוען…");
+            tbody.textContent = "";
+          }
+          fetchLiveSheetCsvText()
+            .then(function (result) {
+              var text = result.text;
+              var source = result.source;
+              var supplementMeta = { filled: 0, gapsRemaining: 0 };
+              if (source === "gviz") {
+                var authority = getEmbeddedPaletteCsvText();
+                var supplemented = supplementCsvOnlyPaletteColumns(text, authority);
+                text = supplemented.text;
+                supplementMeta = supplemented;
+              }
+              if (!isValidPaletteCsvHeader(text)) {
+                throw new Error("Invalid sheet CSV");
+              }
+              applySheetCsvText(
+                text,
+                buildLiveSourceLabel(source, supplementMeta),
+                options
+              );
+            })
+            .catch(function () {
+              return fetchText(LOCAL_CSV_URL).then(function (text) {
+                if (!isValidPaletteCsvHeader(text)) {
+                  throw new Error("Invalid local CSV");
+                }
+                applySheetCsvText(
+                  text,
+                  "נטען מקובץ מקומי: data/sheet-palette-colors.csv",
+                  options
+                );
+              });
+            })
+            .catch(function () {
+              var embedded = getEmbeddedPaletteCsvText();
+              if (embedded && isValidPaletteCsvHeader(embedded)) {
+                var fileHint =
+                  location.protocol === "file:"
+                    ? " · פתח דרך npm run serve לעדכון חי"
+                    : "";
+                applySheetCsvText(
+                  embedded,
+                  "נטען מ-snapshot מוטמע (offline)" + fileHint,
+                  options
+                );
+                return;
+              }
+              throw new Error("No palette data available");
+            })
+            .catch(function (err) {
+              if (!options.silent) {
+                setStatus(
+                  "שגיאה בטעינה: " + (err && err.message ? err.message : err),
+                  true
+                );
+              }
+            });
+        }
+
+        reloadBtn.addEventListener("click", function () {
+          load();
+        });
         var previewWasHidden = false;
+        var previewLiveSyncMs = 3000;
         document.addEventListener("visibilitychange", function () {
           if (document.visibilityState === "hidden") {
             previewWasHidden = true;
@@ -510,6 +944,10 @@
         window.addEventListener("pageshow", function (ev) {
           if (ev.persisted) load();
         });
+        setInterval(function () {
+          if (document.hidden) return;
+          load({ silent: true });
+        }, previewLiveSyncMs);
         load();
       })();
     </script>

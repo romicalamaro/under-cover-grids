@@ -7,8 +7,11 @@
     "linkedom": "^0.18.9"
   },
   "scripts": {
+    "serve": "node scripts/serve.mjs",
     "test": "echo \"Error: no test specified\" && exit 1",
     "sync:palette-csv": "curl -sL \"https://docs.google.com/spreadsheets/d/1yMwNB7MopTJWDEH328VF0WiU2XXdPu5Cfs0I1YDyeDQ/export?format=csv&gid=790839210\" -o data/sheet-palette-colors.csv",
+    "embed:palette-csv": "node scripts/embed-palette-csv.mjs",
+    "embed:combinations-csv": "node scripts/embed-combinations-csv.mjs",
     "embed:label-bar-svgs": "node scripts/embed-label-bar-svgs.mjs",
     "embed:stipple-assets": "node scripts/embed-stipple-assets.mjs",
     "rasterize:stipple": "node scripts/rasterize-stipple.mjs"

@@ -1,5 +1,5 @@
-/** Logical print canvas: 70cm × 180cm at 300 DPI */
-var CANVAS_W = 827;
+/** Logical print canvas: 68cm × 180cm at 300 DPI */
+var CANVAS_W = 803;
 var CANVAS_H = 2126;
 
 /** White margin ring area as a fraction of full canvas area (symmetric sides) */
@@ -111,7 +111,8 @@ var LABEL_BAR_SVG_ASSETS = [
   "tag/tag03.svg",
   "tag/tag04.svg",
   "tag/tag05.2.svg",
-  "sun.svg",
+  "tag/reshet.svg",
+  "reshetsmall.svg",
   "IN IRAN.svg",
   "OUTSIDE IRAN.svg",
   "undercover english.svg",
@@ -144,12 +145,13 @@ var LABEL_BAR_SVG_DIMENSIONS = {
   "tag/tag03.svg": { width: 78, height: 78 },
   "tag/tag04.svg": { width: 94, height: 69 },
   "tag/tag05.2.svg": { width: 195, height: 195 },
+  "tag/reshet.svg": { width: 192, height: 193 },
   "lion.svg": { width: 257.14, height: 186 },
   "man.svg": { width: 89, height: 115 },
   "LOST/man.svg": { width: 89, height: 115 },
   "LOST/2 man.svg": { width: 168, height: 115 },
   "LOST/3 man.svg": { width: 247, height: 115 },
-  "sun.svg": { width: 123, height: 136 },
+  "reshetsmall.svg": { width: 129, height: 90 },
   "IN IRAN.svg": { width: 115, height: 103.73 },
   "OUTSIDE IRAN.svg": { width: 111, height: 111 },
   "undercover english.svg": { width: 164.16, height: 80 },
@@ -194,12 +196,12 @@ var LABEL_BAR_LIVING_DURATION_SVGS = {
 /** Row 2: profile From / Now in icons inward from the living-in-Iran sign */
 var LABEL_BAR_FROM_SVG = "from.svg";
 var LABEL_BAR_NOW_IN_SVG = "now in.svg";
-/** Row 2: fixed sun sign between Now in and profile name (svg/sun.svg) */
-var LABEL_BAR_CIRCLE_SVG = "sun.svg";
+/** Row 2: reshet sign between Now in and profile name (svg/reshetsmall.svg) */
+var LABEL_BAR_CIRCLE_SVG = "reshetsmall.svg";
 /** Row 1: fixed union sign between home-at icon and women icon */
 var LABEL_BAR_UNION_SVG = "Union.svg";
 /** Row 1 left edge + row 2 right edge (pinned, not spread) */
-var LABEL_BAR_UNION_SMALL_SVG = "Unionsmall.svg";
+var LABEL_BAR_UNION_SMALL_SVG = "Union.svg";
 var LABEL_BAR_PROFILE_FROM_DEFAULT = "TEHERAN";
 var LABEL_BAR_PROFILE_NOW_IN_DEFAULT = "MAINZ";
 var LABEL_BAR_PROFILE_LEAVING_YEAR_DEFAULT = "2021";
@@ -211,7 +213,7 @@ var LABEL_BAR_WOMEN_SVG = "women.svg";
 /** Fixed wordmarks by the lions (empty = hidden) */
 var LABEL_BAR_LEFT_LION_INNER_ROW1_SVG = "";
 /** Row 1: fixed sun icon removed — Profile “at home” icon sits here (see LABEL_BAR_HOME_AT_SVGS) */
-var LABEL_BAR_LEFT_LION_INNER_ROW1_SUN_SVG = "sun.svg";
+var LABEL_BAR_LEFT_LION_INNER_ROW1_SUN_SVG = "reshetsmall.svg";
 var LABEL_BAR_AGE_SVG = "age.svg";
 /** Fixed caption left of the Age icon (row 1, inward from undercover english) */
 var LABEL_BAR_AGE_LABEL_TEXT = "AGE";
@@ -256,6 +258,7 @@ var LABEL_BAR_TAG_SVGS = [
   "tag/tag03.svg",
   "tag/tag04.svg",
   "tag/tag05.2.svg",
+  "tag/reshet.svg",
 ];
 var LABEL_BAR_TAG_ROTATION_STORAGE_KEY = "undercover.labelBarTagIndex";
 /** Fallback end-cap SVG when rotation pool is unavailable */
@@ -297,6 +300,84 @@ var CANVAS_EDGE_SERIAL_FILL = "#3c06a7";
 var OCTAGONS_N_MIN = 3;
 var OCTAGONS_N_MAX = 13;
 var OCTAGONS_N_DEFAULT = 7;
+/** UI shows steps 1–10; grid still uses OCTAGONS_N_MIN–MAX internally. */
+var OCTAGONS_N_STEPS = 10;
+
+/**
+ * @param {number} stepNumber 1 = min density, OCTAGONS_N_STEPS = max density
+ * @returns {number}
+ */
+function octagonsNValueFromStep(stepNumber) {
+  var steps =
+    typeof OCTAGONS_N_STEPS !== "undefined" ? OCTAGONS_N_STEPS : 10;
+  var min = typeof OCTAGONS_N_MIN !== "undefined" ? OCTAGONS_N_MIN : 3;
+  var max = typeof OCTAGONS_N_MAX !== "undefined" ? OCTAGONS_N_MAX : 13;
+  var idx = Math.round(Number(stepNumber)) - 1;
+  if (!isFinite(idx)) idx = steps - 1;
+  if (idx < 0) idx = 0;
+  if (idx > steps - 1) idx = steps - 1;
+  if (steps < 2) return max;
+  return Math.round(min + (idx / (steps - 1)) * (max - min));
+}
+
+/**
+ * @param {number} value internal grid n (OCTAGONS_N_MIN–MAX)
+ * @returns {number} step 1–OCTAGONS_N_STEPS
+ */
+function octagonsNStepFromValue(value) {
+  var steps =
+    typeof OCTAGONS_N_STEPS !== "undefined" ? OCTAGONS_N_STEPS : 10;
+  var min = typeof OCTAGONS_N_MIN !== "undefined" ? OCTAGONS_N_MIN : 3;
+  var max = typeof OCTAGONS_N_MAX !== "undefined" ? OCTAGONS_N_MAX : 13;
+  var span = max - min;
+  if (span < 1e-9) return steps;
+  var idx = Math.round(((Number(value) - min) / span) * (steps - 1));
+  return Math.max(1, Math.min(steps, idx + 1));
+}
+
+/**
+ * @param {number} stepNumber 1-based UI step
+ * @param {number[]} table length OCTAGONS_N_STEPS
+ * @returns {number}
+ */
+function octagonsNValueFromStepTable(stepNumber, table) {
+  var steps =
+    typeof OCTAGONS_N_STEPS !== "undefined" ? OCTAGONS_N_STEPS : 10;
+  var idx = Math.round(Number(stepNumber)) - 1;
+  if (!isFinite(idx)) idx = steps - 1;
+  if (idx < 0) idx = 0;
+  if (idx > steps - 1) idx = steps - 1;
+  if (!table || !table.length) return OCTAGONS_N_DEFAULT;
+  return table[idx];
+}
+
+/**
+ * @param {number} value grid n
+ * @param {number[]} table
+ * @returns {number} step 1–OCTAGONS_N_STEPS
+ */
+function octagonsNStepFromTableValue(value, table) {
+  var steps =
+    typeof OCTAGONS_N_STEPS !== "undefined" ? OCTAGONS_N_STEPS : 10;
+  if (!table || !table.length) return octagonsNStepFromValue(value);
+  var num = Math.round(Number(value));
+  var bestStep = 1;
+  var bestDist = Infinity;
+  var i;
+  for (i = 0; i < table.length; i++) {
+    var dist = Math.abs(table[i] - num);
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestStep = i + 1;
+    }
+  }
+  return bestStep;
+}
+
+/** Star grid: one step below octagon min, two steps above former star max. */
+var OCTAGONS_N_BY_STEP_STAR = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+/** Circles/diamonds: one odd step below former min, five above former max. */
+var OCTAGONS_N_BY_STEP_CIRCLES = [5, 7, 9, 11, 13, 15, 17, 19, 21, 23];
 
 /** Corner cut: t = side / (2 + sqrt(2)) */
 var CUT_RATIO = 1 / (2 + Math.SQRT2);
@@ -308,6 +389,40 @@ var CUT_RATIO = 1 / (2 + Math.SQRT2);
 var INNER_SCALE_MIN = 0.3;
 var INNER_SCALE_MAX = 1.0;
 var INNER_SCALE_DEFAULT = INNER_SCALE_MAX;
+/** UI shows steps 1–10; grid still uses INNER_SCALE_MIN–MAX internally. */
+var INNER_SCALE_STEPS = 10;
+
+/**
+ * @param {number} stepNumber 1 = min scale, INNER_SCALE_STEPS = max scale
+ * @returns {number}
+ */
+function innerScaleValueFromStep(stepNumber) {
+  var steps =
+    typeof INNER_SCALE_STEPS !== "undefined" ? INNER_SCALE_STEPS : 10;
+  var min = typeof INNER_SCALE_MIN !== "undefined" ? INNER_SCALE_MIN : 0.3;
+  var max = typeof INNER_SCALE_MAX !== "undefined" ? INNER_SCALE_MAX : 1;
+  var idx = Math.round(Number(stepNumber)) - 1;
+  if (!isFinite(idx)) idx = steps - 1;
+  if (idx < 0) idx = 0;
+  if (idx > steps - 1) idx = steps - 1;
+  if (steps < 2) return max;
+  return min + (idx / (steps - 1)) * (max - min);
+}
+
+/**
+ * @param {number} value internal scale (INNER_SCALE_MIN–MAX)
+ * @returns {number} step 1–INNER_SCALE_STEPS
+ */
+function innerScaleStepFromValue(value) {
+  var steps =
+    typeof INNER_SCALE_STEPS !== "undefined" ? INNER_SCALE_STEPS : 10;
+  var min = typeof INNER_SCALE_MIN !== "undefined" ? INNER_SCALE_MIN : 0.3;
+  var max = typeof INNER_SCALE_MAX !== "undefined" ? INNER_SCALE_MAX : 1;
+  var span = max - min;
+  if (span < 1e-9) return steps;
+  var idx = Math.round(((Number(value) - min) / span) * (steps - 1));
+  return Math.max(1, Math.min(steps, idx + 1));
+}
 
 /** Hope merge mode: cursor must pass within this many screen px of an edge */
 var EDGE_HIT_THRESHOLD_PX = 5;
@@ -346,6 +461,41 @@ var AUTO_MERGE_SHADOW_FILTER_ID = "auto-merge-region-shadow";
 /** Feelings sidebar sliders: discrete positions between each control's min and max */
 var FEELINGS_SLIDER_STEPS = 5;
 
+/**
+ * @param {number} stepNumber 1 = min (0 marks), FEELINGS_SLIDER_STEPS = max marks
+ * @param {number} min
+ * @param {number} max
+ * @returns {number}
+ */
+function feelingsValueFromStep(stepNumber, min, max) {
+  var steps =
+    typeof FEELINGS_SLIDER_STEPS !== "undefined" ? FEELINGS_SLIDER_STEPS : 5;
+  var idx = Math.round(Number(stepNumber)) - 1;
+  if (!isFinite(idx)) idx = 0;
+  if (idx < 0) idx = 0;
+  if (idx > steps - 1) idx = steps - 1;
+  if (steps < 2) return min;
+  var stepSize = (max - min) / (steps - 1);
+  return min + idx * stepSize;
+}
+
+/**
+ * @param {number} value internal slider value (min–max)
+ * @param {number} min
+ * @param {number} max
+ * @returns {number} step 1–FEELINGS_SLIDER_STEPS
+ */
+function feelingsStepFromValue(value, min, max) {
+  var steps =
+    typeof FEELINGS_SLIDER_STEPS !== "undefined" ? FEELINGS_SLIDER_STEPS : 5;
+  if (steps < 2) return 1;
+  var stepSize = (max - min) / (steps - 1);
+  var idx = Math.round((Number(value) - min) / stepSize);
+  if (idx < 0) idx = 0;
+  if (idx > steps - 1) idx = steps - 1;
+  return idx + 1;
+}
+
 /** Random circles in upright squares (% of all upright squares on canvas) */
 var CIRCLE_DENSITY_MIN = 0;
 var CIRCLE_DENSITY_MAX = 30;
@@ -377,9 +527,9 @@ var GRID_FRAME_INSET_OVERLAY_CAP_ELLIPSE_RX = 7;
 var GRID_FRAME_INSET_OVERLAY_CAP_ELLIPSE_RY = 12;
 
 /** Left/right white margin strip horizontal divisions (3-step slider) */
-var BORDER_LEFT_RIGHT_SEGMENTS_LOW = 8;
+var BORDER_LEFT_RIGHT_SEGMENTS_LOW = 6;
 var BORDER_LEFT_RIGHT_SEGMENTS_DEFAULT = 12;
-var BORDER_LEFT_RIGHT_SEGMENTS_HIGH = 18;
+var BORDER_LEFT_RIGHT_SEGMENTS_HIGH = 20;
 /** Random height weights per margin row (normalized to fill strip) */
 var BORDER_SIDE_SEGMENT_HEIGHT_MIN_RATIO = 0.18;
 var BORDER_SIDE_SEGMENT_HEIGHT_MAX_RATIO = 1.4;
@@ -394,6 +544,10 @@ var BORDER_SIDE_WHITE_FILL_DEFAULT = 0;
 var BORDER_SIDE_WHITE_FILL_STEPS = 5;
 /** At slider maximum, this fraction of margin division cells are painted white */
 var BORDER_SIDE_WHITE_CAP_PERCENT = 50;
+/** Color-fade empty margin cells: stipple dot diameter (px) */
+var BORDER_FRAME_EMPTY_CELL_DOT_SIZE = 2;
+/** Color-fade empty margin cells: min gap between dot edges (px) */
+var BORDER_FRAME_EMPTY_CELL_DOT_SPACING = 2;
 
 /** Fan geometry variant: original (cusp petals) or radial (base line + arc + ribs) */
 var FAN_TYPE_ORIGINAL = "original";
@@ -426,6 +580,21 @@ var RADIAL_FAN_MIDDLE_BAND_FILL_GAP_CELLS = 1;
 /** Omit the 2nd triangle-pair from the fan start (left) and end (right). */
 var RADIAL_FAN_MIDDLE_BAND_TRIM_SECOND_PAIR_FROM_START = true;
 var RADIAL_FAN_MIDDLE_BAND_TRIM_SECOND_PAIR_FROM_END = true;
+/** End-cap diagonal: almost-outer arc at outer rib → middle arc at inner rib (offsets from each fan end). */
+var RADIAL_FAN_MIDDLE_BAND_END_CAP_DIAG_OUTER_RIB_FROM_END = 8;
+var RADIAL_FAN_MIDDLE_BAND_END_CAP_DIAG_INNER_RIB_FROM_END = 7;
+/** Outermost end-cap: last/first drawable rib → adjacent rib (1-based offset from each fan end; matches FAN_END_SECTOR_TRIM). */
+var RADIAL_FAN_MIDDLE_BAND_OUTERMOST_CAP_DIAG_OUTER_RIB_FROM_END = 1;
+var RADIAL_FAN_MIDDLE_BAND_OUTERMOST_CAP_DIAG_INNER_RIB_FROM_END = 2;
+/** Middle-band right-angle triangle stipple: dot diameter (px) */
+var RADIAL_FAN_MIDDLE_BAND_DOT_SIZE = 2;
+/** Middle-band right-angle triangle stipple: min gap between dot edges (px) */
+var RADIAL_FAN_MIDDLE_BAND_DOT_SPACING = 2;
+/** Center-zone diagonals: outer rib top → inner arc at adjacent rib (offsets from middle rib). */
+var RADIAL_FAN_CENTER_DIAG_1_START_RIB_OFFSET = 2;
+var RADIAL_FAN_CENTER_DIAG_1_END_RIB_OFFSET = 1;
+var RADIAL_FAN_CENTER_DIAG_2_START_RIB_OFFSET = -2;
+var RADIAL_FAN_CENTER_DIAG_2_END_RIB_OFFSET = -1;
 /** Ribs from focal center to outer arc (equal angular spacing across the semicircle) */
 var RADIAL_FAN_RIB_COUNT = 25;
 /** Rings seated on the 3rd inner arc: count, radius (px), arc index (0-based) */
@@ -465,10 +634,12 @@ var RADIAL_FAN_BASE_ROW_RIGHT_INNER_RIB_OFFSET_INNER = 6;
 /** Sectors omitted at each fan end (between rib 1–2 and the last rib pair); angles the base */
 var FAN_END_SECTOR_TRIM_COUNT = 1;
 
-/** Body autonomy: shared fan opening (both manifolds), discrete steps (inverted: 0 = open, 10 = none) */
+/** Body autonomy: shared fan opening (both manifolds), discrete steps (0 = open, 10 = closed) */
 var WEAR_CONTROL_OPENING_STEP_MIN = 0;
 var WEAR_CONTROL_OPENING_STEP_MAX = 10;
-var WEAR_CONTROL_OPENING_STEP_DEFAULT = 5;
+var WEAR_CONTROL_OPENING_STEP_DEFAULT = 0;
+/** Penultimate slider step: this many drawable ribs remain before fully closed. */
+var FAN_CLOSING_MIN_RIBS = 4;
 
 /** Shared fan tuning: inner arc radius as % of fan radius */
 var FAN_INNER_ARC_PERCENT_MIN = 20;
@@ -573,17 +744,22 @@ var NESTED_STAR_STRENGTH_SQUARE_USE_TILE_CUT = true;
 var GRID_TYPE_OCTAGON = "octagon";
 var GRID_TYPE_STAR = "star";
 var GRID_TYPE_CIRCLES = "circles";
+var GRID_TYPE_DIAMONDS = "diamonds";
 /** Circles grid: rotated diamond half-side as fraction of cell size */
 var CIRCLES_GRID_CELL_DIAMOND_HALF_RATIO = 0.35;
 /** Circles grid: helplessness X half-extent as fraction of cell size */
 var CIRCLES_GRID_HELPLESS_HALF_RATIO = 0.3;
+/** Circles grid: filled dots at each structural circle frame corner (diameter, px) */
+var CIRCLES_GRID_FRAME_JUNCTION_DOT_DIAMETER_PX = 5;
 /** Circles grid: density slider steps by 2 fine cells (one full 2×2 circle column) */
 var CIRCLES_GRID_N_STEP = 2;
 /** Least-dense circles grid: minimum structural circles per row (each spans 2 cell columns) */
-var CIRCLES_GRID_MIN_CIRCLE_COLUMNS = 4;
+var CIRCLES_GRID_MIN_CIRCLE_COLUMNS = 3;
 /** Fine-cell n at minimum density: 2 × circle columns − 1 */
 var CIRCLES_GRID_N_MIN =
   2 * CIRCLES_GRID_MIN_CIRCLE_COLUMNS - 1;
+/** Circles/diamonds density slider table max (odd n) */
+var CIRCLES_GRID_N_MAX = 23;
 /** Circles grid only: Helplessness, Longing, Grief, Strength slider cap (%) */
 var CIRCLES_GRID_JUNCTION_EMOTION_DENSITY_MAX = 20;
 /** Circles grid only: anger triangles / pain diamonds / guilt-shame diamonds slider cap (%) */
@@ -608,7 +784,7 @@ var CIRCLES_GRID_PRIDE_SHADOW_ARC_STEPS = 24;
  */
 var CIRCLES_GRID_PRIDE_TESSELLATION_INNER_SCALE_MAX = 0.92;
 /** Star grid only: max value on “Iranian community” density slider (octagons-n) */
-var STAR_GRID_OCTAGONS_N_MAX = 9;
+var STAR_GRID_OCTAGONS_N_MAX = 11;
 /** Hope merge cutouts: ignore micro-faces smaller than this × tileSize² */
 var STAR_GRID_HOPE_MERGE_MIN_AREA_TILE_FRACTION = 0.45;
 /** Octagon Hope merge: min stipple hole area (× tileSize²); lower → finer, more intricate shapes */
@@ -630,16 +806,16 @@ var STAR_GRID_PRIDE_COARSE_INNER_SCALE = 1;
 /** Pride star grid: keep merged fills that span at least this many star cells */
 var STAR_GRID_PRIDE_MIN_STARS_INSIDE = 2;
 /**
- * Pride auto-merge performance: denser grid → simpler merged shapes (fewer edges,
- * skip orphan/prune passes) so tracing stays fast.
+ * Pride auto-merge: denser grid → larger merged clusters so canvas fill area
+ * stays proportional to the reference (sparse) density.
  */
 var PRIDE_AUTO_MERGE_REFERENCE_N_OCTAGON = OCTAGONS_N_DEFAULT;
-/** Edge budget scale ~ (refTile / currentTile)^exp; 1 = gentle reduction */
-var PRIDE_AUTO_MERGE_DENSITY_SIMPLIFY_EXPONENT = 1;
-/** Minimum edge-budget scale on very dense grids (0.35 ≈ 35% of base edges) */
-var PRIDE_AUTO_MERGE_DENSITY_EDGE_SCALE_MIN = 0.35;
+/** Edge budget scale ~ (refTile / currentTile)^exp; 2 = px² area compensation */
+var PRIDE_AUTO_MERGE_DENSITY_AREA_EXPONENT = 2;
+/** Cap edge-budget scale on very dense grids (performance guard) */
+var PRIDE_AUTO_MERGE_DENSITY_AREA_SCALE_MAX = 8;
 /** refTile/currentTile at/above this → fast simple merge path (no prune/orphans) */
-var PRIDE_AUTO_MERGE_SIMPLE_MODE_DENSITY_RATIO = 1.15;
+var PRIDE_AUTO_MERGE_SIMPLE_MODE_DENSITY_RATIO = 3;
 /** Octagon grid + low inner-scale: min Hope stipple region area (× tileSize²) */
 var HOPE_LOW_INNER_SCALE_MIN_AREA_TILE_FRACTION = 1.5;
 /** Default stipple dot fill (Hope layer) */

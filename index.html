@@ -3,13 +3,101 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Octagon Grid — 70×180cm @ 300 DPI</title>
+    <title>Octagon Grid — 68×180cm @ 300 DPI</title>
     <link rel="stylesheet" href="css/styles.css" />
   </head>
   <body>
     <div class="app-shell">
       <aside class="sidebar" aria-label="Design controls">
         <div class="sidebar__scroll">
+          <section class="sidebar__section sidebar__section--combinations">
+            <h2 class="sidebar__title">Combinations</h2>
+            <p class="sidebar__hint">
+              <a href="combinations-table.html" target="_blank" rel="noopener"
+                >טבלת קומבינציות — עריכת פרמטרים</a
+              >
+            </p>
+            <p class="sidebar__hint sidebar__hint--combo-note">
+              סוג גריד ופלטת צבעים נשארים מהפאנל — לא נכללים בקומבינציה.
+            </p>
+            <div
+              class="sidebar__combo-switcher"
+              role="group"
+              aria-label="Handkerchief combination"
+            >
+              <button
+                type="button"
+                class="sidebar__combo-btn is-active"
+                data-handkerchief-combo="1"
+                aria-pressed="true"
+              >
+                1
+              </button>
+              <button
+                type="button"
+                class="sidebar__combo-btn"
+                data-handkerchief-combo="2"
+                aria-pressed="false"
+              >
+                2
+              </button>
+              <button
+                type="button"
+                class="sidebar__combo-btn"
+                data-handkerchief-combo="3"
+                aria-pressed="false"
+              >
+                3
+              </button>
+              <button
+                type="button"
+                class="sidebar__combo-btn"
+                data-handkerchief-combo="4"
+                aria-pressed="false"
+              >
+                4
+              </button>
+              <button
+                type="button"
+                class="sidebar__combo-btn"
+                data-handkerchief-combo="5"
+                aria-pressed="false"
+              >
+                5
+              </button>
+              <button
+                type="button"
+                class="sidebar__combo-btn"
+                data-handkerchief-combo="6"
+                aria-pressed="false"
+              >
+                6
+              </button>
+              <button
+                type="button"
+                class="sidebar__combo-btn"
+                data-handkerchief-combo="7"
+                aria-pressed="false"
+              >
+                7
+              </button>
+              <button
+                type="button"
+                class="sidebar__combo-btn"
+                data-handkerchief-combo="8"
+                aria-pressed="false"
+              >
+                8
+              </button>
+              <span
+                id="handkerchief-combo-active-label"
+                class="sidebar__palette-active-label"
+                aria-live="polite"
+                >Combo 1</span
+              >
+            </div>
+          </section>
+
           <section class="sidebar__section sidebar__section--identity">
             <h2 class="sidebar__title">Profile</h2>
             <div class="sidebar__identity-fields">
@@ -176,11 +264,11 @@
                     </button>
                     <button
                       type="button"
-                      id="identity-name-none-btn"
+                      id="identity-name-name-btn"
                       class="sidebar__toggle-btn"
                       aria-pressed="false"
                     >
-                      No name
+                      Name
                     </button>
                   </div>
                 </div>
@@ -300,6 +388,14 @@
               >
                 Circles
               </button>
+              <button
+                type="button"
+                id="grid-choose-diamonds-btn"
+                class="sidebar__grid-btn"
+                aria-pressed="false"
+              >
+                Diamonds
+              </button>
             </div>
             <div class="sidebar__grid-choose-sliders">
               <div class="sidebar__grid-density sidebar__grid-density--long-label">
@@ -322,13 +418,13 @@
                     <input
                       id="octagons-n"
                       type="range"
-                      min="3"
-                      max="13"
-                      value="7"
+                      min="1"
+                      max="10"
+                      value="5"
                       step="1"
                       aria-label="How much do I feel part of the Iranian community? Not part at all to very much part."
                     />
-                    <output id="octagons-n-out" for="octagons-n">7</output>
+                    <output id="octagons-n-out" for="octagons-n">5</output>
                   </div>
                 </div>
               </div>
@@ -340,13 +436,13 @@
                   <input
                     id="inner-scale"
                     type="range"
-                    min="0.3"
-                    max="1"
-                    value="1"
-                    step="0.01"
+                    min="1"
+                    max="10"
+                    value="10"
+                    step="1"
                     aria-label="How much is my Iranian identity at the center of my life?"
                   />
-                  <output id="inner-scale-out" for="inner-scale">1</output>
+                  <output id="inner-scale-out" for="inner-scale">10</output>
                 </div>
               </div>
             </div>
@@ -357,6 +453,12 @@
             <p class="sidebar__hint">
               <a href="palette-colors-preview.html" target="_blank" rel="noopener"
                 >תצוגת טבלת צבעים (תאים צבועים)</a
+              >
+              <span
+                id="sheet-palette-live-status"
+                class="sidebar__sheet-live-status"
+                aria-live="polite"
+                >עדכון חי מהגיליון</span
               >
             </p>
             <div class="sidebar__sheet-palette-row">
@@ -379,10 +481,10 @@
                     type="button"
                     id="sheet-palette-random-btn"
                     class="sidebar__palette-btn sidebar__palette-btn--label"
-                    aria-label="החלף בין פלטות 1 עד 8"
-                    title="החלף בין פלטות 1 עד 8"
+                    aria-label="החלף בין פלטות 1 עד 9"
+                    title="החלף בין פלטות 1 עד 9"
                   >
-                    Palette 1–8
+                    Palette 1–9
                   </button>
                   <span
                     id="sheet-palette-active-label"
@@ -588,48 +690,6 @@
                 <div class="sidebar__fan-tuning-group">
                   <span class="sidebar__grid-density-label">Both fans</span>
                   <div class="sidebar__fan-tuning-row">
-                    <span class="sidebar__fan-tuning-label">Fan type</span>
-                    <div
-                      class="sidebar__toggle sidebar__fan-type-toggle"
-                      role="group"
-                      aria-label="Fan type — original or radial"
-                    >
-                      <button
-                        type="button"
-                        id="fan-type-original-btn"
-                        class="sidebar__toggle-btn"
-                        aria-pressed="false"
-                      >
-                        Original
-                      </button>
-                      <button
-                        type="button"
-                        id="fan-type-radial-btn"
-                        class="sidebar__toggle-btn is-active"
-                        aria-pressed="true"
-                      >
-                        Radial
-                      </button>
-                    </div>
-                  </div>
-                  <div
-                    class="sidebar__fan-tuning-row sidebar__fan-tuning-row--radial-only"
-                    id="fan-radial-outer-arc-row"
-                  >
-                    <span class="sidebar__fan-tuning-label">Outer arc size</span>
-                    <div class="sidebar__grid-density-control sidebar__wear-control-range">
-                      <input
-                        id="fan-radial-outer-arc"
-                        type="range"
-                        min="70"
-                        max="100"
-                        value="100"
-                        step="1"
-                        aria-label="Radial fan outer arc size"
-                      />
-                    </div>
-                  </div>
-                  <div class="sidebar__fan-tuning-row">
                     <span class="sidebar__fan-tuning-label">Leaves</span>
                     <div class="sidebar__grid-density-control sidebar__wear-control-range">
                       <input
@@ -639,63 +699,7 @@
                         max="10"
                         value="0"
                         step="1"
-                        aria-label="Fan leaves. Step 0 fully open, step 10 no fan."
-                      />
-                    </div>
-                  </div>
-                  <div class="sidebar__fan-tuning-row">
-                    <span class="sidebar__fan-tuning-label">Leaf size</span>
-                    <div class="sidebar__grid-density-control sidebar__wear-control-range">
-                      <input
-                        id="fan-leaf-size"
-                        type="range"
-                        min="0"
-                        max="100"
-                        value="90"
-                        step="1"
-                        aria-label="Inner leaf size — width and length"
-                      />
-                    </div>
-                  </div>
-                  <div class="sidebar__fan-tuning-row">
-                    <span class="sidebar__fan-tuning-label">Arc position</span>
-                    <div class="sidebar__grid-density-control sidebar__wear-control-range">
-                      <input
-                        id="fan-arc"
-                        type="range"
-                        min="20"
-                        max="80"
-                        value="50"
-                        step="1"
-                        aria-label="Fan inner arc position"
-                      />
-                    </div>
-                  </div>
-                  <div class="sidebar__fan-tuning-row">
-                    <span class="sidebar__fan-tuning-label">Star size</span>
-                    <div class="sidebar__grid-density-control sidebar__wear-control-range">
-                      <input
-                        id="fan-stars"
-                        type="range"
-                        min="50"
-                        max="95"
-                        value="75"
-                        step="1"
-                        aria-label="Fan star size"
-                      />
-                    </div>
-                  </div>
-                  <div class="sidebar__fan-tuning-row">
-                    <span class="sidebar__fan-tuning-label">Extra band offset</span>
-                    <div class="sidebar__grid-density-control sidebar__wear-control-range">
-                      <input
-                        id="fan-outside-extra-arc"
-                        type="range"
-                        min="0"
-                        max="80"
-                        value="24"
-                        step="1"
-                        aria-label="Fan extra arc distance from inner arc pair"
+                        aria-label="Fan leaves. Step 0 fully open, step 9 four ribs, step 10 closed."
                       />
                     </div>
                   </div>
@@ -723,7 +727,7 @@
                       aria-label="Vertical line length"
                     />
                     <output id="anger-vertical-length-out" for="anger-vertical-length"
-                      >0%</output
+                      >1</output
                     >
                   </div>
                   <div class="sidebar__grid-density">
@@ -739,7 +743,7 @@
                         aria-label="Anxiety / Tension — vertical line thickness"
                       />
                       <output id="anxiety-vertical-stroke-out" for="anxiety-vertical-stroke"
-                        >0 px</output
+                        >1</output
                       >
                     </div>
                   </div>
@@ -761,7 +765,7 @@
                       aria-label="Anger triangle density"
                     />
                     <output id="anger-triangle-density-out" for="anger-triangle-density"
-                      >0%</output
+                      >1</output
                     >
                   </div>
                 </div>
@@ -819,7 +823,7 @@
                       aria-label="Circle density"
                     />
                     <output id="circle-density-out" for="circle-density"
-                      >0%</output
+                      >1</output
                     >
                   </div>
                 </div>
@@ -840,7 +844,7 @@
                       aria-label="Longing circle density"
                     />
                     <output id="longing-circle-density-out" for="longing-circle-density"
-                      >0%</output
+                      >1</output
                     >
                   </div>
                 </div>
@@ -861,7 +865,7 @@
                       aria-label="Grief circle density"
                     />
                     <output id="grief-circle-density-out" for="grief-circle-density"
-                      >0%</output
+                      >1</output
                     >
                   </div>
                 </div>
@@ -882,7 +886,7 @@
                       aria-label="Strength / Power circle-in-square density"
                     />
                     <output id="strength-density-out" for="strength-density"
-                      >0%</output
+                      >1</output
                     >
                   </div>
                 </div>
@@ -903,7 +907,7 @@
                       aria-label="Pride merged area amount and size"
                     />
                     <output id="auto-merge-intensity-out" for="auto-merge-intensity"
-                      >Off</output
+                      >1</output
                     >
                   </div>
                 </div>
@@ -924,7 +928,7 @@
                       aria-label="Pain diamond fill amount"
                     />
                     <output id="pride-fill-percent-out" for="pride-fill-percent"
-                      >0%</output
+                      >1</output
                     >
                   </div>
                 </div>
@@ -947,7 +951,7 @@
                     <output
                       id="guilt-shame-fill-percent-out"
                       for="guilt-shame-fill-percent"
-                      >0%</output
+                      >1</output
                     >
                   </div>
                 </div>
@@ -968,7 +972,7 @@
                       aria-label="Helplessness junction X mark density"
                     />
                     <output id="helplessness-percent-out" for="helplessness-percent"
-                      >0%</output
+                      >1</output
                     >
                   </div>
                 </div>
@@ -1046,16 +1050,19 @@
       </div>
     </div>
     <script defer src="js/constants.js"></script>
-    <script defer src="js/embeddedPaletteCsv.js?v=20260606-palette8-embed"></script>
-    <script defer src="js/sheetPalettes.js?v=20260606-palette8-embed"></script>
+    <script defer src="js/embeddedPaletteCsv.js?v=20260607-p9-embed-fix"></script>
+    <script defer src="js/sheetPalettes.js?v=20260607-p9-clean"></script>
     <script defer src="js/labelBarSvgAssets.js?v=20260606-outside-iran"></script>
     <script defer src="js/exportFontData.js"></script>
     <script defer src="js/opentype.min.js"></script>
     <script defer src="js/topkapiGeometry.js"></script>
     <script defer src="js/nestedStarOctagonsGeometry.js"></script>
     <script defer src="js/circlesGridGeometry.js"></script>
+    <script defer src="js/diamondsGridGeometry.js"></script>
     <script defer src="js/identityControls.js"></script>
     <script defer src="js/locationCoordinates.js"></script>
-    <script defer src="js/app.js?v=20260604-sheet-reload"></script>
+    <script defer src="js/embeddedCombinationsCsv.js"></script>
+    <script defer src="js/handkerchiefCombinations.js"></script>
+    <script defer src="js/app.js?v=20260607-p9-clean"></script>
   </body>
 </html>

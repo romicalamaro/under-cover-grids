@@ -66,6 +66,9 @@
       add(center);
       add(center + sideHalf);
     }
+    // Extend existing lines to canvas edges only — no extra interior positions.
+    add(0);
+    add(layout.cols * S);
     xs.sort(function (a, b) {
       return a - b;
     });
@@ -101,6 +104,8 @@
       add(center);
       add(center + sideHalf);
     }
+    add(layout.offsetY);
+    add(layout.offsetY + layout.rows * S);
     ys.sort(function (a, b) {
       return a - b;
     });
@@ -177,7 +182,11 @@
           ? OCTAGONS_N_MIN
           : 7;
     var max =
-      typeof OCTAGONS_N_MAX !== "undefined" ? OCTAGONS_N_MAX : 13;
+      typeof CIRCLES_GRID_N_MAX !== "undefined"
+        ? CIRCLES_GRID_N_MAX
+        : typeof OCTAGONS_N_MAX !== "undefined"
+          ? OCTAGONS_N_MAX
+          : 13;
     if (min % 2 === 0) min += 1;
     if (max % 2 === 0) max -= 1;
     n = Math.round(n);

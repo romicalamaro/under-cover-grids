@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>טבלת קומבינציות — מטפחות</title>
+    <style>
+      :root {
+        --bg: #f6f4ee;
+        --text: #1a1a1a;
+        --border: #ccc9be;
+        --header: #ebe6d8;
+        --section: #f0ece2;
+        --note: #555;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 1.25rem 1.5rem 2rem;
+        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        line-height: 1.45;
+      }
+      header {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.75rem 1rem;
+        margin-bottom: 1rem;
+      }
+      h1 {
+        font-size: 1.25rem;
+        font-weight: 600;
+        margin: 0;
+        flex: 1 1 auto;
+      }
+      .toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        align-items: center;
+      }
+      button,
+      a.btn {
+        font: inherit;
+        cursor: pointer;
+        padding: 0.4rem 0.85rem;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        background: #fff;
+        text-decoration: none;
+        color: inherit;
+      }
+      button:hover,
+      a.btn:hover {
+        background: #fffef8;
+      }
+      .note {
+        font-size: 0.9rem;
+        color: var(--note);
+        margin: 0 0 1rem;
+        max-width: 52rem;
+      }
+      #status {
+        font-size: 0.9rem;
+        color: var(--note);
+        margin-bottom: 0.75rem;
+      }
+      #status.is-error {
+        color: #b00020;
+      }
+      .table-wrap {
+        overflow-x: auto;
+        max-width: 100%;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: #fff;
+        direction: ltr;
+      }
+      table {
+        border-collapse: separate;
+        border-spacing: 0;
+        table-layout: fixed;
+        width: 74.5rem;
+        min-width: 74.5rem;
+        font-size: 0.82rem;
+      }
+      th,
+      td {
+        border: 1px solid var(--border);
+        padding: 0.35rem 0.5rem;
+        vertical-align: middle;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      th {
+        background: var(--header);
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        text-align: left;
+        font-weight: 600;
+      }
+      th.col-he,
+      td.col-he {
+        direction: rtl;
+        text-align: right;
+        white-space: normal;
+        line-height: 1.35;
+      }
+      td.section-cell {
+        background: var(--section);
+        font-weight: 600;
+      }
+      td.key-cell {
+        font-family: ui-monospace, monospace;
+        font-size: 0.78rem;
+        color: #444;
+        text-align: left;
+      }
+      td.allowed-cell {
+        font-size: 0.75rem;
+        color: #666;
+        white-space: normal;
+        line-height: 1.35;
+      }
+      td.combo-cell {
+        padding: 0;
+      }
+      td.combo-cell input {
+        width: 100%;
+        box-sizing: border-box;
+        border: none;
+        padding: 0.4rem 0.5rem;
+        font: inherit;
+        background: transparent;
+        text-align: left;
+      }
+      td.combo-cell input:focus {
+        outline: 2px solid #3c06a7;
+        outline-offset: -2px;
+        background: #fffef8;
+      }
+      tr:hover td:not(.section-cell) {
+        background: rgba(255, 252, 240, 0.6);
+      }
+      .file-load-label {
+        cursor: pointer;
+        text-decoration: underline;
+        color: #3c06a7;
+      }
+      .file-load-label:hover {
+        color: #1a0052;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>טבלת קומבינציות — 8 מטפחות</h1>
+      <div class="toolbar">
+        <button type="button" id="reload-btn">טען מחדש מהקובץ</button>
+        <button type="button" id="download-btn">הורד CSV (לאפליקציה)</button>
+        <button type="button" id="download-excel-btn">הורד ל-Excel</button>
+        <a class="btn" href="index.html">← חזרה לאפליקציה</a>
+      </div>
+    </header>
+    <p class="note">
+      מלאי בעמודות Combo 1–8. אפשר לפתוח ישירות מהמחשב (לחיצה כפולה על הקובץ) —
+      הטבלה נטענת מנתונים מוטמעים. לאחר עריכה: <strong>הורד CSV (לאפליקציה)</strong>
+      והחליפי את <code>data/handkerchief-combinations.csv</code>.
+      <br />להעלאת קובץ קיים מהדיסק: <label class="file-load-label"
+        ><input type="file" id="csv-file-input" accept=".csv,text/csv" hidden />טען קובץ CSV</label
+      >
+    </p>
+    <div id="status">טוען…</div>
+    <div class="table-wrap">
+      <table id="combo-table">
+        <colgroup>
+          <col style="width: 5.5rem" />
+          <col style="width: 12rem" />
+          <col style="width: 10rem" />
+          <col style="width: 9rem" />
+          <col style="width: 5.5rem" />
+          <col style="width: 5.5rem" />
+          <col style="width: 5.5rem" />
+          <col style="width: 5.5rem" />
+          <col style="width: 5.5rem" />
+          <col style="width: 5.5rem" />
+          <col style="width: 5.5rem" />
+          <col style="width: 5.5rem" />
+        </colgroup>
+        <thead>
+          <tr>
+            <th>Section</th>
+            <th class="col-he">פרמטר</th>
+            <th>Key</th>
+            <th class="col-he">ערכים מותרים</th>
+            <th>Combo 1</th>
+            <th>Combo 2</th>
+            <th>Combo 3</th>
+            <th>Combo 4</th>
+            <th>Combo 5</th>
+            <th>Combo 6</th>
+            <th>Combo 7</th>
+            <th>Combo 8</th>
+          </tr>
+        </thead>
+        <tbody id="combo-tbody"></tbody>
+      </table>
+    </div>
+
+    <script src="js/embeddedCombinationsCsv.js"></script>
+    <script src="js/handkerchiefCombinations.js"></script>
+    <script>
+      (function () {
+        "use strict";
+
+        var CSV_PATH = "data/handkerchief-combinations.csv";
+        var statusEl = document.getElementById("status");
+        var tbody = document.getElementById("combo-tbody");
+
+        /** @type {string[][]} */
+        var tableRows = [];
+
+        function setStatus(msg, isError) {
+          statusEl.textContent = msg;
+          statusEl.classList.toggle("is-error", !!isError);
+        }
+
+        function parseCsvLine(line) {
+          var out = [];
+          var cur = "";
+          var inQuotes = false;
+          var i;
+          for (i = 0; i < line.length; i++) {
+            var ch = line[i];
+            if (inQuotes) {
+              if (ch === '"') {
+                if (line[i + 1] === '"') {
+                  cur += '"';
+                  i += 1;
+                } else {
+                  inQuotes = false;
+                }
+              } else {
+                cur += ch;
+              }
+            } else if (ch === '"') {
+              inQuotes = true;
+            } else if (ch === ",") {
+              out.push(cur);
+              cur = "";
+            } else {
+              cur += ch;
+            }
+          }
+          out.push(cur);
+          return out;
+        }
+
+        function parseCsv(text) {
+          return String(text || "")
+            .replace(/^\uFEFF/, "")
+            .replace(/\r\n/g, "\n")
+            .replace(/\r/g, "\n")
+            .split("\n")
+            .filter(function (line) {
+              return line.trim().length > 0;
+            })
+            .map(parseCsvLine);
+        }
+
+        function escapeCsvCell(value) {
+          var s = String(value == null ? "" : value);
+          if (/[",\n\r]/.test(s)) {
+            return '"' + s.replace(/"/g, '""') + '"';
+          }
+          return s;
+        }
+
+        function rowsToCsv(rows, delimiter) {
+          var sep = delimiter || ",";
+          return rows
+            .map(function (row) {
+              return row.map(escapeCsvCell).join(sep);
+            })
+            .join("\n");
+        }
+
+        function downloadCsvFile(delimiter, filename, statusMsg) {
+          if (!tableRows.length) return;
+          var blob = new Blob(["\uFEFF" + rowsToCsv(tableRows, delimiter)], {
+            type: "text/csv;charset=utf-8",
+          });
+          var a = document.createElement("a");
+          a.href = URL.createObjectURL(blob);
+          a.download = filename;
+          a.click();
+          URL.revokeObjectURL(a.href);
+          setStatus(statusMsg);
+        }
+
+        function renderTable(rows) {
+          tableRows = rows;
+          tbody.innerHTML = "";
+          var i;
+          for (i = 1; i < rows.length; i++) {
+            var cells = rows[i];
+            if (!cells[2]) continue;
+            var tr = document.createElement("tr");
+            tr.dataset.rowIndex = String(i);
+
+            var sectionTd = document.createElement("td");
+            sectionTd.className = "section-cell";
+            sectionTd.textContent = cells[0] || "";
+            tr.appendChild(sectionTd);
+
+            var paramTd = document.createElement("td");
+            paramTd.className = "param-cell col-he";
+            paramTd.textContent = cells[1] || "";
+            tr.appendChild(paramTd);
+
+            var keyTd = document.createElement("td");
+            keyTd.className = "key-cell";
+            keyTd.textContent = cells[2] || "";
+            tr.appendChild(keyTd);
+
+            var allowedTd = document.createElement("td");
+            allowedTd.className = "allowed-cell col-he";
+            allowedTd.textContent = cells[3] || "";
+            tr.appendChild(allowedTd);
+
+            var c;
+            for (c = 4; c <= 11; c++) {
+              var comboTd = document.createElement("td");
+              comboTd.className = "combo-cell";
+              var input = document.createElement("input");
+              input.type = "text";
+              input.value = cells[c] || "";
+              input.dataset.colIndex = String(c);
+              input.addEventListener("input", function (ev) {
+                var col = parseInt(ev.target.dataset.colIndex, 10);
+                var rowIndex = parseInt(
+                  ev.target.closest("tr").dataset.rowIndex,
+                  10
+                );
+                tableRows[rowIndex][col] = ev.target.value;
+              });
+              comboTd.appendChild(input);
+              tr.appendChild(comboTd);
+            }
+            tbody.appendChild(tr);
+          }
+        }
+
+        function getEmbeddedCsvText() {
+          if (
+            typeof window.EMBEDDED_COMBINATIONS_CSV_TEXT === "string" &&
+            window.EMBEDDED_COMBINATIONS_CSV_TEXT.trim()
+          ) {
+            return window.EMBEDDED_COMBINATIONS_CSV_TEXT;
+          }
+          return null;
+        }
+
+        function applyCsvText(text, sourceLabel) {
+          var rows = parseCsv(text);
+          if (!rows.length) throw new Error("קובץ ריק");
+          renderTable(rows);
+          setStatus(
+            "נטען — " + (rows.length - 1) + " פרמטרים · 12 עמודות · " + sourceLabel
+          );
+        }
+
+        function loadEmbeddedCsv() {
+          var embedded = getEmbeddedCsvText();
+          if (!embedded) {
+            setStatus("אין נתונים מוטמעים — הריצי npm run embed:combinations-csv", true);
+            return;
+          }
+          applyCsvText(embedded, "מוטמע (file://)");
+        }
+
+        function loadCsv() {
+          setStatus("טוען…");
+          if (location.protocol === "file:") {
+            loadEmbeddedCsv();
+            return Promise.resolve();
+          }
+          return fetch(CSV_PATH, { cache: "no-store" })
+            .then(function (res) {
+              if (!res.ok) throw new Error("HTTP " + res.status);
+              return res.text();
+            })
+            .then(function (text) {
+              applyCsvText(text, "מהשרת");
+            })
+            .catch(function (err) {
+              var embedded = getEmbeddedCsvText();
+              if (embedded) {
+                applyCsvText(embedded, "מוטמע (גיבוי)");
+                return;
+              }
+              setStatus("שגיאה בטעינה: " + err.message, true);
+            });
+        }
+
+        function loadCsvFromFile(file) {
+          if (!file) return;
+          var reader = new FileReader();
+          reader.onload = function () {
+            try {
+              applyCsvText(String(reader.result || ""), "קובץ: " + file.name);
+            } catch (e) {
+              setStatus("שגיאה בקובץ: " + e.message, true);
+            }
+          };
+          reader.onerror = function () {
+            setStatus("לא ניתן לקרוא את הקובץ", true);
+          };
+          reader.readAsText(file, "UTF-8");
+        }
+
+        function downloadCsv() {
+          downloadCsvFile(
+            ",",
+            "handkerchief-combinations.csv",
+            "הורד CSV — העתיקי ל־ data/handkerchief-combinations.csv"
+          );
+        }
+
+        function downloadExcelCsv() {
+          downloadCsvFile(
+            ";",
+            "handkerchief-combinations-excel.csv",
+            "הורד ל-Excel — פתחי ישירות ב-Excel (עמודות מופרדות)"
+          );
+        }
+
+        document.getElementById("reload-btn").addEventListener("click", loadCsv);
+        document.getElementById("download-btn").addEventListener("click", downloadCsv);
+        document
+          .getElementById("download-excel-btn")
+          .addEventListener("click", downloadExcelCsv);
+        document.getElementById("csv-file-input").addEventListener("change", function (ev) {
+          var file = ev.target.files && ev.target.files[0];
+          loadCsvFromFile(file);
+          ev.target.value = "";
+        });
+        loadCsv();
+      })();
+    </script>
+  </body>
+</html>
