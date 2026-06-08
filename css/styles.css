@@ -684,6 +684,14 @@ body {
   outline-offset: 2px;
 }
 
+/* Retired from sidebar panel — blend/area controls (remove block to restore) */
+#color-divisions-shuffle-btn,
+#color-divisions-mix-areas-btn,
+#blend-area-swatches,
+.sidebar__section--color-divisions > .sidebar__grid-density {
+  display: none !important;
+}
+
 .sidebar__feelings-control {
   width: 100%;
   justify-content: stretch;
