@@ -456,33 +456,45 @@
       });
   }
 
+  function updateComboButtonsLockState() {
+    var locked =
+      typeof window.SectionProgression !== "undefined" &&
+      window.SectionProgression.isSectionUnlocked &&
+      !window.SectionProgression.isSectionUnlocked("combinations");
+    var buttons = document.querySelectorAll("[data-handkerchief-combo]");
+    var i;
+    for (i = 0; i < buttons.length; i++) {
+      buttons[i].disabled = locked;
+    }
+  }
+
   function initComboControls() {
     var buttons = document.querySelectorAll("[data-handkerchief-combo]");
     var i;
     for (i = 0; i < buttons.length; i++) {
       (function (btn) {
         btn.addEventListener("click", function () {
+          if (btn.disabled) return;
           var idx = parseInt(btn.getAttribute("data-handkerchief-combo") || "1", 10) - 1;
           applyComboByIndex(idx);
         });
       })(buttons[i]);
     }
     updateComboButtonsUi();
+    updateComboButtonsLockState();
   }
 
   function init() {
     initComboControls();
   }
 
-  /** Load CSV and apply remembered combo without triggering a full render. */
+  /** Load CSV only; guided flow skips auto-apply on boot. */
   function loadAndApplyInitialCombo() {
     return loadCombinationsFromCsv()
       .then(function () {
-        activeComboIndex = getRememberedComboIndex();
+        activeComboIndex = 0;
         updateComboButtonsUi();
-        if (combinations[activeComboIndex]) {
-          applyCombinationRow(combinations[activeComboIndex], { boot: true });
-        }
+        updateComboButtonsLockState();
       })
       .catch(function (err) {
         console.warn("[HandkerchiefCombinations] Could not load CSV:", err);

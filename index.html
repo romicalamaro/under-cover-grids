@@ -7,7 +7,104 @@
     <link rel="stylesheet" href="css/styles.css?v=20260608-panel-hide" />
   </head>
   <body>
-    <div class="app-shell">
+    <button
+      type="button"
+      id="page2-grid-lines-toggle"
+      aria-pressed="false"
+      aria-label="Show or hide page 2 grid lines"
+    >
+      Grid lines
+    </button>
+
+    <div id="page2">
+      <div class="page2-layout">
+        <div class="page2-guides" aria-hidden="true">
+          <div class="page2-col"></div>
+          <div class="page2-col"></div>
+          <div class="page2-col"></div>
+          <div class="page2-col"></div>
+          <div class="page2-col"></div>
+          <div class="page2-col"></div>
+          <div class="page2-col"></div>
+          <div class="page2-col"></div>
+          <div class="page2-col"></div>
+          <div class="page2-col"></div>
+          <div class="page2-col"></div>
+          <div class="page2-col"></div>
+        </div>
+
+        <header class="page2-header" aria-label="Header grid">
+          <div
+            class="page2-header-col page2-header-col--left-edge"
+            data-col="0"
+          >
+            <div class="page2-header-cell"></div>
+            <div class="page2-header-cell"></div>
+            <div class="page2-header-cell"></div>
+          </div>
+          <div class="page2-header-col" data-col="1">
+            <div class="page2-header-cell">
+              <span class="page2-col-title">home</span>
+            </div>
+            <div class="page2-header-cell"></div>
+            <div class="page2-header-cell"></div>
+          </div>
+          <div class="page2-header-col" data-col="2">
+            <div class="page2-header-cell"></div>
+            <div class="page2-header-cell">
+              <span class="page2-col-title">design</span>
+            </div>
+            <div class="page2-header-cell"></div>
+          </div>
+          <div class="page2-header-col" data-col="3">
+            <div class="page2-header-cell">
+              <span class="page2-col-title">archive / shop</span>
+            </div>
+            <div class="page2-header-cell"></div>
+            <div class="page2-header-cell"></div>
+          </div>
+          <div class="page2-header-col" data-col="4">
+            <div class="page2-header-cell"></div>
+            <div class="page2-header-cell">
+              <span class="page2-col-title">about</span>
+            </div>
+            <div class="page2-header-cell"></div>
+          </div>
+          <div class="page2-header-col" data-col="5">
+            <div class="page2-header-cell">
+              <span class="page2-col-title">contact</span>
+            </div>
+            <div class="page2-header-cell"></div>
+            <div class="page2-header-cell"></div>
+          </div>
+          <div class="page2-header-col" data-col="6">
+            <div class="page2-header-cell"></div>
+            <div class="page2-header-cell"></div>
+            <div class="page2-header-cell"></div>
+          </div>
+        </header>
+
+        <main class="page2-sections" aria-label="Site sections">
+          <section
+            class="page2-section"
+            id="section-home"
+            data-section-col="1"
+            aria-label="home"
+          >
+            <div class="page2-home-content">
+              <p class="page2-home-intro">
+                Modular fashion scarves expressing solidarity with Iranian
+                women&rsquo;s protest for bodily autonomy
+              </p>
+            </div>
+          </section>
+          <section
+            class="page2-section"
+            id="section-design"
+            data-section-col="2"
+            aria-label="design"
+          >
+<div class="app-shell">
       <aside class="sidebar" aria-label="Design controls">
         <div class="sidebar__scroll">
           <section class="sidebar__section sidebar__section--combinations">
@@ -112,8 +209,8 @@
                     <button
                       type="button"
                       id="living-in-btn"
-                      class="sidebar__toggle-btn is-active"
-                      aria-pressed="true"
+                      class="sidebar__toggle-btn"
+                      aria-pressed="false"
                     >
                       Yes
                     </button>
@@ -131,6 +228,7 @@
               <div
                 class="sidebar__identity-field"
                 id="identity-living-duration-field"
+                hidden
               >
                 <span
                   class="sidebar__identity-heading sidebar__identity-heading--wrap"
@@ -157,9 +255,9 @@
                     <button
                       type="button"
                       id="identity-living-duration-part-btn"
-                      class="sidebar__toggle-btn is-active"
+                      class="sidebar__toggle-btn"
                       data-living-duration="partOfLife"
-                      aria-pressed="true"
+                      aria-pressed="false"
                     >
                       Yes, part of my life
                     </button>
@@ -178,6 +276,7 @@
               <div
                 class="sidebar__identity-field"
                 id="identity-leaving-year-field"
+                hidden
               >
                 <span class="sidebar__identity-heading">Year of leaving</span>
                 <div class="sidebar__identity-slot" id="identity-leaving-year-slot">
@@ -185,7 +284,6 @@
                     id="identity-leaving-year-input"
                     class="sidebar__identity-input"
                     type="text"
-                    value="2021"
                     inputmode="numeric"
                     pattern="[0-9]*"
                     maxlength="4"
@@ -204,7 +302,6 @@
                     class="sidebar__identity-input sidebar__identity-input--english"
                     type="text"
                     lang="en"
-                    value="TEHERAN"
                     autocomplete="off"
                     spellcheck="false"
                     aria-label="From"
@@ -220,7 +317,6 @@
                     class="sidebar__identity-input sidebar__identity-input--english"
                     type="text"
                     lang="en"
-                    value="MAINZ"
                     autocomplete="off"
                     spellcheck="false"
                     aria-label="Now in"
@@ -249,8 +345,8 @@
                     <button
                       type="button"
                       id="identity-name-anonymous-btn"
-                      class="sidebar__toggle-btn is-active"
-                      aria-pressed="true"
+                      class="sidebar__toggle-btn"
+                      aria-pressed="false"
                     >
                       Anonymous
                     </button>
@@ -285,7 +381,6 @@
                     maxlength="2"
                     autocomplete="off"
                     aria-label="Age"
-                    value="27"
                   />
                 </div>
               </div>
@@ -303,9 +398,9 @@
                     <button
                       type="button"
                       id="identity-home-at-in-iran-btn"
-                      class="sidebar__toggle-btn is-active"
+                      class="sidebar__toggle-btn"
                       data-home-at="inIran"
-                      aria-pressed="true"
+                      aria-pressed="false"
                     >
                       In Iran
                     </button>
@@ -367,8 +462,8 @@
               <button
                 type="button"
                 id="grid-choose-octagon-btn"
-                class="sidebar__grid-btn is-active"
-                aria-pressed="true"
+                class="sidebar__grid-btn"
+                aria-pressed="false"
               >
                 Octagon
               </button>
@@ -1037,6 +1132,804 @@
         </div>
       </div>
     </div>
+          </section>
+          <section
+            class="page2-section"
+            id="section-archive"
+            data-section-col="3"
+            aria-label="archive / shop"
+          ></section>
+          <section
+            class="page2-section"
+            id="section-about"
+            data-section-col="4"
+            aria-label="about"
+          ></section>
+          <section
+            class="page2-section"
+            id="section-contact"
+            data-section-col="5"
+            aria-label="contact"
+          ></section>
+        </main>
+      </div>
+    </div>
+
+    <style id="page2-isolated-styles">
+      #page2-grid-lines-toggle {
+        position: fixed;
+        top: 10px;
+        left: 10px;
+        z-index: 10000;
+        margin: 0;
+        padding: 8px 14px;
+        font: 13px/1.2 system-ui, sans-serif;
+        color: #1a1a1a;
+        background: #fff;
+        border: 1px solid #ccc;
+        border-radius: 6px;
+        cursor: pointer;
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+      }
+
+      #page2-grid-lines-toggle:hover {
+        background: #f5f5f5;
+      }
+
+      #page2-grid-lines-toggle[aria-pressed="true"] {
+        background: #eef2fb;
+        border-color: rgba(100, 120, 160, 0.45);
+      }
+
+      /*
+        Page 2 responsive tokens — design reference: 1728 × 1117 px (16″ desktop).
+        Give new values in px from Figma; conversion pattern at that width:
+          rem  = px ÷ 16
+          vw   = px ÷ 1728 × 100
+          clamp(min-rem, vw, design-rem)
+      */
+      #page2 {
+        --page2-ref-width: 1728;
+        --page2-margin: clamp(2rem, 2.894vw, 3.125rem); /* 50px @ ref */
+        --page2-gutter: clamp(0.875rem, 1.157vw, 1.25rem); /* 20px @ ref */
+        --page2-space-20: var(--page2-gutter);
+        --page2-section-count: 5;
+
+        display: block;
+        position: fixed;
+        inset: 0;
+        height: 100vh;
+        background: #d9d9d9;
+        overflow: auto;
+        scroll-snap-type: y mandatory;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        #page2 {
+          scroll-behavior: auto;
+        }
+      }
+
+      #page2 .page2-layout {
+        position: relative;
+        min-height: calc(var(--page2-section-count) * 100vh);
+      }
+
+      #page2 .page2-guides {
+        display: grid;
+        grid-template-columns: repeat(12, 1fr);
+        column-gap: var(--page2-gutter);
+        padding-inline: var(--page2-margin);
+        box-sizing: border-box;
+      }
+
+      #page2 .page2-guides {
+        position: absolute;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        min-height: calc(var(--page2-section-count) * 100vh);
+        pointer-events: none;
+      }
+
+      /* Grid overlay above section content (images, canvas, etc.) when toggled on */
+      #page2.page2--grid-lines-visible .page2-guides {
+        z-index: 2;
+      }
+
+      #page2 .page2-col {
+        min-height: 100%;
+        background: transparent;
+        box-shadow: none;
+      }
+
+      #page2 .page2-sections {
+        position: relative;
+        z-index: 1;
+      }
+
+      #page2 .page2-section {
+        height: 100vh;
+        scroll-snap-align: start;
+        scroll-snap-stop: always;
+        cursor: pointer;
+      }
+
+      #page2 #section-home {
+        position: relative;
+        overflow: hidden;
+        background-color: #d9d9d9;
+      }
+
+      #page2 #section-design {
+        overflow: hidden;
+        cursor: default;
+        box-sizing: border-box;
+        height: 100vh;
+        padding-top: calc(4 * var(--page2-space-20));
+      }
+
+      #page2 #section-design > .app-shell {
+        height: 100%;
+        min-height: 0;
+      }
+
+      #page2:not(.page2--design-active) .magnifier-dock {
+        visibility: hidden;
+        pointer-events: none;
+      }
+
+      #page2 #section-home .page2-home-content {
+        position: relative;
+        z-index: 1;
+        display: grid;
+        grid-template-columns: repeat(12, 1fr);
+        column-gap: var(--page2-gutter);
+        box-sizing: border-box;
+        height: 100%;
+        padding-inline: var(--page2-margin);
+        align-items: center;
+        pointer-events: none;
+      }
+
+      #page2 .page2-home-intro {
+        grid-column: 2 / span 2;
+        margin: 0;
+        font-family: "DIN Condensed", sans-serif;
+        font-size: calc((var(--page2-space-20) - 4px) * 1.2);
+        font-weight: 700;
+        line-height: 1.15;
+        color: #fff;
+        text-align: left;
+      }
+
+      #page2 #section-home::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        z-index: 0;
+        background-image: url("website/background%20home.png");
+        background-size: cover;
+        background-position: center center;
+        background-repeat: no-repeat;
+        /* Fade the image edge out — image stays sharp; only opacity tapers at bottom */
+        -webkit-mask-image: linear-gradient(
+          to bottom,
+          #000 0%,
+          #000 58%,
+          rgba(0, 0, 0, 0.92) 68%,
+          rgba(0, 0, 0, 0.72) 76%,
+          rgba(0, 0, 0, 0.45) 84%,
+          rgba(0, 0, 0, 0.18) 92%,
+          transparent 100%
+        );
+        mask-image: linear-gradient(
+          to bottom,
+          #000 0%,
+          #000 58%,
+          rgba(0, 0, 0, 0.92) 68%,
+          rgba(0, 0, 0, 0.72) 76%,
+          rgba(0, 0, 0, 0.45) 84%,
+          rgba(0, 0, 0, 0.18) 92%,
+          transparent 100%
+        );
+      }
+
+      #page2.page2--grid-lines-visible .page2-col {
+        background: rgba(100, 120, 160, 0.07);
+        box-shadow: inset 0 0 0 1px rgba(100, 120, 160, 0.18);
+      }
+
+      #page2 .page2-col:nth-child(even) {
+        background: transparent;
+      }
+
+      #page2.page2--grid-lines-visible .page2-col:nth-child(even) {
+        background: rgba(100, 120, 160, 0.04);
+      }
+
+      #page2 .page2-header {
+        display: grid;
+        column-gap: 0;
+        padding-inline: var(--page2-margin);
+        box-sizing: border-box;
+        position: fixed;
+        top: var(--page2-space-20);
+        right: 0;
+        left: 0;
+        z-index: 3;
+        pointer-events: auto;
+        transition: grid-template-columns 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+      }
+
+      #page2 .page2-header-col:has(.page2-col-title) {
+        cursor: pointer;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        #page2 .page2-header {
+          transition: none;
+        }
+      }
+
+      #page2 .page2-header-col {
+        position: relative;
+        display: grid;
+        grid-template-rows: repeat(3, var(--page2-space-20));
+        align-content: start;
+        pointer-events: auto;
+        cursor: default;
+      }
+
+      #page2 .page2-header-col.is-hovered .page2-header-cell {
+        box-shadow: none;
+      }
+
+      #page2.page2--grid-lines-visible
+        .page2-header-col.is-hovered
+        .page2-header-cell {
+        box-shadow: inset 0 0 0 1px rgba(80, 70, 60, 0.45);
+      }
+
+      #page2 .page2-header-cell {
+        height: var(--page2-space-20);
+        background: transparent;
+        box-shadow: none;
+        transition: background 0.2s ease;
+      }
+
+      #page2.page2--grid-lines-visible
+        .page2-header-col.is-cell-hover-target
+        .page2-header-cell {
+        background: rgba(80, 70, 60, 0.14);
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        #page2 .page2-header-cell {
+          transition: none;
+        }
+      }
+
+      #page2.page2--grid-lines-visible .page2-header-cell {
+        background: rgba(80, 70, 60, 0.08);
+        box-shadow: inset 0 0 0 1px rgba(80, 70, 60, 0.28);
+      }
+
+      /* Left edge column: middle cell only (top/bottom stay default) */
+      #page2 .page2-header-col--left-edge .page2-header-cell:nth-child(2) {
+        background: #000;
+        box-shadow: none;
+      }
+
+      /* Remaining columns keep the original 6-column checkerboard */
+      #page2 .page2-header-col:nth-child(even) .page2-header-cell:nth-child(1),
+      #page2 .page2-header-col:nth-child(even) .page2-header-cell:nth-child(3) {
+        background: #000;
+        box-shadow: none;
+      }
+
+      #page2
+        .page2-header-col:nth-child(odd):not(:first-child)
+        .page2-header-cell:nth-child(2) {
+        background: #000;
+        box-shadow: none;
+      }
+
+      #page2 .page2-header-cell:has(.page2-col-title) {
+        display: flex;
+        align-items: center;
+        box-sizing: border-box;
+        padding: 2px;
+        overflow: hidden;
+      }
+
+      #page2 .page2-col-title {
+        font-family: "DIN Condensed", sans-serif;
+        font-size: calc(var(--page2-space-20) - 4px);
+        font-weight: 700;
+        line-height: 1.05;
+        color: #fff;
+        mix-blend-mode: exclusion;
+        white-space: nowrap;
+        pointer-events: none;
+      }
+
+      /* Home section: invert checkerboard — black cells → white */
+      #page2.page2--header-invert
+        .page2-header-col--left-edge
+        .page2-header-cell:nth-child(2) {
+        background: #fff;
+        box-shadow: none;
+      }
+
+      #page2.page2--header-invert
+        .page2-header-col:nth-child(even)
+        .page2-header-cell:nth-child(1),
+      #page2.page2--header-invert
+        .page2-header-col:nth-child(even)
+        .page2-header-cell:nth-child(3) {
+        background: #fff;
+        box-shadow: none;
+      }
+
+      #page2.page2--header-invert
+        .page2-header-col:nth-child(odd):not(:first-child)
+        .page2-header-cell:nth-child(2) {
+        background: #fff;
+        box-shadow: none;
+      }
+
+      /* Home: photo shows through letterforms; checkerboard cells stay solid white */
+      #page2.page2--header-invert .page2-col-title {
+        background-image: url("website/background%20home.png");
+        background-size: cover;
+        background-position: center center;
+        background-attachment: fixed;
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+        color: transparent;
+        mix-blend-mode: normal;
+      }
+    </style>
+
+    <script id="page-toggle-script">
+      (function () {
+        var gridLinesToggle = document.getElementById("page2-grid-lines-toggle");
+        var page2 = document.getElementById("page2");
+        var gridLinesVisible = false;
+
+        function applyGridLinesView() {
+          page2.classList.toggle("page2--grid-lines-visible", gridLinesVisible);
+          gridLinesToggle.setAttribute(
+            "aria-pressed",
+            gridLinesVisible ? "true" : "false"
+          );
+          gridLinesToggle.textContent = gridLinesVisible
+            ? "Hide grid lines"
+            : "Grid lines";
+        }
+
+        gridLinesToggle.addEventListener("click", function () {
+          gridLinesVisible = !gridLinesVisible;
+          applyGridLinesView();
+        });
+
+        applyGridLinesView();
+      })();
+    </script>
+
+    <script id="page2-scroll-script">
+      (function () {
+        var page2 = document.getElementById("page2");
+        var header = page2 && page2.querySelector(".page2-header");
+        if (!page2 || !header) return;
+
+        var MIN_SPAN = 1;
+        var MAX_SPAN = 6;
+        var HEADER_HOVER_EXPAND_PX = 20;
+        var DEFAULT_OPEN_INDEX = 1; /* home — second column from the left */
+        var columnSpans = [];
+        var headerCols = header.querySelectorAll(".page2-header-col");
+        var sections = page2.querySelectorAll(".page2-section");
+        var scrollActiveIndex = DEFAULT_OPEN_INDEX;
+        var hoveredHeaderColIndex = -1;
+        var lastColIndex = headerCols.length - 1;
+        var sectionObserver = null;
+        var prefersReducedMotion = window.matchMedia(
+          "(prefers-reduced-motion: reduce)"
+        ).matches;
+        var HEADER_TRANSITION_MS = 550;
+        var suppressHeaderRefreshOnce = false;
+        var postHeaderAnimRefreshTimer = null;
+        var headerAnimLockUntil = 0;
+
+        function spansForExpandedColumn(index) {
+          return Array.prototype.map.call(headerCols, function (_, i) {
+            if (isLockedColumn(i)) return edgeSpanForColumn(i);
+            return i === index ? MAX_SPAN : MIN_SPAN;
+          });
+        }
+
+        var HOME_COL_INDEX = DEFAULT_OPEN_INDEX;
+        var DESIGN_COL_INDEX = 2;
+
+        function updateHeaderInvertState() {
+          page2.classList.toggle(
+            "page2--header-invert",
+            scrollActiveIndex === HOME_COL_INDEX
+          );
+        }
+
+        function updateDesignActiveState() {
+          page2.classList.toggle(
+            "page2--design-active",
+            scrollActiveIndex === DESIGN_COL_INDEX
+          );
+          if (postHeaderAnimRefreshTimer) {
+            window.clearTimeout(postHeaderAnimRefreshTimer);
+            postHeaderAnimRefreshTimer = null;
+          }
+          if (scrollActiveIndex === DESIGN_COL_INDEX) {
+            /* Resize is needed for canvas layout, but scheduleRefresh(false)
+               would snap the header grid and cancel the column transition. */
+            suppressHeaderRefreshOnce = true;
+            window.dispatchEvent(new Event("resize"));
+            postHeaderAnimRefreshTimer = window.setTimeout(function () {
+              postHeaderAnimRefreshTimer = null;
+              if (!isPage2Visible()) return;
+              refreshLayout(false);
+            }, prefersReducedMotion ? 0 : HEADER_TRANSITION_MS + 40);
+          }
+        }
+
+        function lockHeaderAnimation() {
+          if (prefersReducedMotion) return;
+          headerAnimLockUntil = Date.now() + HEADER_TRANSITION_MS + 40;
+        }
+
+        function isHeaderAnimationLocked() {
+          return !prefersReducedMotion && Date.now() < headerAnimLockUntil;
+        }
+
+        function applyExpandedColumn(index, animate) {
+          hoveredHeaderColIndex = -1;
+          scrollActiveIndex = index;
+          columnSpans = spansForExpandedColumn(index);
+          if (animate !== false) {
+            lockHeaderAnimation();
+          }
+          applyColumnSpans(columnSpans, animate === false ? false : undefined);
+          headerCols.forEach(function (col, i) {
+            col.classList.toggle("is-hovered", i === index);
+          });
+          updateHeaderHoverClasses();
+          updateHeaderInvertState();
+          updateDesignActiveState();
+        }
+
+        function getHeaderColIndex(colEl) {
+          for (var i = 0; i < headerCols.length; i++) {
+            if (headerCols[i] === colEl) return i;
+          }
+          return -1;
+        }
+
+        function updateHeaderHoverClasses() {
+          headerCols.forEach(function (col, i) {
+            col.classList.toggle("is-cell-hover-target", i === hoveredHeaderColIndex);
+          });
+        }
+
+        function clearHeaderCellHover() {
+          hoveredHeaderColIndex = -1;
+          updateHeaderHoverClasses();
+        }
+
+        function getMinOpenColumnWidthPx() {
+          var metrics = getGridMetrics();
+          if (!metrics) return HEADER_HOVER_EXPAND_PX;
+          return spanToPixels(
+            MIN_SPAN,
+            scrollActiveIndex === lastColIndex,
+            metrics
+          );
+        }
+
+        function getHeaderTrackWidthsPx(spans) {
+          var metrics = getGridMetrics();
+          if (!metrics) return null;
+          return spans.map(function (span, index) {
+            var edgePx = edgeTrackPx(index, metrics);
+            return edgePx !== null
+              ? edgePx
+              : spanToPixels(span, index === spans.length - 1, metrics);
+          });
+        }
+
+        function applyHeaderHoverOffset(widths, hoveredCol, openCol) {
+          if (hoveredCol < 0 || hoveredCol === openCol) return widths;
+          if (isLockedColumn(hoveredCol) || isLockedColumn(openCol)) return widths;
+          if (widths[openCol] - HEADER_HOVER_EXPAND_PX < getMinOpenColumnWidthPx()) {
+            return widths;
+          }
+          var next = widths.slice();
+          next[hoveredCol] += HEADER_HOVER_EXPAND_PX;
+          next[openCol] -= HEADER_HOVER_EXPAND_PX;
+          return next;
+        }
+
+        function isLockedColumn(index) {
+          return index === 0 || index === lastColIndex;
+        }
+
+        function edgeSpanForColumn(index) {
+          return MIN_SPAN;
+        }
+
+        function edgeTrackPx(index, metrics) {
+          if (index === 0) {
+            return spanToPixels(MIN_SPAN, false, metrics);
+          }
+          if (index === lastColIndex) {
+            return spanToPixels(MIN_SPAN, true, metrics);
+          }
+          return null;
+        }
+
+        function isPage2Visible() {
+          return window.getComputedStyle(page2).display !== "none";
+        }
+
+        function getGridMetrics() {
+          var guides = page2.querySelector(".page2-guides");
+          if (!guides) return null;
+          var gridCols = guides.querySelectorAll(".page2-col");
+          if (gridCols.length < 2) return null;
+          var first = gridCols[0].getBoundingClientRect();
+          var second = gridCols[1].getBoundingClientRect();
+          if (first.width <= 0) return null;
+          return {
+            colWidth: first.width,
+            gutter: second.left - first.right,
+          };
+        }
+
+        function spanToPixels(span, isLast, metrics) {
+          var gutterCount = isLast ? span - 1 : span;
+          return span * metrics.colWidth + gutterCount * metrics.gutter;
+        }
+
+        function buildTrackTemplate(spans) {
+          var widths = getHeaderTrackWidthsPx(spans);
+          if (!widths) return "";
+          if (hoveredHeaderColIndex >= 0) {
+            widths = applyHeaderHoverOffset(
+              widths,
+              hoveredHeaderColIndex,
+              scrollActiveIndex
+            );
+          }
+          return widths
+            .map(function (px) {
+              return px + "px";
+            })
+            .join(" ");
+        }
+
+        function applyColumnSpans(spans, animate) {
+          var tracks = buildTrackTemplate(spans);
+          if (!tracks) return;
+          if (animate === false) {
+            header.style.transition = "none";
+          }
+          header.style.gridTemplateColumns = tracks;
+          header.style.width = "";
+          header.style.marginLeft = "";
+          if (animate === false) {
+            void header.offsetWidth;
+            header.style.transition = "";
+          }
+        }
+
+        function refreshLayout(animate) {
+          if (animate === false && isHeaderAnimationLocked()) return;
+          applyColumnSpans(columnSpans, animate);
+        }
+
+        function scheduleRefresh() {
+          requestAnimationFrame(function () {
+            refreshLayout(false);
+            requestAnimationFrame(function () {
+              refreshLayout(false);
+            });
+          });
+          window.setTimeout(function () {
+            refreshLayout(false);
+          }, 60);
+        }
+
+        function ensureLayoutReady() {
+          if (header.style.gridTemplateColumns) return true;
+          refreshLayout(false);
+          return !!header.style.gridTemplateColumns;
+        }
+
+        function sectionForColumn(colIndex) {
+          return page2.querySelector(
+            '.page2-section[data-section-col="' + colIndex + '"]'
+          );
+        }
+
+        function headerColForGridCol(gridColIndex) {
+          if (!columnSpans.length) return null;
+          var track = 0;
+          for (var i = 0; i < columnSpans.length; i++) {
+            var span = columnSpans[i];
+            if (gridColIndex >= track && gridColIndex < track + span) {
+              return i;
+            }
+            track += span;
+          }
+          return null;
+        }
+
+        function gridColIndexAtClientX(clientX) {
+          var gridCols = page2.querySelectorAll(".page2-guides .page2-col");
+          for (var i = 0; i < gridCols.length; i++) {
+            var rect = gridCols[i].getBoundingClientRect();
+            if (clientX >= rect.left && clientX <= rect.right) {
+              return i;
+            }
+          }
+          return -1;
+        }
+
+        function scrollToSection(section) {
+          if (!section) return;
+          section.scrollIntoView({
+            behavior: prefersReducedMotion ? "auto" : "smooth",
+            block: "start",
+          });
+        }
+
+        function initSectionObserver() {
+          if (sectionObserver) {
+            sectionObserver.disconnect();
+            sectionObserver = null;
+          }
+          if (!sections.length || typeof IntersectionObserver === "undefined") {
+            return;
+          }
+          sectionObserver = new IntersectionObserver(
+            function (entries) {
+              if (!isPage2Visible()) return;
+              entries.forEach(function (entry) {
+                if (!entry.isIntersecting || entry.intersectionRatio < 0.5) {
+                  return;
+                }
+                var colIndex = parseInt(
+                  entry.target.getAttribute("data-section-col"),
+                  10
+                );
+                if (isNaN(colIndex) || isLockedColumn(colIndex)) return;
+                if (scrollActiveIndex === colIndex) return;
+                ensureLayoutReady();
+                applyExpandedColumn(colIndex);
+              });
+            },
+            {
+              root: page2,
+              threshold: [0.5],
+            }
+          );
+          sections.forEach(function (section) {
+            sectionObserver.observe(section);
+          });
+        }
+
+        function destroySectionObserver() {
+          if (!sectionObserver) return;
+          sectionObserver.disconnect();
+          sectionObserver = null;
+        }
+
+        headerCols.forEach(function (col, index) {
+          if (isLockedColumn(index)) return;
+          if (!col.querySelector(".page2-col-title")) return;
+          col.addEventListener("click", function () {
+            if (!isPage2Visible()) return;
+            scrollToSection(sectionForColumn(index));
+          });
+        });
+
+        header.querySelectorAll(".page2-header-cell").forEach(function (cell) {
+          cell.addEventListener("mouseenter", function () {
+            if (!isPage2Visible()) return;
+            var col = cell.closest(".page2-header-col");
+            if (!col) return;
+            var index = getHeaderColIndex(col);
+            if (index < 0) return;
+            if (index === scrollActiveIndex || isLockedColumn(index)) return;
+            ensureLayoutReady();
+            hoveredHeaderColIndex = index;
+            updateHeaderHoverClasses();
+            refreshLayout(true);
+          });
+        });
+
+        header.addEventListener("mouseleave", function () {
+          if (hoveredHeaderColIndex < 0) return;
+          clearHeaderCellHover();
+          refreshLayout(true);
+        });
+
+        page2.addEventListener("click", function (event) {
+          if (!isPage2Visible()) return;
+          if (header.contains(event.target)) return;
+          if (event.target.closest("#section-design")) return;
+
+          var gridColIndex = gridColIndexAtClientX(event.clientX);
+          if (gridColIndex < 0) return;
+
+          var headerColIndex = headerColForGridCol(gridColIndex);
+          if (headerColIndex === null || isLockedColumn(headerColIndex)) return;
+
+          scrollToSection(sectionForColumn(headerColIndex));
+        });
+
+        function syncActiveSectionFromScroll() {
+          if (!isPage2Visible()) return;
+          var viewportMid =
+            page2.getBoundingClientRect().top + page2.clientHeight / 2;
+          for (var i = 0; i < sections.length; i++) {
+            var section = sections[i];
+            var rect = section.getBoundingClientRect();
+            if (rect.top <= viewportMid && rect.bottom > viewportMid) {
+              var colIndex = parseInt(
+                section.getAttribute("data-section-col"),
+                10
+              );
+              if (isNaN(colIndex) || isLockedColumn(colIndex)) return;
+              if (scrollActiveIndex !== colIndex) {
+                ensureLayoutReady();
+                applyExpandedColumn(colIndex);
+              }
+              return;
+            }
+          }
+        }
+
+        page2.addEventListener("scroll", syncActiveSectionFromScroll, {
+          passive: true,
+        });
+
+        page2.addEventListener("page2:show", function () {
+          page2.scrollTop = 0;
+          applyExpandedColumn(DEFAULT_OPEN_INDEX, false);
+          initSectionObserver();
+          scheduleRefresh();
+        });
+        page2.addEventListener("page2:hide", function () {
+          destroySectionObserver();
+          clearHeaderCellHover();
+          applyExpandedColumn(DEFAULT_OPEN_INDEX, false);
+        });
+        window.addEventListener("resize", function () {
+          if (suppressHeaderRefreshOnce) {
+            suppressHeaderRefreshOnce = false;
+            return;
+          }
+          scheduleRefresh();
+        });
+
+        applyExpandedColumn(DEFAULT_OPEN_INDEX, false);
+        initSectionObserver();
+        scheduleRefresh();
+      })();
+    </script>
+
     <script defer src="js/constants.js"></script>
     <script defer src="js/embeddedPaletteCsv.js?v=20260608-palette12"></script>
     <script defer src="js/sheetPalettes.js?v=20260608-palette12"></script>
@@ -1048,6 +1941,7 @@
     <script defer src="js/circlesGridGeometry.js"></script>
     <script defer src="js/diamondsGridGeometry.js"></script>
     <script defer src="js/identityControls.js"></script>
+    <script defer src="js/sectionProgression.js"></script>
     <script defer src="js/locationCoordinates.js"></script>
     <script defer src="js/embeddedCombinationsCsv.js"></script>
     <script defer src="js/handkerchiefCombinations.js"></script>

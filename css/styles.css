@@ -91,6 +91,19 @@ body {
   pointer-events: none;
 }
 
+.sidebar__section.is-locked {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.sidebar__section.is-locked::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.65);
+  pointer-events: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .sidebar__section {
     transition: none;

@@ -2,77 +2,125 @@
   "use strict";
 
   /** @type {null | boolean} true = Yes; false = No */
-  var livingInIranChoice = true;
+  var livingInIranChoice = null;
   /** @type {((choice: null | boolean) => void) | null} */
   var onLivingInIranChange = null;
-  /** @type {"smallPart" | "partOfLife" | "mostAll"} */
-  var livingDurationChoice = "partOfLife";
+  /** @type {null | "smallPart" | "partOfLife" | "mostAll"} */
+  var livingDurationChoice = null;
   /** @type {((choice: "smallPart" | "partOfLife" | "mostAll") => void) | null} */
   var onLivingDurationChange = null;
   /** @type {string} */
-  var ageValue =
-    typeof LABEL_BAR_AGE_DEFAULT !== "undefined"
-      ? LABEL_BAR_AGE_DEFAULT
-      : "27";
+  var ageValue = "";
   /** @type {((value: string) => void) | null} */
   var onAgeChange = null;
   /** @type {string} */
-  var fromValue =
-    typeof LABEL_BAR_PROFILE_FROM_DEFAULT !== "undefined"
-      ? LABEL_BAR_PROFILE_FROM_DEFAULT
-      : "TEHERAN";
+  var fromValue = "";
   /** @type {string} */
-  var nowInValue =
-    typeof LABEL_BAR_PROFILE_NOW_IN_DEFAULT !== "undefined"
-      ? LABEL_BAR_PROFILE_NOW_IN_DEFAULT
-      : "MAINZ";
+  var nowInValue = "";
   /** @type {((value: string) => void) | null} */
   var onFromChange = null;
   /** @type {((value: string) => void) | null} */
   var onNowInChange = null;
   /** @type {string} */
-  var leavingYearValue =
-    typeof LABEL_BAR_PROFILE_LEAVING_YEAR_DEFAULT !== "undefined"
-      ? LABEL_BAR_PROFILE_LEAVING_YEAR_DEFAULT
-      : "2021";
+  var leavingYearValue = "";
   /** @type {((value: string) => void) | null} */
   var onLeavingYearChange = null;
   /** @type {string} */
   var nameValue = "";
-  /** @type {"initials" | "anonymous" | "name"} */
-  var nameDisplayMode = "anonymous";
+  /** @type {null | "initials" | "anonymous" | "name"} */
+  var nameDisplayMode = null;
   /** @type {(() => void) | null} */
   var onNameChange = null;
-  /** @type {"inIran" | "whereILive" | "nowhere"} */
-  var homeAtChoice = "inIran";
+  /** @type {null | "inIran" | "whereILive" | "nowhere"} */
+  var homeAtChoice = null;
   /** @type {((choice: "inIran" | "whereILive" | "nowhere") => void) | null} */
   var onHomeAtChange = null;
+  /** @type {(() => void) | null} */
+  var onProgressChange = null;
 
-  /**
-   * @param {object} options
-   * @param {string} options.yesBtnId
-   * @param {string} options.noBtnId
-   * @param {boolean} [options.defaultYes]
-   */
-  function initYesNoToggle(options) {
-    var yesBtn = document.getElementById(options.yesBtnId);
-    var noBtn = document.getElementById(options.noBtnId);
-    if (!yesBtn || !noBtn) return;
+  /** @type {Record<string, boolean>} */
+  var userTouched = {
+    livingInIran: false,
+    livingDuration: false,
+    leavingYear: false,
+    from: false,
+    nowIn: false,
+    name: false,
+    age: false,
+    homeAt: false,
+  };
 
-    function setChoice(isYes) {
-      yesBtn.classList.toggle("is-active", isYes);
-      yesBtn.setAttribute("aria-pressed", String(isYes));
-      noBtn.classList.toggle("is-active", !isYes);
-      noBtn.setAttribute("aria-pressed", String(!isYes));
+  function notifyProgress() {
+    if (onProgressChange) onProgressChange();
+    if (
+      typeof window.SectionProgression !== "undefined" &&
+      window.SectionProgression.notifyProgressChange
+    ) {
+      window.SectionProgression.notifyProgressChange();
     }
+  }
 
-    setChoice(options.defaultYes !== false);
-    yesBtn.addEventListener("click", function () {
-      setChoice(true);
-    });
-    noBtn.addEventListener("click", function () {
-      setChoice(false);
-    });
+  function markTouched(id) {
+    if (userTouched[id]) return;
+    userTouched[id] = true;
+    notifyProgress();
+  }
+
+  function isLivingInIranYes() {
+    return livingInIranChoice === true;
+  }
+
+  function getRequiredRubricks() {
+    var required = [
+      "livingInIran",
+      "from",
+      "nowIn",
+      "name",
+      "age",
+      "homeAt",
+    ];
+    if (isLivingInIranYes()) {
+      required.push("livingDuration", "leavingYear");
+    }
+    return required;
+  }
+
+  function isRubrickComplete(id) {
+    if (!userTouched[id]) return false;
+    switch (id) {
+      case "livingInIran":
+        return livingInIranChoice === true || livingInIranChoice === false;
+      case "livingDuration":
+        if (!isLivingInIranYes()) return true;
+        return (
+          livingDurationChoice === "smallPart" ||
+          livingDurationChoice === "partOfLife" ||
+          livingDurationChoice === "mostAll"
+        );
+      case "leavingYear":
+        if (!isLivingInIranYes()) return true;
+        return leavingYearValue.length === 4;
+      case "from":
+        return String(fromValue || "").trim().length > 0;
+      case "nowIn":
+        return String(nowInValue || "").trim().length > 0;
+      case "homeAt":
+        return (
+          homeAtChoice === "inIran" ||
+          homeAtChoice === "whereILive" ||
+          homeAtChoice === "nowhere"
+        );
+      case "age":
+        return String(ageValue || "").trim().length > 0;
+      case "name":
+        if (nameDisplayMode === "anonymous") return true;
+        if (nameDisplayMode === "initials" || nameDisplayMode === "name") {
+          return String(nameValue || "").trim().length > 0;
+        }
+        return false;
+      default:
+        return false;
+    }
   }
 
   function initLivingInIranToggle() {
@@ -107,11 +155,16 @@
 
     function setChoice(isYes) {
       livingInIranChoice = isYes;
+      markTouched("livingInIran");
       applyUi(livingInIranChoice);
       if (onLivingInIranChange) onLivingInIranChange(livingInIranChoice);
+      notifyProgress();
     }
 
-    applyUi(true);
+    applyUi(null);
+    if (leavingYearField) leavingYearField.setAttribute("hidden", "");
+    if (livingDurationField) livingDurationField.setAttribute("hidden", "");
+
     yesBtn.addEventListener("click", function () {
       setChoice(true);
     });
@@ -130,10 +183,11 @@
         ageInput.value = digitsOnly;
       }
       ageValue = digitsOnly;
+      if (digitsOnly.length > 0) markTouched("age");
       if (onAgeChange) onAgeChange(ageValue);
+      notifyProgress();
     }
 
-    syncAge();
     ageInput.addEventListener("input", syncAge);
   }
 
@@ -147,16 +201,16 @@
         leavingYearInput.value = digitsOnly;
       }
       leavingYearValue = digitsOnly;
+      if (digitsOnly.length === 4) markTouched("leavingYear");
       if (onLeavingYearChange) onLeavingYearChange(leavingYearValue);
+      notifyProgress();
     }
 
-    syncLeavingYear();
     leavingYearInput.addEventListener("input", syncLeavingYear);
   }
 
   /**
    * Profile text fields: English letters and spaces only, always uppercase.
-   * Hebrew and other scripts are stripped as the user types.
    * @param {string} value
    * @returns {string}
    */
@@ -169,9 +223,10 @@
   /**
    * @param {string} inputId
    * @param {(value: string) => void} setValue
+   * @param {string} rubricId
    * @param {((value: string) => void) | null} onChange
    */
-  function initProfileTextField(inputId, setValue, onChange) {
+  function initProfileTextField(inputId, setValue, rubricId, onChange) {
     var input = document.getElementById(inputId);
     if (!input) return;
 
@@ -181,10 +236,11 @@
         input.value = normalized;
       }
       setValue(normalized);
+      if (normalized.length > 0) markTouched(rubricId);
       if (onChange) onChange(normalized);
+      notifyProgress();
     }
 
-    sync();
     input.addEventListener("input", sync);
   }
 
@@ -210,6 +266,7 @@
 
   /** Text shown on the label bar between leaving year and women icon. */
   function getNameLabelText() {
+    if (nameDisplayMode === null) return "";
     if (nameDisplayMode === "anonymous") return "ANONYMOUS";
     if (nameDisplayMode === "initials") return formatNameInitials(nameValue);
     return String(nameValue || "").trim();
@@ -221,6 +278,7 @@
       function (value) {
         nameValue = value;
       },
+      "name",
       function () {
         if (onNameChange) onNameChange();
       }
@@ -245,10 +303,16 @@
     function setMode(mode) {
       nameDisplayMode = mode;
       applyUi(nameDisplayMode);
+      if (mode === "anonymous") {
+        markTouched("name");
+      } else if (String(nameValue || "").trim().length > 0) {
+        markTouched("name");
+      }
       if (onNameChange) onNameChange();
+      notifyProgress();
     }
 
-    applyUi(nameDisplayMode);
+    applyUi(null);
     anonymousBtn.addEventListener("click", function () {
       setMode("anonymous");
     });
@@ -266,6 +330,7 @@
       function (value) {
         fromValue = value;
       },
+      "from",
       function (value) {
         if (onFromChange) onFromChange(value);
       }
@@ -275,6 +340,7 @@
       function (value) {
         nowInValue = value;
       },
+      "nowIn",
       function (value) {
         if (onNowInChange) onNowInChange(value);
       }
@@ -298,11 +364,13 @@
 
     function setChoice(choice) {
       livingDurationChoice = choice;
+      markTouched("livingDuration");
       applyUi(livingDurationChoice);
       if (onLivingDurationChange) onLivingDurationChange(livingDurationChoice);
+      notifyProgress();
     }
 
-    applyUi(livingDurationChoice);
+    applyUi(null);
 
     for (var j = 0; j < buttons.length; j++) {
       (function (btn) {
@@ -337,11 +405,13 @@
 
     function setChoice(choice) {
       homeAtChoice = choice;
+      markTouched("homeAt");
       applyUi(homeAtChoice);
       if (onHomeAtChange) onHomeAtChange(homeAtChoice);
+      notifyProgress();
     }
 
-    applyUi(homeAtChoice);
+    applyUi(null);
 
     for (var j = 0; j < buttons.length; j++) {
       (function (btn) {
@@ -433,6 +503,7 @@
         String(row.livingInIran).toLowerCase() === "yes" ||
         String(row.livingInIran) === "true";
       livingInIranChoice = isYes;
+      userTouched.livingInIran = true;
       syncLivingInIranUiOnly(isYes);
       if (!silent && onLivingInIranChange) onLivingInIranChange(livingInIranChoice);
     }
@@ -443,6 +514,7 @@
       row.livingDuration === "mostAll"
     ) {
       livingDurationChoice = row.livingDuration;
+      userTouched.livingDuration = true;
       syncLivingDurationUiOnly(livingDurationChoice);
       if (!silent && onLivingDurationChange) {
         onLivingDurationChange(livingDurationChoice);
@@ -451,6 +523,7 @@
 
     if (row.leavingYear !== undefined) {
       leavingYearValue = String(row.leavingYear).replace(/\D/g, "").slice(0, 4);
+      if (leavingYearValue.length === 4) userTouched.leavingYear = true;
       var leavingYearInput = document.getElementById("identity-leaving-year-input");
       if (leavingYearInput) leavingYearInput.value = leavingYearValue;
       if (!silent && onLeavingYearChange) onLeavingYearChange(leavingYearValue);
@@ -458,6 +531,7 @@
 
     if (row.from !== undefined) {
       fromValue = normalizeProfileEnglishText(row.from);
+      if (fromValue.length > 0) userTouched.from = true;
       var fromInput = document.getElementById("identity-from-input");
       if (fromInput) fromInput.value = fromValue;
       if (!silent && onFromChange) onFromChange(fromValue);
@@ -465,6 +539,7 @@
 
     if (row.nowIn !== undefined) {
       nowInValue = normalizeProfileEnglishText(row.nowIn);
+      if (nowInValue.length > 0) userTouched.nowIn = true;
       var nowInInput = document.getElementById("identity-now-in-input");
       if (nowInInput) nowInInput.value = nowInValue;
       if (!silent && onNowInChange) onNowInChange(nowInValue);
@@ -482,11 +557,13 @@
       row.nameDisplayMode === "name"
     ) {
       nameDisplayMode = row.nameDisplayMode;
+      userTouched.name = true;
       syncNameDisplayModeUiOnly(nameDisplayMode);
     }
 
     if (row.age !== undefined) {
       ageValue = String(row.age).replace(/\D/g, "").slice(0, 2);
+      if (ageValue.length > 0) userTouched.age = true;
       var ageInput = document.getElementById("identity-age-input");
       if (ageInput) ageInput.value = ageValue;
       if (!silent && onAgeChange) onAgeChange(ageValue);
@@ -503,12 +580,14 @@
         homeAtValue === "nowhere"
       ) {
         homeAtChoice = homeAtValue;
+        userTouched.homeAt = true;
         syncHomeAtUiOnly(homeAtChoice);
         if (!silent && onHomeAtChange) onHomeAtChange(homeAtChoice);
       }
     }
 
     if (!silent && onNameChange) onNameChange();
+    if (!silent) notifyProgress();
   }
 
   function init() {
@@ -531,7 +610,7 @@
     setOnLivingInIranChange: function (fn) {
       onLivingInIranChange = fn;
     },
-    /** @returns {"smallPart" | "partOfLife" | "mostAll"} */
+    /** @returns {null | "smallPart" | "partOfLife" | "mostAll"} */
     getLivingDuration: function () {
       return livingDurationChoice;
     },
@@ -575,17 +654,34 @@
     getNameLabelText: function () {
       return getNameLabelText();
     },
+    /** @returns {null | "initials" | "anonymous" | "name"} */
+    getNameDisplayMode: function () {
+      return nameDisplayMode;
+    },
     /** @param {() => void} fn */
     setOnNameChange: function (fn) {
       onNameChange = fn;
     },
-    /** @returns {"inIran" | "whereILive" | "nowhere"} */
+    /** @returns {null | "inIran" | "whereILive" | "nowhere"} */
     getHomeAt: function () {
       return homeAtChoice;
     },
     /** @param {(choice: "inIran" | "whereILive" | "nowhere") => void} fn */
     setOnHomeAtChange: function (fn) {
       onHomeAtChange = fn;
+    },
+    /** @param {string} id */
+    isRubrickTouched: function (id) {
+      return !!userTouched[id];
+    },
+    /** @param {string} id */
+    isRubrickComplete: function (id) {
+      return isRubrickComplete(id);
+    },
+    getRequiredRubricks: getRequiredRubricks,
+    /** @param {() => void} fn */
+    onProgressChange: function (fn) {
+      onProgressChange = fn;
     },
     /**
      * @param {Record<string, string>} row

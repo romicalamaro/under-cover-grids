@@ -1546,26 +1546,35 @@
     }
   }
 
+  function isGridTypeChosenForProgression() {
+    return (
+      typeof window.SectionProgression === "undefined" ||
+      !window.SectionProgression.isGridTypeChosen ||
+      window.SectionProgression.isGridTypeChosen()
+    );
+  }
+
   function syncGridTypeButtons() {
     var octBtn = document.getElementById("grid-choose-octagon-btn");
     var starBtn = document.getElementById("grid-choose-star-btn");
     var circlesBtn = document.getElementById("grid-choose-circles-btn");
     var diamondsBtn = document.getElementById("grid-choose-diamonds-btn");
+    var chosen = isGridTypeChosenForProgression();
     if (octBtn) {
-      octBtn.classList.toggle("is-active", isOctagonGrid());
-      octBtn.setAttribute("aria-pressed", String(isOctagonGrid()));
+      octBtn.classList.toggle("is-active", chosen && isOctagonGrid());
+      octBtn.setAttribute("aria-pressed", String(chosen && isOctagonGrid()));
     }
     if (starBtn) {
-      starBtn.classList.toggle("is-active", isStarGrid());
-      starBtn.setAttribute("aria-pressed", String(isStarGrid()));
+      starBtn.classList.toggle("is-active", chosen && isStarGrid());
+      starBtn.setAttribute("aria-pressed", String(chosen && isStarGrid()));
     }
     if (circlesBtn) {
-      circlesBtn.classList.toggle("is-active", isCirclesGrid());
-      circlesBtn.setAttribute("aria-pressed", String(isCirclesGrid()));
+      circlesBtn.classList.toggle("is-active", chosen && isCirclesGrid());
+      circlesBtn.setAttribute("aria-pressed", String(chosen && isCirclesGrid()));
     }
     if (diamondsBtn) {
-      diamondsBtn.classList.toggle("is-active", isDiamondsGrid());
-      diamondsBtn.setAttribute("aria-pressed", String(isDiamondsGrid()));
+      diamondsBtn.classList.toggle("is-active", chosen && isDiamondsGrid());
+      diamondsBtn.setAttribute("aria-pressed", String(chosen && isDiamondsGrid()));
     }
   }
 
@@ -1593,7 +1602,7 @@
     for (i = 0; i < STAR_GRID_DEFERRED_LAYER_SELECTORS.length; i++) {
       setSvgSubtreeVisible(STAR_GRID_DEFERRED_LAYER_SELECTORS[i], false);
     }
-    setSvgSubtreeVisible("#layer-border-divisions", true);
+    setSvgSubtreeVisible("#layer-border-divisions", isFrameContentUnlocked());
     setSvgSubtreeVisible("#grid-boundary", true);
     setSvgSubtreeVisible("#layer-edge-brown-bars", true);
     setSvgSubtreeVisible("#edge-brown-bar-label-content", true);
@@ -1610,7 +1619,7 @@
     for (i = 0; i < STAR_GRID_DEFERRED_LAYER_SELECTORS.length; i++) {
       setSvgSubtreeVisible(STAR_GRID_DEFERRED_LAYER_SELECTORS[i], true);
     }
-    setSvgSubtreeVisible("#layer-border-divisions", true);
+    setSvgSubtreeVisible("#layer-border-divisions", isFrameContentUnlocked());
     setSvgSubtreeVisible("#grid-boundary", true);
     setSvgSubtreeVisible("#layer-edge-brown-bars", true);
     setSvgSubtreeVisible("#edge-brown-bar-label-content", true);
@@ -1666,8 +1675,16 @@
     ) {
       return;
     }
-    if (gridType === nextType) return;
+    var gridAlreadyChosen = isGridTypeChosenForProgression();
+    if (gridType === nextType && gridAlreadyChosen) return;
     gridType = nextType;
+    if (
+      !gridAlreadyChosen &&
+      window.SectionProgression &&
+      window.SectionProgression.markGridTypeChosen
+    ) {
+      window.SectionProgression.markGridTypeChosen();
+    }
     clearMergeState();
     clearAutoMergeState();
     if (isStarGrid()) {
@@ -12100,17 +12117,13 @@
   function loadLabelBarEndCapSvgFile() {
     var pool = getLabelBarTagSvgPool();
     var index = 0;
-    var raw;
     if (!pool.length) return null;
-    try {
-      raw = localStorage.getItem(getLabelBarTagStorageKey());
-      if (raw === null) {
-        index = 0;
-      } else {
-        index = ((parseInt(raw, 10) || 0) + 1) % pool.length;
-      }
-    } catch (e) {
-      index = 0;
+    if (
+      typeof window.SectionProgression !== "undefined" &&
+      window.SectionProgression.isProfileRubrickComplete &&
+      window.SectionProgression.isProfileRubrickComplete("labelBarTag")
+    ) {
+      index = getSavedLabelBarTagIndex();
     }
     saveLabelBarTagIndex(index);
     return pool[index];
@@ -12144,6 +12157,22 @@
     var btn = document.getElementById("label-bar-tag-toggle-btn");
     if (btn) {
       btn.addEventListener("click", function () {
+        var tagComplete =
+          typeof window.SectionProgression !== "undefined" &&
+          window.SectionProgression.isProfileRubrickComplete &&
+          window.SectionProgression.isProfileRubrickComplete("labelBarTag");
+        if (!tagComplete) {
+          labelBarEndCapSvgFile = loadLabelBarEndCapSvgFile();
+          if (
+            window.SectionProgression &&
+            window.SectionProgression.markLabelBarTagTouched
+          ) {
+            window.SectionProgression.markLabelBarTagTouched();
+          }
+          updateLabelBarTagControlLabel();
+          refreshLabelBarContent();
+          return;
+        }
         toggleLabelBarEndCapTag();
       });
     }
@@ -12208,7 +12237,15 @@
     ) {
       return null;
     }
+    if (
+      typeof window.SectionProgression !== "undefined" &&
+      window.SectionProgression.shouldShowProfileLabelPart &&
+      !window.SectionProgression.shouldShowProfileLabelPart("homeAt")
+    ) {
+      return null;
+    }
     choice = window.IdentityControls.getHomeAt();
+    if (choice === null) return null;
     map =
       typeof LABEL_BAR_HOME_AT_SVGS !== "undefined"
         ? LABEL_BAR_HOME_AT_SVGS
@@ -12220,7 +12257,7 @@
     if (choice === "inIran") return map.inIran;
     if (choice === "whereILive") return map.whereILive;
     if (choice === "nowhere") return map.nowhere;
-    return map.inIran;
+    return null;
   }
 
   function getLabelBarFromSvgFile() {
@@ -12925,8 +12962,23 @@
       return getLabelBarLivingNeverInIranSvgFile();
     }
     choice = window.IdentityControls.getLivingInIran();
+    if (choice === null) return null;
+    if (
+      typeof window.SectionProgression !== "undefined" &&
+      window.SectionProgression.shouldShowProfileLabelPart &&
+      !window.SectionProgression.shouldShowProfileLabelPart("livingInIran")
+    ) {
+      return null;
+    }
     if (choice !== true) {
       return getLabelBarLivingNeverInIranSvgFile();
+    }
+    if (
+      typeof window.SectionProgression !== "undefined" &&
+      window.SectionProgression.shouldShowProfileLabelPart &&
+      !window.SectionProgression.shouldShowProfileLabelPart("livingDuration")
+    ) {
+      return null;
     }
     duration =
       window.IdentityControls.getLivingDuration &&
@@ -12941,7 +12993,8 @@
           };
     if (duration === "smallPart") return map.smallPart;
     if (duration === "mostAll") return map.mostAll;
-    return map.partOfLife;
+    if (duration === "partOfLife") return map.partOfLife;
+    return null;
   }
 
   function filterLabelBarCenterItems(items) {
@@ -13179,6 +13232,16 @@
     };
   }
 
+  function shouldShowProfileLabelPart(partId) {
+    if (
+      typeof window.SectionProgression !== "undefined" &&
+      window.SectionProgression.shouldShowProfileLabelPart
+    ) {
+      return window.SectionProgression.shouldShowProfileLabelPart(partId);
+    }
+    return true;
+  }
+
   /**
    * @param {ReturnType<typeof getLabelBarContentArea>} area
    * @param {ReturnType<typeof getLabelBarContentArea>} endCapArea
@@ -13312,8 +13375,29 @@
     var showLeavingYear =
       typeof window.IdentityControls !== "undefined" &&
       window.IdentityControls.getLivingInIran &&
-      window.IdentityControls.getLivingInIran() === true;
+      window.IdentityControls.getLivingInIran() === true &&
+      shouldShowProfileLabelPart("leavingYear");
 
+    if (!shouldShowProfileLabelPart("age")) {
+      ageLabelSpec = null;
+      ageSpec = null;
+    }
+    if (!shouldShowProfileLabelPart("from")) {
+      fromTextSpec = null;
+      fromSpec = null;
+    }
+    if (!shouldShowProfileLabelPart("nowIn")) {
+      nowInTextSpec = null;
+    }
+    if (!shouldShowProfileLabelPart("coordinates")) {
+      unionCoordinatesSpec = null;
+    }
+    if (
+      !shouldShowProfileLabelPart("livingInIran") &&
+      !shouldShowProfileLabelPart("livingDuration")
+    ) {
+      livingDurationSpec = null;
+    }
     row1Clusters = [];
     pushRowCluster(
       row1Clusters,
@@ -13375,7 +13459,9 @@
     row2Clusters = [];
     pushRowCluster(
       row2Clusters,
-      buildLabelBarCluster([circleSpec ? { spec: circleSpec, svgArea: livingRowArea } : null])
+      buildLabelBarCluster([
+        circleSpec ? { spec: circleSpec, svgArea: livingRowArea } : null,
+      ])
     );
     pushRowCluster(
       row2Clusters,
@@ -13388,7 +13474,7 @@
         nowInTextSpec ? { spec: nowInTextSpec, svgArea: livingRowArea } : null,
       ])
     );
-    var nameText = getProfileNameText();
+    var nameText = shouldShowProfileLabelPart("name") ? getProfileNameText() : "";
     var nameTextSpec = nameText
       ? buildLabelBarProfileFieldTextSpec(nameText, livingRowArea)
       : null;
@@ -13398,7 +13484,7 @@
         womenSpec ? { spec: womenSpec, svgArea: livingRowArea } : null,
       ])
     );
-    if (nameTextSpec) {
+    if (nameTextSpec && shouldShowProfileLabelPart("name")) {
       pushRowCluster(
         row2Clusters,
         buildLabelBarCluster([{ spec: nameTextSpec, svgArea: livingRowArea }])
@@ -15430,6 +15516,7 @@
       snapFanPercentSlider(slider, options.min, options.max);
     }
     slider.addEventListener("input", function () {
+      if (snap === "leaves") markFanSectionEngaged();
       if (snap === "leaves") snapFanLeavesSlider(slider);
       else if (snap === "percent" && options.min != null && options.max != null) {
         snapFanPercentSlider(slider, options.min, options.max);
@@ -15437,6 +15524,7 @@
       renderHalfCircleLayer();
     });
     slider.addEventListener("change", function () {
+      if (snap === "leaves") markFanSectionEngaged();
       if (snap === "leaves") snapFanLeavesSlider(slider);
       else if (snap === "percent" && options.min != null && options.max != null) {
         snapFanPercentSlider(slider, options.min, options.max);
@@ -19893,6 +19981,7 @@
     if (getAutoMergeIntensity() > 0 && !hasActivePrideAutoMergeRegions()) {
       runAutoMerge();
     }
+    applyGridContentVisibility();
   }
 
   function renderCirclesGrid() {
@@ -19989,6 +20078,7 @@
     if (getAutoMergeIntensity() > 0 && !hasActivePrideAutoMergeRegions()) {
       scheduleDeferredAutoMerge();
     }
+    applyGridContentVisibility();
   }
 
   function applySheetPaletteToDom() {
@@ -20000,6 +20090,91 @@
     refreshHopeColoredExportDataUri();
     renderHopeMergeFillLayer();
     syncMagnifierBorderColor();
+  }
+
+  function isGridContentUnlocked() {
+    return (
+      typeof window.SectionProgression === "undefined" ||
+      !window.SectionProgression.isGridContentUnlocked ||
+      window.SectionProgression.isGridContentUnlocked()
+    );
+  }
+
+  function isFrameContentUnlocked() {
+    return (
+      typeof window.SectionProgression === "undefined" ||
+      !window.SectionProgression.isFrameContentUnlocked ||
+      window.SectionProgression.isFrameContentUnlocked()
+    );
+  }
+
+  function isFanContentUnlocked() {
+    return (
+      typeof window.SectionProgression === "undefined" ||
+      !window.SectionProgression.isFanContentUnlocked ||
+      window.SectionProgression.isFanContentUnlocked()
+    );
+  }
+
+  function setCanvasLayerDisplay(id, visible) {
+    if (!designSvg) return;
+    var node = designSvg.querySelector("#" + id);
+    if (node) node.style.display = visible ? "" : "none";
+  }
+
+  function applyGridContentVisibility() {
+    if (!designSvg) return;
+    var gridOn = isGridContentUnlocked();
+    var frameOn = isFrameContentUnlocked();
+    var fanOn = isFanContentUnlocked();
+
+    setCanvasLayerDisplay("color-divisions-blend-root", gridOn);
+    setCanvasLayerDisplay("layer-handkerchief-outer-frame", frameOn);
+    setCanvasLayerDisplay("layer-border-divisions", frameOn);
+    setCanvasLayerDisplay("layer-border-divisions-overlay", frameOn);
+    setCanvasLayerDisplay("grid-frame-chrome-root", frameOn);
+    setCanvasLayerDisplay("fan-half-circle-root", fanOn);
+
+    setCanvasLayerDisplay("emotion-markers-root", false);
+    setCanvasLayerDisplay("fear-vertical-grid-root", false);
+    setCanvasLayerDisplay("pride-auto-merge-root", false);
+  }
+
+  function markFrameSectionEngaged() {
+    if (
+      window.SectionProgression &&
+      window.SectionProgression.markFrameSectionEngaged
+    ) {
+      window.SectionProgression.markFrameSectionEngaged();
+    }
+  }
+
+  function markFanSectionEngaged() {
+    if (
+      window.SectionProgression &&
+      window.SectionProgression.markFanSectionEngaged
+    ) {
+      window.SectionProgression.markFanSectionEngaged();
+    }
+  }
+
+  function renderMinimalCanvas() {
+    if (window.SheetPalettes) window.SheetPalettes.syncBorderGlobals();
+    updateLayoutState();
+
+    if (!designSvg) {
+      designSvg = createDesignSvg();
+      var wrap = document.getElementById("stage-wrap");
+      if (wrap) wrap.appendChild(designSvg);
+      refreshBrownBarBannerAfterMount();
+    }
+
+    var fill = designSvg.querySelector("#canvas-background-fill");
+    if (fill) fill.setAttribute("fill", getCanvasBackgroundColor());
+
+    applyGridContentVisibility();
+    updateCanvasEdgeBrownBars();
+    layoutStage();
   }
 
   function render() {
@@ -20015,6 +20190,13 @@
       if (wrap) wrap.appendChild(designSvg);
       refreshBrownBarBannerAfterMount();
     }
+
+    if (!isGridContentUnlocked()) {
+      renderMinimalCanvas();
+      return;
+    }
+
+    applyGridContentVisibility();
 
     cachedAllSegments = buildAllSegments();
 
@@ -20118,6 +20300,7 @@
         runAutoMerge();
       }
     }
+    applyGridContentVisibility();
   }
 
   function commitSliderRelease(hadPreview, previewWasInFlight) {
@@ -21525,6 +21708,7 @@
       borderSideSegmentsSlider.max = "3";
       borderSideSegmentsSlider.value = "1";
       borderSideSegmentsSlider.addEventListener("input", function () {
+        markFrameSectionEngaged();
         var borderSideOut = document.getElementById("border-side-segments-out");
         if (borderSideOut) {
           borderSideOut.textContent = borderSideThicknessLabel(
@@ -21545,6 +21729,7 @@
       borderFrameDivisionsSlider.max = "3";
       borderFrameDivisionsSlider.value = "2";
       borderFrameDivisionsSlider.addEventListener("input", function () {
+        markFrameSectionEngaged();
         var frameDivisionsOut = document.getElementById(
           "border-frame-divisions-out"
         );
@@ -21623,6 +21808,7 @@
       );
       syncBorderSideWhiteFillOutput();
       borderSideWhiteFillSlider.addEventListener("input", function () {
+        markFrameSectionEngaged();
         var snapped = snapBorderSideWhiteFillSliderValue(
           Number(borderSideWhiteFillSlider.value)
         );
@@ -22113,7 +22299,28 @@
       window.IdentityControls.setOnNameChange(refreshLabelBarContent);
     }
 
+    if (window.IdentityControls && window.IdentityControls.onProgressChange) {
+      window.IdentityControls.onProgressChange(function () {
+        refreshLabelBarContent();
+      });
+    }
+
+    if (
+      window.SectionProgression &&
+      window.SectionProgression.onProfileProgressChange
+    ) {
+      window.SectionProgression.onProfileProgressChange(function () {
+        refreshLabelBarContent();
+      });
+    }
+
     initLabelBarTagControls();
+
+    if (window.SectionProgression && window.SectionProgression.applySidebarLocks) {
+      window.SectionProgression.applySidebarLocks();
+    }
+
+    window.render = render;
 
     window.addEventListener("resize", layoutStage);
     lastCircleLayoutSignature = "";
