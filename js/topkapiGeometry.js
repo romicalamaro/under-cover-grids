@@ -247,6 +247,18 @@
   }
 
   /**
+   * @param {number} T tile size
+   * @param {number} [innerScale] 0.3–1.0
+   * @returns {{x1:number,y1:number,x2:number,y2:number}[]}
+   */
+  function buildUnitCellSegments(T, innerScale) {
+    var out = [];
+    var seen = new Set();
+    addUnitCellSegments(T, innerScale, out, seen);
+    return out;
+  }
+
+  /**
    * Octagon perimeter only (no inner diamond / connectors) for one unit cell.
    * @param {number} T tile size
    * @param {{x1:number,y1:number,x2:number,y2:number}[]} out
@@ -1844,6 +1856,7 @@
   }
 
   global.TopkapiGeometry = {
+    buildUnitCellSegments: buildUnitCellSegments,
     buildPatternSegments: buildPatternSegments,
     buildCoarseCellBoundarySegments: buildCoarseCellBoundarySegments,
     computeLayout: computeLayout,

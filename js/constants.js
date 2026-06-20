@@ -68,7 +68,11 @@ var CANVAS_EDGE_BROWN_BAR_HEIGHT_PX = 100;
 /** Length toward canvas top/bottom past division line (inner edge stays on divY) */
 var CANVAS_EDGE_BROWN_BAR_OUTWARD_EXTEND_PX = 20;
 /** Extra canvas area above bottom label bar included in profile questionnaire zoom */
-var PROFILE_LABEL_FOCUS_PAD_ABOVE_PX = 100;
+var PROFILE_LABEL_FOCUS_PAD_ABOVE_PX = 280;
+/** Gap between handkerchief bottom and viewport bottom in large mode (CSS px) */
+var PROFILE_LABEL_FOCUS_BOTTOM_SCREEN_GAP_PX = 100;
+/** Additional upward clip extension beyond header alignment (CSS px) */
+var PROFILE_LABEL_FOCUS_EXTRA_EXTEND_UP_PX = 100;
 /** Profile zoom target: grid columns (1-based) — focus rect fills this span on the right */
 var PROFILE_LABEL_FOCUS_GRID_COL_START = 8;
 var PROFILE_LABEL_FOCUS_GRID_COL_SPAN = 5;
@@ -485,7 +489,7 @@ var AUTO_MERGE_SHADOW_OPACITY = 0.9;
 var AUTO_MERGE_SHADOW_FILTER_ID = "auto-merge-region-shadow";
 
 /** Feelings sidebar sliders: discrete positions between each control's min and max */
-var FEELINGS_SLIDER_STEPS = 5;
+var FEELINGS_SLIDER_STEPS = 10;
 
 /**
  * @param {number} stepNumber 1 = min (0 marks), FEELINGS_SLIDER_STEPS = max marks
@@ -495,11 +499,11 @@ var FEELINGS_SLIDER_STEPS = 5;
  */
 function feelingsValueFromStep(stepNumber, min, max) {
   var steps =
-    typeof FEELINGS_SLIDER_STEPS !== "undefined" ? FEELINGS_SLIDER_STEPS : 5;
+    typeof FEELINGS_SLIDER_STEPS !== "undefined" ? FEELINGS_SLIDER_STEPS : 10;
   var idx = Math.round(Number(stepNumber)) - 1;
   if (!isFinite(idx)) idx = 0;
   if (idx < 0) idx = 0;
-  if (idx > steps - 1) idx = steps - 1;
+  if (idx >= steps - 1) return max;
   if (steps < 2) return min;
   var stepSize = (max - min) / (steps - 1);
   return min + idx * stepSize;
@@ -513,13 +517,40 @@ function feelingsValueFromStep(stepNumber, min, max) {
  */
 function feelingsStepFromValue(value, min, max) {
   var steps =
-    typeof FEELINGS_SLIDER_STEPS !== "undefined" ? FEELINGS_SLIDER_STEPS : 5;
+    typeof FEELINGS_SLIDER_STEPS !== "undefined" ? FEELINGS_SLIDER_STEPS : 10;
   if (steps < 2) return 1;
+  var num = Number(value);
+  if (num <= min) return 1;
+  if (num >= max) return steps;
   var stepSize = (max - min) / (steps - 1);
-  var idx = Math.round((Number(value) - min) / stepSize);
+  var idx = Math.round((num - min) / stepSize);
   if (idx < 0) idx = 0;
   if (idx > steps - 1) idx = steps - 1;
   return idx + 1;
+}
+
+/**
+ * @param {number} step
+ * @returns {number}
+ */
+function clampFeelingsStepNumber(step) {
+  var steps =
+    typeof FEELINGS_SLIDER_STEPS !== "undefined" ? FEELINGS_SLIDER_STEPS : 10;
+  var n = Math.round(Number(step));
+  if (!isFinite(n)) return 1;
+  if (n < 1) return 1;
+  if (n > steps) return steps;
+  return n;
+}
+
+/**
+ * @param {number} raw
+ * @param {number} min
+ * @param {number} max
+ * @returns {number}
+ */
+function snapFeelingsSliderValue(raw, min, max) {
+  return feelingsValueFromStep(feelingsStepFromValue(raw, min, max), min, max);
 }
 
 /** Random circles in upright squares (% of all upright squares on canvas) */
@@ -564,7 +595,7 @@ var BORDER_SIDE_SEGMENT_HEIGHT_MAX_RATIO = 1.4;
 /** >1 skews weights toward extremes (thinner + taller rows) */
 var BORDER_SIDE_SEGMENT_HEIGHT_RANDOM_POWER = 2.2;
 
-/** Family and friends in Iran: white-out slider (0 = all color, 100 = cap % white) */
+/** Border margin white-out (0 = all color, 100 = cap % white) */
 var BORDER_SIDE_WHITE_FILL_MIN = 0;
 var BORDER_SIDE_WHITE_FILL_MAX = 100;
 var BORDER_SIDE_WHITE_FILL_DEFAULT = 0;

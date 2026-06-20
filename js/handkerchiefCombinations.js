@@ -13,7 +13,6 @@
   var SLIDER_KEYS = [
     "octagonsN",
     "innerScale",
-    "borderSideSegments",
     "borderFrameDivisions",
     "borderSideWhiteFill",
     "fanLeaves",
@@ -33,7 +32,6 @@
   var SLIDER_DOM = {
     octagonsN: "octagons-n",
     innerScale: "inner-scale",
-    borderSideSegments: "border-side-segments",
     borderFrameDivisions: "border-frame-divisions",
     borderSideWhiteFill: "border-side-white-fill",
     fanLeaves: "fan-leaves",
@@ -143,8 +141,8 @@
     "helplessnessPercent",
   ];
 
-  /** @param {string} key @param {string|number} rawValue @returns {number|string} */
-  function resolveFeelingsComboSliderValue(key, rawValue) {
+  /** @param {string} key @returns {{ min: number, max: number }|null} */
+  function getFeelingsComboSliderBounds(key) {
     var bounds = {
       angerVerticalLength: {
         min:
@@ -240,7 +238,7 @@
       },
     };
     var b = bounds[key];
-    if (!b) return rawValue;
+    if (!b) return null;
     var min = b.min;
     var max = b.max;
     if (
@@ -253,8 +251,17 @@
         max = gridBounds.max;
       }
     }
+    return { min: min, max: max };
+  }
+
+  /** @param {string} key @param {string|number} rawValue @returns {number|string} */
+  function resolveFeelingsComboSliderValue(key, rawValue) {
+    var b = getFeelingsComboSliderBounds(key);
+    if (!b) return rawValue;
+    var min = b.min;
+    var max = b.max;
     var steps =
-      typeof FEELINGS_SLIDER_STEPS !== "undefined" ? FEELINGS_SLIDER_STEPS : 5;
+      typeof FEELINGS_SLIDER_STEPS !== "undefined" ? FEELINGS_SLIDER_STEPS : 10;
     var num = Number(String(rawValue).trim());
     if (!isFinite(num)) return rawValue;
     if (Number.isInteger(num) && num >= 1 && num <= steps) {
@@ -266,6 +273,14 @@
     if (idx < 0) idx = 0;
     if (idx > steps - 1) idx = steps - 1;
     return min + idx * stepSize;
+  }
+
+  /** @param {string} key @param {string|number} rawValue @returns {number} */
+  function resolveFeelingsComboSliderDomStep(key, rawValue) {
+    var internal = resolveFeelingsComboSliderValue(key, rawValue);
+    var b = getFeelingsComboSliderBounds(key);
+    if (!b) return internal;
+    return feelingsStepFromValue(internal, b.min, b.max);
   }
 
   function setSliderValue(id, value) {
@@ -312,7 +327,7 @@
       }
     }
     if (FEELINGS_STEP_SLIDER_KEYS.indexOf(sliderKey) >= 0) {
-      sliderValue = resolveFeelingsComboSliderValue(sliderKey, sliderValue);
+      sliderValue = resolveFeelingsComboSliderDomStep(sliderKey, sliderValue);
     }
     return sliderValue;
   }
@@ -504,6 +519,7 @@
     loadAndApplyInitialCombo: loadAndApplyInitialCombo,
     loadCombinationsFromCsv: loadCombinationsFromCsv,
     applyComboByIndex: applyComboByIndex,
+    applyCombinationRow: applyCombinationRow,
     parseCombinationsCsv: parseCombinationsCsv,
     getCombinations: function () {
       return combinations.slice();

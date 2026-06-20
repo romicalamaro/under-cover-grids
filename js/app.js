@@ -38,6 +38,15 @@
   var autoMergeFillRegions = null;
   var dragPath = [];
   var isDragging = false;
+  /** Fan open/close drag on canvas (maps to fan-leaves slider). */
+  var FAN_DRAG_PX_PER_STEP = 36;
+  var fanDragActive = false;
+  var fanDragStartStep = 0;
+  var fanDragStartClientY = 0;
+  /** @type {"top" | "bottom" | null} */
+  var fanDragTarget = null;
+  var fanDragWindowMoveHandler = null;
+  var fanDragWindowEndHandler = null;
   /** Hope merge drag: rAF-throttled grid-line preview only (full render on pointer up). */
   var hopeMergeDragRenderScheduled = false;
   var hopeMergeDragHadEdgeChanges = false;
@@ -46,6 +55,11 @@
   var sliderRenderPending = false;
   var sliderRenderGeneration = 0;
   var sliderPreviewRendered = false;
+  /** Canvas bitmap preview of grid geometry while density sliders drag. */
+  var GRID_RASTER_PREVIEW_IMAGE_ID = "grid-raster-preview-image";
+  var gridPreviewCanvas = null;
+  var gridRasterPreviewActive = false;
+  var lastSliderPreviewSignature = "";
   var hopeMergeStateVersion = 0;
   /** @type {{ points: { x: number, y: number }[] }[] | null} */
   var hopeMergeRegionsRenderCache = null;
@@ -129,6 +143,7 @@
   var canvasEdgeSerial = null;
   /** Stable questionnaire canvas clip + bottom anchor (reset on resize). */
   var page2QuestionnaireCanvasLayoutCache = null;
+  var page2ScrollLayoutRaf = 0;
   /** Five random rects tiling the grid frame (normalized 0–1 within layout bounds). */
   var cachedColorDivisionNormalizedRects = null;
   /** Maps area slot (0–3) → index in cachedColorDivisionNormalizedRects (shuffled). */
@@ -1402,14 +1417,11 @@
     var slider = document.getElementById(sliderId);
     if (!slider) return;
     var steps = getFeelingsSliderSteps();
-    var stepSize = steps < 2 ? 1 : (max - min) / (steps - 1);
-    slider.min = String(min);
-    slider.max = String(max);
-    slider.step = String(stepSize);
-    var snapped = snapFeelingsSliderValue(Number(slider.value), min, max);
-    if (Number(slider.value) !== snapped) {
-      slider.value = String(snapped);
-    }
+    var currentStep = clampFeelingsStepNumber(slider.value);
+    slider.min = "1";
+    slider.max = String(steps);
+    slider.step = "1";
+    slider.value = String(currentStep);
   }
 
   function syncAngerPainGuiltSliderRangesForGridType() {
@@ -1663,7 +1675,29 @@
     updateCanvasEdgeBrownBars();
   }
 
-  function setGridType(nextType) {
+  function isQuestionnaireGridPreviewActive() {
+    if (
+      typeof window.Questionnaire === "undefined" ||
+      !window.Questionnaire.getCurrentStepId
+    ) {
+      return false;
+    }
+    if (
+      !window.Questionnaire.isGridStep ||
+      !window.Questionnaire.isGridStep(window.Questionnaire.getCurrentStepId())
+    ) {
+      return false;
+    }
+    return !isGridTypeChosenForProgression();
+  }
+
+  function canRenderGridCanvas() {
+    return isGridContentUnlocked() || isQuestionnaireGridPreviewActive();
+  }
+
+  function setGridType(nextType, opts) {
+    opts = opts || {};
+    var preview = opts.preview === true;
     if (
       nextType !== GRID_TYPE_OCTAGON &&
       nextType !== GRID_TYPE_STAR &&
@@ -1673,10 +1707,11 @@
       return;
     }
     var gridAlreadyChosen = isGridTypeChosenForProgression();
-    if (gridType === nextType && gridAlreadyChosen) return;
+    if (gridType === nextType && gridAlreadyChosen && !preview) return;
     gridType = nextType;
     if (
       !gridAlreadyChosen &&
+      !preview &&
       window.SectionProgression &&
       window.SectionProgression.markGridTypeChosen
     ) {
@@ -1778,11 +1813,41 @@
   }
 
   function getFeelingsSliderSteps() {
-    return typeof FEELINGS_SLIDER_STEPS !== "undefined" ? FEELINGS_SLIDER_STEPS : 5;
+    return typeof FEELINGS_SLIDER_STEPS !== "undefined" ? FEELINGS_SLIDER_STEPS : 10;
   }
 
   function snapFeelingsSliderValue(raw, min, max) {
     return snapSteppedSliderValue(raw, min, max, getFeelingsSliderSteps());
+  }
+
+  function readFeelingsSliderStepFromDom(slider) {
+    return clampFeelingsStepNumber(slider ? Number(slider.value) : 1);
+  }
+
+  function readFeelingsSliderInternalFromDom(slider, min, max, defaultInternal) {
+    var step = slider
+      ? readFeelingsSliderStepFromDom(slider)
+      : feelingsStepFromValue(defaultInternal, min, max);
+    return feelingsValueFromStep(step, min, max);
+  }
+
+  function configureFeelingsSliderDom(slider, internalValue, min, max) {
+    if (!slider) return;
+    var steps = getFeelingsSliderSteps();
+    slider.min = "1";
+    slider.max = String(steps);
+    slider.step = "1";
+    slider.value = String(
+      feelingsStepFromValue(snapFeelingsSliderValue(internalValue, min, max), min, max)
+    );
+  }
+
+  function setFeelingsSliderInternalValue(sliderId, internalValue, min, max) {
+    var slider = document.getElementById(sliderId);
+    if (!slider) return;
+    slider.value = String(
+      feelingsStepFromValue(snapFeelingsSliderValue(internalValue, min, max), min, max)
+    );
   }
 
   function setFeelingsStepOutputById(outputId, internalValue, min, max) {
@@ -1810,21 +1875,12 @@
     var slider = document.getElementById(sliderId);
     if (!slider) return;
 
-    var steps = getFeelingsSliderSteps();
-    var stepSize = steps < 2 ? 1 : (max - min) / (steps - 1);
-    slider.min = String(min);
-    slider.max = String(max);
-    slider.step = String(stepSize);
-    slider.value = String(snapFeelingsSliderValue(defaultValue, min, max));
+    configureFeelingsSliderDom(slider, defaultValue, min, max);
 
     slider.addEventListener("input", function () {
-      var snapped = snapFeelingsSliderValue(
-        Number(slider.value),
-        Number(slider.min),
-        Number(slider.max)
-      );
-      if (Number(slider.value) !== snapped) {
-        slider.value = String(snapped);
+      var step = readFeelingsSliderStepFromDom(slider);
+      if (Number(slider.value) !== step) {
+        slider.value = String(step);
       }
       onInput();
     });
@@ -1840,32 +1896,36 @@
 
   function getCircleDensity() {
     var slider = document.getElementById("circle-density");
-    var v = slider ? Number(slider.value) : CIRCLE_DENSITY_DEFAULT;
     return Math.round(
-      snapFeelingsSliderValue(v, CIRCLE_DENSITY_MIN, CIRCLE_DENSITY_MAX)
+      readFeelingsSliderInternalFromDom(
+        slider,
+        CIRCLE_DENSITY_MIN,
+        CIRCLE_DENSITY_MAX,
+        CIRCLE_DENSITY_DEFAULT
+      )
     );
   }
 
   function getLongingCircleDensity() {
     var slider = document.getElementById("longing-circle-density");
-    var v = slider ? Number(slider.value) : CIRCLE_DENSITY_DEFAULT;
     return Math.round(
-      snapFeelingsSliderValue(
-        v,
+      readFeelingsSliderInternalFromDom(
+        slider,
         CIRCLE_DENSITY_MIN,
-        getJunctionEmotionDensityMaxForActiveGrid()
+        getJunctionEmotionDensityMaxForActiveGrid(),
+        CIRCLE_DENSITY_DEFAULT
       )
     );
   }
 
   function getGriefCircleDensity() {
     var slider = document.getElementById("grief-circle-density");
-    var v = slider ? Number(slider.value) : CIRCLE_DENSITY_DEFAULT;
     return Math.round(
-      snapFeelingsSliderValue(
-        v,
+      readFeelingsSliderInternalFromDom(
+        slider,
         CIRCLE_DENSITY_MIN,
-        getJunctionEmotionDensityMaxForActiveGrid()
+        getJunctionEmotionDensityMaxForActiveGrid(),
+        CIRCLE_DENSITY_DEFAULT
       )
     );
   }
@@ -1880,9 +1940,14 @@
       typeof STRENGTH_DENSITY_MIN !== "undefined"
         ? STRENGTH_DENSITY_MIN
         : CIRCLE_DENSITY_MIN;
-    var max = getJunctionEmotionDensityMaxForActiveGrid();
-    var v = slider ? Number(slider.value) : def;
-    return Math.round(snapFeelingsSliderValue(v, min, max));
+    return Math.round(
+      readFeelingsSliderInternalFromDom(
+        slider,
+        min,
+        getJunctionEmotionDensityMaxForActiveGrid(),
+        def
+      )
+    );
   }
 
   function getHelplessnessPercent() {
@@ -1895,9 +1960,14 @@
       typeof HELPLESSNESS_PERCENT_MIN !== "undefined"
         ? HELPLESSNESS_PERCENT_MIN
         : 0;
-    var max = getHelplessnessPercentMaxForActiveGrid();
-    var v = slider ? Number(slider.value) : def;
-    return Math.round(snapFeelingsSliderValue(v, min, max));
+    return Math.round(
+      readFeelingsSliderInternalFromDom(
+        slider,
+        min,
+        getHelplessnessPercentMaxForActiveGrid(),
+        def
+      )
+    );
   }
 
   function isHelplessnessLayerVisible() {
@@ -1906,12 +1976,12 @@
 
   function getAngerVerticalLengthPercent() {
     var slider = document.getElementById("anger-vertical-length");
-    var v = slider ? Number(slider.value) : ANGER_VERTICAL_LENGTH_DEFAULT;
     return Math.round(
-      snapFeelingsSliderValue(
-        v,
+      readFeelingsSliderInternalFromDom(
+        slider,
         ANGER_VERTICAL_LENGTH_MIN,
-        ANGER_VERTICAL_LENGTH_MAX
+        ANGER_VERTICAL_LENGTH_MAX,
+        ANGER_VERTICAL_LENGTH_DEFAULT
       )
     );
   }
@@ -1930,18 +2000,19 @@
       typeof ANXIETY_VERTICAL_STROKE_MAX !== "undefined"
         ? ANXIETY_VERTICAL_STROKE_MAX
         : 100;
-    var v = slider ? Number(slider.value) : def;
-    return Math.round(snapFeelingsSliderValue(v, min, max));
+    return Math.round(
+      readFeelingsSliderInternalFromDom(slider, min, max, def)
+    );
   }
 
   function getPrideFillPercent() {
     var slider = document.getElementById("pride-fill-percent");
-    var v = slider ? Number(slider.value) : PRIDE_FILL_PERCENT_DEFAULT;
     return Math.round(
-      snapFeelingsSliderValue(
-        v,
+      readFeelingsSliderInternalFromDom(
+        slider,
         PRIDE_FILL_PERCENT_MIN,
-        getPrideFillPercentMaxForActiveGrid()
+        getPrideFillPercentMaxForActiveGrid(),
+        PRIDE_FILL_PERCENT_DEFAULT
       )
     );
   }
@@ -1956,9 +2027,13 @@
       typeof ANGER_TRIANGLE_DENSITY_MIN !== "undefined"
         ? ANGER_TRIANGLE_DENSITY_MIN
         : 0;
-    var v = slider ? Number(slider.value) : def;
     return Math.round(
-      snapFeelingsSliderValue(v, min, getAngerTriangleDensityMaxForActiveGrid())
+      readFeelingsSliderInternalFromDom(
+        slider,
+        min,
+        getAngerTriangleDensityMaxForActiveGrid(),
+        def
+      )
     );
   }
 
@@ -1972,9 +2047,13 @@
       typeof GUILT_SHAME_FILL_PERCENT_MIN !== "undefined"
         ? GUILT_SHAME_FILL_PERCENT_MIN
         : 0;
-    var v = slider ? Number(slider.value) : def;
     return Math.round(
-      snapFeelingsSliderValue(v, min, getGuiltShameFillPercentMaxForActiveGrid())
+      readFeelingsSliderInternalFromDom(
+        slider,
+        min,
+        getGuiltShameFillPercentMaxForActiveGrid(),
+        def
+      )
     );
   }
 
@@ -1992,8 +2071,9 @@
       typeof AUTO_MERGE_INTENSITY_DEFAULT !== "undefined"
         ? AUTO_MERGE_INTENSITY_DEFAULT
         : 0;
-    var v = slider ? Number(slider.value) : def;
-    return Math.round(snapFeelingsSliderValue(v, min, max));
+    return Math.round(
+      readFeelingsSliderInternalFromDom(slider, min, max, def)
+    );
   }
 
   /** Tile size at reference density — baseline for Pride area compensation. */
@@ -2224,25 +2304,11 @@
   }
 
   /**
-   * Section 3 (Family and friends in Iran): 3-step control that changes only
-   * the border strip thickness (in columns of the existing border width).
-   * @returns {1|2|3}
+   * Border strip thickness is fixed to a single column (Thin).
+   * @returns {1}
    */
   function getBorderSideThicknessColumns() {
-    var slider = document.getElementById("border-side-segments");
-    var v = slider ? Number(slider.value) : 1;
-    var clamped = Math.min(3, Math.max(1, Math.round(v)));
-    return /** @type {1|2|3} */ (clamped);
-  }
-
-  /**
-   * @param {1|2|3} cols
-   * @returns {"Thin"|"Medium"|"Thick"}
-   */
-  function borderSideThicknessLabel(cols) {
-    if (cols === 1) return "Thin";
-    if (cols === 2) return "Medium";
-    return "Thick";
+    return 1;
   }
 
   /**
@@ -2966,6 +3032,10 @@
       if (dotsLayer) dotsLayer.removeAttribute("clip-path");
       renderStippleDotsLayer();
       return;
+    }
+
+    if (!hopeStippleImageReady) {
+      ensureHopeStippleReady();
     }
 
     if (hopeFillClipped) hopeFillClipped.style.display = "";
@@ -5851,6 +5921,198 @@
     return visible;
   }
 
+  function ensureGridPreviewCanvas() {
+    if (!gridPreviewCanvas) {
+      gridPreviewCanvas = document.createElement("canvas");
+      gridPreviewCanvas.width = CANVAS_W;
+      gridPreviewCanvas.height = CANVAS_H;
+    }
+    return gridPreviewCanvas;
+  }
+
+  function getSliderPreviewSignature() {
+    return (
+      gridType +
+      "|" +
+      getOctagonsNStepFromSlider() +
+      "|" +
+      getInnerScaleStepFromSlider()
+    );
+  }
+
+  function getGridPreviewVisibleSegments() {
+    if (isCirclesLikeGrid()) {
+      return getVisibleCirclesGridPatternSegments();
+    }
+    var segments = isStarGrid()
+      ? getAllSegmentsForTracing()
+      : cachedAllSegments;
+    return getVisibleSegmentsFast(segments);
+  }
+
+  function appendStructuralChordsToCanvasPath(ctx, circles, hopeMergeRegions) {
+    var ci;
+    var chords;
+    var i;
+    var s;
+    var key;
+    for (ci = 0; ci < circles.length; ci++) {
+      chords = getCirclesLikeGridGeometry().buildEllipseBoundarySegments([
+        circles[ci],
+      ]);
+      for (i = 0; i < chords.length; i++) {
+        s = chords[i];
+        key = TopkapiGeometry.segmentKey(s.x1, s.y1, s.x2, s.y2);
+        if (isSegmentRemoved(key, s, hopeMergeRegions)) continue;
+        ctx.moveTo(s.x1, s.y1);
+        ctx.lineTo(s.x2, s.y2);
+      }
+    }
+  }
+
+  function paintGridPreviewCanvas(ctx) {
+    ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
+
+    if (isStarGrid()) {
+      var starFills = getVisibleStarFillsForPattern();
+      if (starFills.length) {
+        ctx.fillStyle = getCanvasBackgroundColor();
+        var fi;
+        var outline;
+        var fj;
+        for (fi = 0; fi < starFills.length; fi++) {
+          outline = starFills[fi].outline;
+          if (!outline || outline.length < 3) continue;
+          ctx.beginPath();
+          ctx.moveTo(outline[0].x, outline[0].y);
+          for (fj = 1; fj < outline.length; fj++) {
+            ctx.lineTo(outline[fj].x, outline[fj].y);
+          }
+          ctx.closePath();
+          ctx.fill();
+        }
+      }
+    }
+
+    var segments = getGridPreviewVisibleSegments();
+    var hopeMergeRegions = getHopeMergeCutoutRegionsForRendering();
+    ctx.strokeStyle = getPatternStrokeColor();
+    ctx.lineWidth = getGridStrokeWidth();
+    ctx.lineCap = "square";
+    ctx.lineJoin = "miter";
+    ctx.beginPath();
+    var i;
+    for (i = 0; i < segments.length; i++) {
+      ctx.moveTo(segments[i].x1, segments[i].y1);
+      ctx.lineTo(segments[i].x2, segments[i].y2);
+    }
+    if (isCirclesGrid()) {
+      appendStructuralChordsToCanvasPath(
+        ctx,
+        getFullVisibleStructuralCirclesForPattern(),
+        hopeMergeRegions
+      );
+      appendStructuralChordsToCanvasPath(
+        ctx,
+        getPartialStructuralCirclesForPattern(),
+        hopeMergeRegions
+      );
+    } else if (isDiamondsGrid()) {
+      appendStructuralChordsToCanvasPath(
+        ctx,
+        getIntactStructuralCirclesForPattern(),
+        hopeMergeRegions
+      );
+    }
+    ctx.stroke();
+
+    if (isCirclesLikeGrid()) {
+      var points = collectCirclesGridFrameJunctionPoints();
+      if (points.length) {
+        ctx.fillStyle = getPatternStrokeColor();
+        var dotR = getCirclesGridFrameJunctionDotRadius();
+        for (i = 0; i < points.length; i++) {
+          ctx.beginPath();
+          ctx.arc(points[i].cx, points[i].cy, dotR, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }
+  }
+
+  function setPatternLayerGridVectorHidden(patternLayer, hidden) {
+    var child;
+    var i;
+    for (i = 0; i < patternLayer.childNodes.length; i++) {
+      child = patternLayer.childNodes[i];
+      if (child.nodeType !== 1) continue;
+      if (
+        child.getAttribute &&
+        child.getAttribute("id") === GRID_RASTER_PREVIEW_IMAGE_ID
+      ) {
+        continue;
+      }
+      child.style.display = hidden ? "none" : "";
+    }
+  }
+
+  function clearGridRasterPreview() {
+    gridRasterPreviewActive = false;
+    if (!designSvg) return;
+    var patternLayer = designSvg.querySelector("#layer-pattern");
+    if (!patternLayer) return;
+    var image = patternLayer.querySelector("#" + GRID_RASTER_PREVIEW_IMAGE_ID);
+    if (image) patternLayer.removeChild(image);
+    setPatternLayerGridVectorHidden(patternLayer, false);
+  }
+
+  function applyGridRasterPreview() {
+    if (!designSvg) return false;
+    var patternLayer = designSvg.querySelector("#layer-pattern");
+    if (!patternLayer) return false;
+
+    var canvas = ensureGridPreviewCanvas();
+    var ctx = canvas.getContext("2d");
+    if (!ctx) return false;
+
+    paintGridPreviewCanvas(ctx);
+
+    var image = patternLayer.querySelector("#" + GRID_RASTER_PREVIEW_IMAGE_ID);
+    if (!image) {
+      image = elSvg("image");
+      image.setAttribute("id", GRID_RASTER_PREVIEW_IMAGE_ID);
+      image.setAttribute("x", "0");
+      image.setAttribute("y", "0");
+      image.setAttribute("width", String(CANVAS_W));
+      image.setAttribute("height", String(CANVAS_H));
+      image.setAttribute("preserveAspectRatio", "none");
+      patternLayer.insertBefore(image, patternLayer.firstChild);
+    }
+    image.setAttribute("href", canvas.toDataURL("image/png"));
+    image.style.display = "";
+    setPatternLayerGridVectorHidden(patternLayer, true);
+    gridRasterPreviewActive = true;
+    return true;
+  }
+
+  function updateStarGridFillsInPatternLayer(patternLayer) {
+    if (!patternLayer) return;
+    var visibleStarFills = getVisibleStarFillsForPattern();
+    var oldFills = patternLayer.querySelector("#layer-star-fills");
+    if (!visibleStarFills.length) {
+      if (oldFills) patternLayer.removeChild(oldFills);
+      return;
+    }
+    var newFills = starFillsToGroup(visibleStarFills);
+    if (oldFills) {
+      patternLayer.replaceChild(newFills, oldFills);
+    } else {
+      var segGroup = patternLayer.querySelector('[data-layer="grid-segments"]');
+      if (segGroup) patternLayer.insertBefore(newFills, segGroup);
+      else patternLayer.insertBefore(newFills, patternLayer.firstChild);
+    }
+  }
+
   function updatePatternGridLinesOnly() {
     if (!designSvg) return;
     var patternLayer = designSvg.querySelector("#layer-pattern");
@@ -5870,6 +6132,9 @@
       visible = getVisibleSegmentsFast(segments);
     }
     patternLayer.replaceChild(segmentsToGroup(visible), oldGroup);
+    if (isStarGrid()) {
+      updateStarGridFillsInPatternLayer(patternLayer);
+    }
     if (isCirclesLikeGrid()) {
       if (isCirclesGrid()) {
         syncCirclesGridStructuralOutlineLayers(patternLayer);
@@ -6655,7 +6920,7 @@
 
   /**
    * Color-division tiles use the grid content band only — not the white margin
-   * frame (border-side-segments). The frame overlay is a separate top layer.
+   * frame thickness overlay. The frame overlay is a separate top layer.
    */
   function getColorDivisionsCanvasBounds() {
     var bounds = getGridContentBounds();
@@ -15401,6 +15666,195 @@
     });
   }
 
+  function getSharedFanGeometry() {
+    var diameter = Math.max(0, CANVAS_W - 100);
+    var r = (diameter / 2) * HALF_CIRCLE_RADIUS_SCALE;
+    return {
+      cx: CANVAS_W / 2,
+      r: r,
+      outerArcRadius: r * getRadialFanOuterArcScale(),
+      focalY: HALF_CIRCLE_FOCAL_Y,
+    };
+  }
+
+  function isFanAngleInDrawRange(angle, startAngle, endAngle) {
+    if (startAngle >= endAngle) {
+      return angle <= startAngle + 1e-9 && angle >= endAngle - 1e-9;
+    }
+    return angle >= startAngle - 1e-9 && angle <= endAngle + 1e-9;
+  }
+
+  /** @param {{ x: number, y: number }} contentPt @returns {"top" | "bottom" | null} */
+  function getFanHitTarget(contentPt) {
+    if (!isFrameContentUnlocked()) return null;
+    var geo = getSharedFanGeometry();
+    var ribs = getRadialFanRibCount();
+    var showTop = getHalfCircleVisible();
+    var showBottom = getHalfCircleBottomVisible();
+    if (!showTop && !showBottom) return null;
+
+    var candidates = [];
+    if (showTop) candidates.push("top");
+    if (showBottom) candidates.push("bottom");
+
+    var i;
+    for (i = 0; i < candidates.length; i++) {
+      var which = candidates[i];
+      if (which === "top" && contentPt.y > geo.focalY - 8) continue;
+      if (which === "bottom" && contentPt.y < CANVAS_H - geo.focalY + 8) continue;
+
+      var testY = which === "bottom" ? CANVAS_H - contentPt.y : contentPt.y;
+      var anchor = which === "bottom" ? "right" : "left";
+      var layout = buildHalfCircleFullRibLayout(
+        geo.cx,
+        geo.focalY,
+        geo.r,
+        ribs,
+        anchor
+      );
+      if (!layout.endpoints.length) continue;
+
+      var drawAngles = getFanDrawAngles(layout);
+      var dx = contentPt.x - geo.cx;
+      var dy = geo.focalY - testY;
+      var dist = Math.hypot(dx, dy);
+      if (dist < 8 || dist > geo.outerArcRadius + 28) continue;
+
+      var angle = Math.atan2(dy, dx);
+      if (!isFanAngleInDrawRange(angle, drawAngles.startAngle, drawAngles.endAngle)) {
+        continue;
+      }
+      return which;
+    }
+    return null;
+  }
+
+  function applyFanLeavesOpeningStep(step, commit) {
+    var slider = document.getElementById(FAN_SHARED_LEAVES_ID);
+    if (!slider) return;
+    var maxStep =
+      typeof WEAR_CONTROL_OPENING_STEP_MAX !== "undefined"
+        ? WEAR_CONTROL_OPENING_STEP_MAX
+        : 10;
+    var minStep =
+      typeof WEAR_CONTROL_OPENING_STEP_MIN !== "undefined"
+        ? WEAR_CONTROL_OPENING_STEP_MIN
+        : 0;
+    step = Math.max(minStep, Math.min(maxStep, Math.round(step)));
+    if (Number(slider.value) === step) return;
+    slider.value = String(step);
+    markFanSectionEngaged();
+    snapFanLeavesSlider(slider);
+    renderHalfCircleLayer();
+    slider.dispatchEvent(new Event("input", { bubbles: true }));
+    if (commit) {
+      slider.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+  }
+
+  function getCanvasPointerContentPoint(clientX, clientY) {
+    if (!designSvg) return null;
+    var viewPt = clientToViewBox(designSvg, clientX, clientY);
+    if (!viewPt) return null;
+    return viewBoxToContentCoords(viewPt);
+  }
+
+  function bindFanDragWindowListeners() {
+    if (fanDragWindowMoveHandler) return;
+    fanDragWindowMoveHandler = function (e) {
+      if (!fanDragActive) return;
+      updateFanDragFromPointer(e.clientY);
+      if (e.cancelable) e.preventDefault();
+    };
+    fanDragWindowEndHandler = function (e) {
+      if (!fanDragActive) return;
+      endFanDrag(e);
+    };
+    window.addEventListener("pointermove", fanDragWindowMoveHandler);
+    window.addEventListener("pointerup", fanDragWindowEndHandler);
+    window.addEventListener("pointercancel", fanDragWindowEndHandler);
+  }
+
+  function unbindFanDragWindowListeners() {
+    if (!fanDragWindowMoveHandler) return;
+    window.removeEventListener("pointermove", fanDragWindowMoveHandler);
+    window.removeEventListener("pointerup", fanDragWindowEndHandler);
+    window.removeEventListener("pointercancel", fanDragWindowEndHandler);
+    fanDragWindowMoveHandler = null;
+    fanDragWindowEndHandler = null;
+  }
+
+  function startFanDrag(e, fanTarget) {
+    fanDragActive = true;
+    fanDragTarget = fanTarget;
+    fanDragStartStep = getFanLeavesOpeningStep(FAN_SHARED_LEAVES_ID);
+    fanDragStartClientY = e.clientY;
+    bindFanDragWindowListeners();
+    if (designSvg) {
+      if (typeof designSvg.setPointerCapture === "function") {
+        try {
+          designSvg.setPointerCapture(e.pointerId);
+        } catch (err) {
+          /* Window listeners keep drag alive if capture fails. */
+        }
+      }
+      designSvg.classList.add("is-fan-drag-active");
+      designSvg.classList.remove("is-fan-drag-hover");
+    }
+    var wrap = document.getElementById("stage-wrap");
+    if (wrap) wrap.classList.add("is-fan-dragging");
+  }
+
+  function isFanCanvasDragEligible() {
+    return (
+      isFrameContentUnlocked() &&
+      (getHalfCircleVisible() || getHalfCircleBottomVisible())
+    );
+  }
+
+  function updateFanDragFromPointer(clientY) {
+    if (!fanDragActive || !fanDragTarget) return;
+    var deltaY = clientY - fanDragStartClientY;
+    var stepDelta =
+      fanDragTarget === "bottom"
+        ? Math.round(-deltaY / FAN_DRAG_PX_PER_STEP)
+        : Math.round(deltaY / FAN_DRAG_PX_PER_STEP);
+    applyFanLeavesOpeningStep(fanDragStartStep + stepDelta, false);
+  }
+
+  function updateFanDragHoverCursor(e) {
+    if (!designSvg || fanDragActive || isDragging || isHopeDragInteractionMode()) {
+      if (designSvg) designSvg.classList.remove("is-fan-drag-hover");
+      return;
+    }
+    if (!isFanCanvasDragEligible()) {
+      designSvg.classList.remove("is-fan-drag-hover");
+      return;
+    }
+    var pt = getCanvasPointerContentPoint(e.clientX, e.clientY);
+    designSvg.classList.toggle("is-fan-drag-hover", !!pt && !!getFanHitTarget(pt));
+  }
+
+  function endFanDrag(e) {
+    if (!fanDragActive) return;
+    fanDragActive = false;
+    unbindFanDragWindowListeners();
+    applyFanLeavesOpeningStep(
+      getFanLeavesOpeningStep(FAN_SHARED_LEAVES_ID),
+      true
+    );
+    fanDragTarget = null;
+    if (designSvg && designSvg.hasPointerCapture(e.pointerId)) {
+      designSvg.releasePointerCapture(e.pointerId);
+    }
+    var wrap = document.getElementById("stage-wrap");
+    if (wrap) wrap.classList.remove("is-fan-dragging");
+    if (designSvg) {
+      designSvg.classList.remove("is-fan-drag-active");
+      designSvg.classList.remove("is-fan-drag-hover");
+    }
+  }
+
   function getHalfCircleTopVisiblePetalCount() {
     return getFanLeavesPetalCount(getFanSliderIds("top").leaves);
   }
@@ -19580,6 +20034,7 @@
 
   function renderPatternLayer() {
     if (!designSvg) return;
+    clearGridRasterPreview();
     var patternLayer = designSvg.querySelector("#layer-pattern");
     if (!patternLayer) return;
 
@@ -19814,14 +20269,6 @@
 
     syncAllFeelingsSliderOutputs();
 
-    var borderSideOut = document.getElementById("border-side-segments-out");
-    if (borderSideOut) {
-      borderSideOut.textContent = borderSideThicknessLabel(
-        getBorderSideThicknessColumns()
-      );
-    }
-    syncBorderSideWhiteFillOutput();
-
     applySheetPaletteToDom();
     renderBackgroundLayer();
     renderGridMaskLayer("render");
@@ -19847,11 +20294,11 @@
   }
 
   function renderCirclesGrid() {
-    renderCirclesLikeGrid("circles grid");
+    renderCirclesLikeGrid("Circles");
   }
 
   function renderDiamondsGrid() {
-    renderCirclesLikeGrid("diamonds grid");
+    renderCirclesLikeGrid("Diamonds");
   }
 
   function renderStarGrid() {
@@ -19882,14 +20329,6 @@
         actualT +
         " px tile";
     }
-
-    var borderSideOut = document.getElementById("border-side-segments-out");
-    if (borderSideOut) {
-      borderSideOut.textContent = borderSideThicknessLabel(
-        getBorderSideThicknessColumns()
-      );
-    }
-    syncBorderSideWhiteFillOutput();
 
     var circleSig = buildCircleLayoutSignature();
     syncSadnessCircleLayoutOnSignatureChange();
@@ -19985,7 +20424,7 @@
 
   function applyGridContentVisibility() {
     if (!designSvg) return;
-    var gridOn = isGridContentUnlocked();
+    var gridOn = canRenderGridCanvas();
     var frameOn = isFrameContentUnlocked();
     var fanOn = isFanContentUnlocked();
 
@@ -20029,6 +20468,7 @@
       var wrap = document.getElementById("stage-wrap");
       if (wrap) wrap.appendChild(designSvg);
       refreshBrownBarBannerAfterMount();
+      bindInteractionPointerListeners();
     }
 
     var fill = designSvg.querySelector("#canvas-background-fill");
@@ -20051,9 +20491,10 @@
       var wrap = document.getElementById("stage-wrap");
       if (wrap) wrap.appendChild(designSvg);
       refreshBrownBarBannerAfterMount();
+      bindInteractionPointerListeners();
     }
 
-    if (!isGridContentUnlocked()) {
+    if (!canRenderGridCanvas()) {
       renderMinimalCanvas();
       return;
     }
@@ -20128,14 +20569,6 @@
 
     syncAllFeelingsSliderOutputs();
 
-    var borderSideOut = document.getElementById("border-side-segments-out");
-    if (borderSideOut) {
-      borderSideOut.textContent = borderSideThicknessLabel(
-        getBorderSideThicknessColumns()
-      );
-    }
-    syncBorderSideWhiteFillOutput();
-
     applySheetPaletteToDom();
     ensureHandkerchiefOuterFrameLayerOrder();
     renderBackgroundLayer();
@@ -20165,18 +20598,77 @@
     applyGridContentVisibility();
   }
 
+  /** Canvas bitmap preview while dragging octagons-n / inner-scale (vector render on release). */
+  function renderSliderDragPreview() {
+    if (window.SheetPalettes) window.SheetPalettes.syncBorderGlobals();
+    updateLayoutState();
+
+    var previewSignature = getSliderPreviewSignature();
+    if (previewSignature === lastSliderPreviewSignature && gridRasterPreviewActive) {
+      return;
+    }
+    lastSliderPreviewSignature = previewSignature;
+
+    var outN = document.getElementById("octagons-n-out");
+    if (outN) outN.textContent = String(getOctagonsNStepDisplay());
+    var outInner = document.getElementById("inner-scale-out");
+    if (outInner) outInner.textContent = String(getInnerScaleStepDisplay());
+
+    if (!designSvg || !canRenderGridCanvas()) {
+      return;
+    }
+
+    cachedAllSegments = buildAllSegments();
+    updateInnerContentTransformForGridType();
+
+    if (isStarGrid()) {
+      var starLayout = getStarLayout();
+      var starInfo = document.getElementById("tile-info");
+      if (starInfo) {
+        var actualT =
+          typeof NestedStarOctagonsGeometry !== "undefined" &&
+          NestedStarOctagonsGeometry.roundCoord
+            ? NestedStarOctagonsGeometry.roundCoord(starLayout.tileSize)
+            : Math.round(starLayout.tileSize * 100) / 100;
+        starInfo.textContent =
+          starLayout.n +
+          " complete/row · " +
+          starLayout.m +
+          " complete/col · " +
+          actualT +
+          " px tile";
+      }
+    } else if (isOctagonGrid()) {
+      var octLayout = TopkapiGeometry.computeLayout(
+        lastOctagonsN,
+        CANVAS_W,
+        CANVAS_H
+      );
+      var octInfo = document.getElementById("tile-info");
+      if (octInfo) {
+        octInfo.textContent =
+          "Tile " +
+          Math.round(octLayout.tileSize * 100) / 100 +
+          " px · " +
+          (lastOctagonsN + 1) +
+          " across · " +
+          (octLayout.m + 1) +
+          " down (symmetric clip)";
+      }
+    }
+
+    applyGridRasterPreview();
+    layoutStage();
+  }
+
   function commitSliderRelease(hadPreview, previewWasInFlight) {
+    lastSliderPreviewSignature = "";
     sliderPreviewRendered = false;
     var hadAutoMerge = autoMergeEdgeKeys.size > 0;
     clearMergeState();
     clearAutoMergeState();
-    // During drag, preview already ran full render() (markers + grid). On release,
-    // only refresh merge-dependent layers unless preview never painted final value.
-    if (hadPreview && !previewWasInFlight) {
-      renderPatternAndVerticalLayers();
-    } else {
-      render();
-    }
+    // Light preview during drag skips emotion/layout sync — full render on release.
+    render();
     updateHopeResetButton();
     if (hadAutoMerge) {
       requestAnimationFrame(function () {
@@ -20195,7 +20687,7 @@
       sliderRenderScheduled = false;
       if (gen !== sliderRenderGeneration || !sliderRenderPending) return;
       sliderRenderPending = false;
-      render();
+      renderSliderDragPreview();
       sliderPreviewRendered = true;
     });
   }
@@ -20349,23 +20841,25 @@
   function applyFeelingsControlState(options) {
     options = options || {};
     var randomHelplessness = options.randomHelplessness === true;
+    var forceReshuffle = options.forceReshuffle === true;
 
-    syncCircleSelection(true);
-    syncLongingCircleSelection(true);
-    syncGriefCircleSelection(true);
-    syncStrengthSelection(true);
-    syncHelplessnessSelection(true, randomHelplessness);
-    syncPrideShapes();
-    syncGuiltShameShapes();
-    syncAngerShapes();
+    syncCircleSelection(forceReshuffle);
+    syncLongingCircleSelection(forceReshuffle);
+    syncGriefCircleSelection(forceReshuffle);
+    syncStrengthSelection(forceReshuffle);
+    syncHelplessnessSelection(forceReshuffle, randomHelplessness);
+    syncDiamondFill(forceReshuffle);
+    syncGuiltShameDiamondFill(forceReshuffle);
+    syncAngerTriangleSelection(forceReshuffle);
 
     if (getAutoMergeIntensity() > 0) {
       if (options.skipRender) {
         /* deferred until after startup render or idle callback */
-      } else {
+      } else if (forceReshuffle || !hasActivePrideAutoMergeRegions()) {
         runAutoMerge();
         return;
       }
+      /* Keep existing Pride auto-merge regions; repaint layers below. */
     } else {
       clearAutoMergeState();
     }
@@ -20384,7 +20878,7 @@
 
   /** Randomize mark placement on canvas; slider values stay unchanged. */
   function randomizeFeelingsPlacement() {
-    applyFeelingsControlState({ randomHelplessness: true });
+    applyFeelingsControlState({ randomHelplessness: true, forceReshuffle: true });
   }
 
   function randomizeFeelingsControls() {
@@ -20468,7 +20962,7 @@
     );
 
     syncFeelingsSliderOutputs();
-    applyFeelingsControlState();
+    applyFeelingsControlState({ forceReshuffle: true });
   }
 
   function resetPage2QuestionnaireCanvasLayoutCache() {
@@ -20480,6 +20974,28 @@
     if (!q || !q.getCurrentStepId) return false;
     var stepId = q.getCurrentStepId();
     return stepId && stepId !== "__feelings_complete__";
+  }
+
+  function isPage2DesignSectionActive() {
+    var page2 = document.getElementById("page2");
+    return page2 && page2.classList.contains("page2--design-active");
+  }
+
+  function resetPage2DesignCanvasLayout(wrap) {
+    resetPage2QuestionnaireCanvasLayoutCache();
+    applyQuestionnaireCanvasClipExtend(wrap, null);
+    setProfileLabelZoomClass(wrap, false);
+    var svg = document.getElementById("design-svg");
+    if (svg) {
+      svg.style.display = "none";
+      svg.style.position = "";
+      svg.style.left = "";
+      svg.style.top = "";
+      svg.style.bottom = "";
+      svg.style.transform = "";
+      svg.style.width = "";
+      svg.style.height = "";
+    }
   }
 
   /**
@@ -20504,36 +21020,26 @@
     var totalH = CANVAS_H + 2 * f;
     var focusCenterY =
       (focusRect.y + f + focusRect.height / 2) * profileScale;
-    var focusBottomInSvg =
-      (focusRect.y + f + focusRect.height) * profileScale;
     var centeredTopInWrap = naturalHeight / 2 - focusCenterY;
     var focusTopInWrap = centeredTopInWrap + (focusRect.y + f) * profileScale;
     var headerBottom = getPage2HeaderBottomPx();
     var targetTopInWrap = Math.max(0, headerBottom - naturalWrapTop);
-    var extendUp = Math.max(0, focusTopInWrap - targetTopInWrap);
+    var extendUp =
+      Math.max(0, focusTopInWrap - targetTopInWrap) +
+      getProfileLabelFocusExtraExtendUpPx();
     page2QuestionnaireCanvasLayoutCache = {
       extendUp: extendUp,
-      anchorBottomViewport: null,
-      anchorSvgBottomInWrap: null,
       profileScale: profileScale,
     };
     return page2QuestionnaireCanvasLayoutCache;
   }
 
-  function captureQuestionnaireCanvasBottomAnchor(wrap, svg, cache) {
-    if (!wrap || !svg || !cache || cache.anchorSvgBottomInWrap != null) return;
-    void svg.offsetHeight;
-    var wrapRect = wrap.getBoundingClientRect();
-    var svgRect = svg.getBoundingClientRect();
-    cache.anchorSvgBottomInWrap = svgRect.bottom - wrapRect.top;
-    cache.anchorBottomViewport = svgRect.bottom;
-  }
-
   function applyQuestionnaireCanvasClipExtend(wrap, cache) {
     if (!wrap) return;
-    if (cache && cache.extendUp > 0) {
-      wrap.style.marginTop = -cache.extendUp + "px";
-      wrap.style.height = "calc(100% + " + cache.extendUp + "px)";
+    var extendUp = cache && cache.extendUp > 0 ? cache.extendUp : 0;
+    if (extendUp > 0) {
+      wrap.style.marginTop = -extendUp + "px";
+      wrap.style.height = "calc(100% + " + extendUp + "px)";
     } else {
       wrap.style.marginTop = "";
       wrap.style.height = "";
@@ -20543,29 +21049,46 @@
   function applyQuestionnaireCanvasBottomAnchor(svg, wrap, totalH, scale, cache, f) {
     if (!svg || !wrap || !cache) return;
 
-    if (cache.anchorSvgBottomInWrap == null) {
-      var main = wrap.closest("#section-design .main");
-      if (!main) return;
-      var mainRect = main.getBoundingClientRect();
-      var focusRect = getProfileLabelFocusRect();
-      var focusCenterY =
-        (focusRect.y + f + focusRect.height / 2) * cache.profileScale;
-      var centeredTopInWrap = mainRect.height / 2 - focusCenterY;
-      svg.style.position = "absolute";
-      svg.style.top = centeredTopInWrap + cache.extendUp + "px";
-      svg.style.bottom = "auto";
-      svg.style.transform = "none";
-      captureQuestionnaireCanvasBottomAnchor(wrap, svg, cache);
-    }
-
-    if (cache.anchorSvgBottomInWrap == null) return;
-
-    void wrap.offsetHeight;
-    var bottomInset = Math.max(0, wrap.clientHeight - cache.anchorSvgBottomInWrap);
     svg.style.position = "absolute";
     svg.style.top = "auto";
-    svg.style.bottom = bottomInset + "px";
     svg.style.transform = "none";
+
+    void svg.offsetHeight;
+    positionQuestionnaireProfileCanvasBottom(svg, wrap, cache);
+  }
+
+  function getViewportBottomPx() {
+    if (window.visualViewport) {
+      return window.visualViewport.offsetTop + window.visualViewport.height;
+    }
+    return window.innerHeight;
+  }
+
+  /** Screen bottom for large handkerchief gap (always the visible viewport). */
+  function getProfileCanvasViewportBottomPx() {
+    return getViewportBottomPx();
+  }
+
+  function positionQuestionnaireProfileCanvasBottom(svg, wrap, cache) {
+    var gap = getProfileLabelFocusBottomScreenGapPx();
+    var targetSvgBottom = getProfileCanvasViewportBottomPx() - gap;
+
+    void svg.offsetHeight;
+    var svgRect = svg.getBoundingClientRect();
+    var svgHeight = svgRect.height;
+    if (!(svgHeight > 0)) return;
+
+    var wrapRect = wrap.getBoundingClientRect();
+    var topInWrap = targetSvgBottom - svgHeight - wrapRect.top;
+
+    svg.style.top = topInWrap + "px";
+    svg.style.bottom = "auto";
+
+    void svg.offsetHeight;
+    var drift = svg.getBoundingClientRect().bottom - targetSvgBottom;
+    if (Math.abs(drift) > 0.5) {
+      svg.style.top = topInWrap - drift + "px";
+    }
   }
 
   function applyQuestionnaireProfileCanvasHorizontalPosition(svg, wrap, scale, f) {
@@ -20663,6 +21186,18 @@
     return wrap.getBoundingClientRect();
   }
 
+  function getProfileLabelFocusBottomScreenGapPx() {
+    return typeof PROFILE_LABEL_FOCUS_BOTTOM_SCREEN_GAP_PX !== "undefined"
+      ? PROFILE_LABEL_FOCUS_BOTTOM_SCREEN_GAP_PX
+      : 100;
+  }
+
+  function getProfileLabelFocusExtraExtendUpPx() {
+    return typeof PROFILE_LABEL_FOCUS_EXTRA_EXTEND_UP_PX !== "undefined"
+      ? PROFILE_LABEL_FOCUS_EXTRA_EXTEND_UP_PX
+      : 0;
+  }
+
   /** Focus rect for profile questionnaire zoom (bottom label band). */
   function getProfileLabelFocusRect() {
     var pad =
@@ -20681,10 +21216,10 @@
 
   function isProfileQuestionnaireZoomActive() {
     var q = window.Questionnaire;
-    if (!q || !q.getCurrentStepId || !q.isProfileStep) return false;
+    if (!q || !q.getCurrentStepId || !q.isPreFamilyQuestionnaireStep) return false;
     var stepId = q.getCurrentStepId();
     if (!stepId) return false;
-    return q.isProfileStep(stepId);
+    return q.isPreFamilyQuestionnaireStep(stepId);
   }
 
   function getPage2CanvasSlot(wrap) {
@@ -20755,12 +21290,33 @@
     svg.style.transform = "none";
   }
 
+  function scheduleProfileCanvasLayoutOnPage2Scroll() {
+    if (page2ScrollLayoutRaf) return;
+    page2ScrollLayoutRaf = requestAnimationFrame(function () {
+      page2ScrollLayoutRaf = 0;
+      if (
+        isPage2DesignSectionActive() &&
+        isQuestionnaireCanvasLayoutActive() &&
+        isProfileQuestionnaireZoomActive()
+      ) {
+        layoutStage();
+      }
+    });
+  }
+
   function layoutStage() {
     var wrap = document.getElementById("stage-wrap");
     var svg = document.getElementById("design-svg");
     if (!wrap || !svg) return;
+
+    if (!isPage2DesignSectionActive()) {
+      resetPage2DesignCanvasLayout(wrap);
+      return;
+    }
+
     var rect = getStageLayoutRect(wrap);
     if (!rect) return;
+    svg.style.display = "block";
     var f = getHandkerchiefOuterFramePx();
     var totalW = CANVAS_W + 2 * f;
     var totalH = CANVAS_H + 2 * f;
@@ -20768,29 +21324,37 @@
     var questionnaireLayout = isQuestionnaireCanvasLayoutActive();
 
     if (questionnaireLayout) {
-      var qCache = ensurePage2QuestionnaireCanvasLayoutCache(wrap, f);
-      if (qCache) {
-        applyQuestionnaireCanvasClipExtend(wrap, qCache);
-        setProfileLabelZoomClass(wrap, qCache.extendUp > 0);
-        var qScale;
-        if (profileZoom) {
-          qScale = qCache.profileScale;
-        } else {
-          var availW = Math.max(60, rect.width - VIEW_MARGIN * 2);
-          var availH = Math.max(60, rect.height - VIEW_MARGIN * 2);
-          qScale = Math.min(availW / totalW, availH / totalH);
-        }
-        svg.style.width = totalW * qScale + "px";
-        svg.style.height = totalH * qScale + "px";
-        void svg.offsetHeight;
-        if (profileZoom) {
+      if (profileZoom) {
+        var qCache = ensurePage2QuestionnaireCanvasLayoutCache(wrap, f);
+        if (qCache) {
+          applyQuestionnaireCanvasClipExtend(wrap, qCache);
+          setProfileLabelZoomClass(wrap, qCache.extendUp > 0);
+          var qScale = qCache.profileScale;
+          svg.style.width = totalW * qScale + "px";
+          svg.style.height = totalH * qScale + "px";
+          void svg.offsetHeight;
           applyQuestionnaireProfileCanvasHorizontalPosition(svg, wrap, qScale, f);
-        } else {
-          applyQuestionnaireFullCanvasHorizontalPosition(svg, wrap);
+          applyQuestionnaireCanvasBottomAnchor(svg, wrap, totalH, qScale, qCache, f);
+          return;
         }
-        applyQuestionnaireCanvasBottomAnchor(svg, wrap, totalH, qScale, qCache, f);
         return;
       }
+
+      applyQuestionnaireCanvasClipExtend(wrap, null);
+      setProfileLabelZoomClass(wrap, false);
+      var availW = Math.max(60, rect.width - VIEW_MARGIN * 2);
+      var availH = Math.max(60, rect.height - VIEW_MARGIN * 2);
+      var fullScale = Math.min(availW / totalW, availH / totalH);
+      var fullSvgH = totalH * fullScale;
+      svg.style.width = totalW * fullScale + "px";
+      svg.style.height = fullSvgH + "px";
+      void svg.offsetHeight;
+      applyQuestionnaireFullCanvasHorizontalPosition(svg, wrap);
+      svg.style.position = "absolute";
+      svg.style.top =
+        Math.max(0, (wrap.clientHeight - fullSvgH) / 2) + "px";
+      svg.style.bottom = "auto";
+      svg.style.transform = "none";
       return;
     } else {
       resetPage2QuestionnaireCanvasLayoutCache();
@@ -21500,6 +22064,96 @@
       });
   }
 
+  function rasterizeSvgMarkupToPngDataUrl(svgMarkup, thumbWidth) {
+    var f = getHandkerchiefOuterFramePx();
+    var vbW = CANVAS_W + 2 * f;
+    var vbH = CANVAS_H + 2 * f;
+    var vbMatch = svgMarkup.match(/viewBox="([^"]+)"/);
+    if (vbMatch) {
+      var parts = vbMatch[1].trim().split(/\s+/);
+      if (parts.length === 4) {
+        vbW = parseFloat(parts[2]);
+        vbH = parseFloat(parts[3]);
+      }
+    }
+    var thumbHeight = Math.max(1, Math.round((vbH / vbW) * thumbWidth));
+    var blob = new Blob([svgMarkup], { type: "image/svg+xml;charset=utf-8" });
+    var url = URL.createObjectURL(blob);
+
+    return new Promise(function (resolve, reject) {
+      var img = new Image();
+      img.onload = function () {
+        var canvas = document.createElement("canvas");
+        canvas.width = thumbWidth;
+        canvas.height = thumbHeight;
+        var ctx = canvas.getContext("2d");
+        if (!ctx) {
+          URL.revokeObjectURL(url);
+          reject(new Error("Could not create canvas"));
+          return;
+        }
+        ctx.fillStyle = getCanvasBackgroundColor();
+        ctx.fillRect(0, 0, thumbWidth, thumbHeight);
+        ctx.drawImage(img, 0, 0, thumbWidth, thumbHeight);
+        URL.revokeObjectURL(url);
+        resolve(canvas.toDataURL("image/png"));
+      };
+      img.onerror = function () {
+        URL.revokeObjectURL(url);
+        reject(new Error("Could not rasterize export SVG"));
+      };
+      img.src = url;
+    });
+  }
+
+  function captureArchiveDesignPng(thumbWidth) {
+    var width = thumbWidth || 280;
+    var fontReady =
+      typeof document !== "undefined" && document.fonts && document.fonts.ready
+        ? document.fonts.ready
+        : Promise.resolve();
+
+    return Promise.all([
+      fontReady,
+      loadExportFontDataUri().then(function (fontDataUri) {
+        return loadExportOpentypeFont(fontDataUri).then(function () {
+          return fontDataUri;
+        });
+      }),
+      preloadLabelBarSvgAssetsForExport(),
+      buildHopeStippleExportLines(),
+    ])
+      .then(function (results) {
+        var fontDataUri = results[1];
+        var hopeDotsVectorLines = results[3];
+        syncVerticalGridLines(false);
+        renderHalfCircleLayer();
+        var markup = buildExportSvgString(
+          getVisiblePatternSegments(),
+          getActiveCircles(),
+          getFilledDiamonds(),
+          getFilledHollowDiamonds(),
+          fontDataUri,
+          hopeDotsVectorLines
+        );
+        return rasterizeSvgMarkupToPngDataUrl(markup, width);
+      })
+      .catch(function (err) {
+        console.warn("[Archive export] Falling back to on-screen SVG:", err);
+        syncVerticalGridLines(false);
+        renderHalfCircleLayer();
+        var markup = buildExportSvgString(
+          getVisiblePatternSegments(),
+          getActiveCircles(),
+          getFilledDiamonds(),
+          getFilledHollowDiamonds(),
+          getEmbeddedExportFontDataUri(),
+          null
+        );
+        return rasterizeSvgMarkupToPngDataUrl(markup, width);
+      });
+  }
+
   function clientToViewBox(svg, clientX, clientY) {
     var pt = svg.createSVGPoint();
     pt.x = clientX;
@@ -21607,27 +22261,52 @@
   }
 
   function onPointerDown(e) {
-    if (!isHopeDragInteractionMode() || !designSvg) return;
-    if (e.button !== 0) return;
-    isDragging = true;
-    hopeMergeDragHadEdgeChanges = false;
-    dragPath = [];
-    designSvg.setPointerCapture(e.pointerId);
-    appendDragPoint(designSvg, e.clientX, e.clientY);
-    processDragHitTest();
-    var wrap = document.getElementById("stage-wrap");
-    if (wrap) wrap.classList.add("is-dragging");
-    e.preventDefault();
+    if (!designSvg || e.button !== 0) return;
+
+    if (isHopeDragInteractionMode()) {
+      isDragging = true;
+      hopeMergeDragHadEdgeChanges = false;
+      dragPath = [];
+      designSvg.setPointerCapture(e.pointerId);
+      appendDragPoint(designSvg, e.clientX, e.clientY);
+      processDragHitTest();
+      var wrap = document.getElementById("stage-wrap");
+      if (wrap) wrap.classList.add("is-dragging");
+      e.preventDefault();
+      return;
+    }
+
+    if (isFanCanvasDragEligible()) {
+      var pt = getCanvasPointerContentPoint(e.clientX, e.clientY);
+      var fanTarget = pt ? getFanHitTarget(pt) : null;
+      if (fanTarget) {
+        startFanDrag(e, fanTarget);
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    }
   }
 
   function onPointerMove(e) {
-    if (!isDragging || !designSvg) return;
+    if (fanDragActive && designSvg) {
+      updateFanDragFromPointer(e.clientY);
+      e.preventDefault();
+      return;
+    }
+    if (!isDragging || !designSvg) {
+      updateFanDragHoverCursor(e);
+      return;
+    }
     appendDragPoint(designSvg, e.clientX, e.clientY);
     processDragHitTest();
     e.preventDefault();
   }
 
   function endDrag(e) {
+    if (fanDragActive) {
+      endFanDrag(e);
+      return;
+    }
     if (!isDragging) return;
     var wasHopeMergeDrag = hopeInteractionMode === "merge";
     var hadHopeChanges = hopeMergeDragHadEdgeChanges;
@@ -21652,27 +22331,44 @@
   }
 
   var interactionListenersBound = false;
+  var interactionListenersSvg = null;
 
   function bindInteractionPointerListeners() {
-    if (!designSvg || interactionListenersBound) return;
-    designSvg.addEventListener("pointerdown", onPointerDown);
+    if (!designSvg) return;
+    if (interactionListenersBound && interactionListenersSvg === designSvg) return;
+    if (interactionListenersBound) unbindInteractionPointerListeners();
+    designSvg.addEventListener("pointerdown", onPointerDown, true);
     designSvg.addEventListener("pointermove", onPointerMove);
     designSvg.addEventListener("pointerup", onPointerUp);
     designSvg.addEventListener("pointercancel", onPointerCancel);
     interactionListenersBound = true;
+    interactionListenersSvg = designSvg;
   }
 
   function unbindInteractionPointerListeners() {
-    if (!designSvg || !interactionListenersBound) return;
-    designSvg.removeEventListener("pointerdown", onPointerDown);
-    designSvg.removeEventListener("pointermove", onPointerMove);
-    designSvg.removeEventListener("pointerup", onPointerUp);
-    designSvg.removeEventListener("pointercancel", onPointerCancel);
+    if (!interactionListenersBound) return;
+    if (interactionListenersSvg) {
+      interactionListenersSvg.removeEventListener("pointerdown", onPointerDown, true);
+      interactionListenersSvg.removeEventListener("pointermove", onPointerMove);
+      interactionListenersSvg.removeEventListener("pointerup", onPointerUp);
+      interactionListenersSvg.removeEventListener("pointercancel", onPointerCancel);
+    }
     interactionListenersBound = false;
+    interactionListenersSvg = null;
     isDragging = false;
+    fanDragActive = false;
+    fanDragTarget = null;
+    unbindFanDragWindowListeners();
     dragPath = [];
     var wrap = document.getElementById("stage-wrap");
-    if (wrap) wrap.classList.remove("is-dragging");
+    if (wrap) {
+      wrap.classList.remove("is-dragging");
+      wrap.classList.remove("is-fan-dragging");
+    }
+    if (designSvg) {
+      designSvg.classList.remove("is-fan-drag-active");
+      designSvg.classList.remove("is-fan-drag-hover");
+    }
   }
 
   function updateHopeInteractionModeUi() {
@@ -21701,12 +22397,7 @@
     if (mode !== "view" && mode !== "merge") return;
     hopeInteractionMode = mode;
     updateHopeInteractionModeUi();
-    if (isHopeDragInteractionMode()) {
-      ensureHopeStippleReady();
-      bindInteractionPointerListeners();
-    } else {
-      unbindInteractionPointerListeners();
-    }
+    bindInteractionPointerListeners();
   }
 
   function onHopeResetGrid() {
@@ -21822,25 +22513,6 @@
       innerSlider.value = String(innerScaleStepFromValue(INNER_SCALE_DEFAULT));
       innerSlider.addEventListener("input", scheduleSliderRender);
       innerSlider.addEventListener("change", renderAfterSliderRelease);
-    }
-
-    var borderSideSegmentsSlider = document.getElementById("border-side-segments");
-    if (borderSideSegmentsSlider) {
-      borderSideSegmentsSlider.min = "1";
-      borderSideSegmentsSlider.max = "3";
-      borderSideSegmentsSlider.value = "1";
-      borderSideSegmentsSlider.addEventListener("input", function () {
-        markFrameSectionEngaged();
-        var borderSideOut = document.getElementById("border-side-segments-out");
-        if (borderSideOut) {
-          borderSideOut.textContent = borderSideThicknessLabel(
-            getBorderSideThicknessColumns()
-          );
-        }
-        // Thickness affects both the border divisions layer AND the inner content bounds,
-        // so we re-render to update transforms + dependent layers.
-        scheduleSliderRender();
-      });
     }
 
     var borderFrameDivisionsSlider = document.getElementById(
@@ -22276,7 +22948,7 @@
         syncJunctionEmotionSliderRangesForGridType();
         syncAngerPainGuiltSliderRangesForGridType();
         resetFeelingsLayoutSignatures();
-        applyFeelingsControlState({ skipRender: true });
+        applyFeelingsControlState({ skipRender: true, forceReshuffle: true });
         refreshLocationCoordinates();
       },
       finalizeApply: function () {
@@ -22284,7 +22956,7 @@
         syncJunctionEmotionSliderRangesForGridType();
         syncAngerPainGuiltSliderRangesForGridType();
         resetFeelingsLayoutSignatures();
-        applyFeelingsControlState({ skipRender: true });
+        applyFeelingsControlState({ skipRender: true, forceReshuffle: true });
         refreshLocationCoordinates();
         refreshLabelBarContent();
         render();
@@ -22295,8 +22967,7 @@
         syncBorderSideWhiteFillOutput();
         syncJunctionEmotionSliderRangesForGridType();
         syncAngerPainGuiltSliderRangesForGridType();
-        resetFeelingsLayoutSignatures();
-        applyFeelingsControlState();
+        applyFeelingsControlState({ forceReshuffle: false });
         refreshLocationCoordinates();
         refreshLabelBarContent();
         render();
@@ -22313,6 +22984,16 @@
         }
         syncDiamondFill(false);
         renderPatternLayer();
+      },
+      getDesignSnapshotExtras: function () {
+        return {
+          colorDivisionShuffleSeed: colorDivisionShuffleSeed,
+          colorDivisionAreaOrder: cachedColorDivisionRectOrder
+            ? cachedColorDivisionRectOrder.join(",")
+            : "",
+          labelBarTagIndex: getSavedLabelBarTagIndex(),
+          gridType: gridType,
+        };
       },
     };
 
@@ -22416,12 +23097,20 @@
     }
 
     window.render = render;
+    window.setGridType = setGridType;
     window.layoutStage = layoutStage;
+    window.captureArchiveDesignPng = captureArchiveDesignPng;
 
     window.addEventListener("resize", function () {
       resetPage2QuestionnaireCanvasLayoutCache();
       layoutStage();
     });
+    var page2El = document.getElementById("page2");
+    if (page2El) {
+      page2El.addEventListener("scroll", scheduleProfileCanvasLayoutOnPage2Scroll, {
+        passive: true,
+      });
+    }
     lastCircleLayoutSignature = "";
     lastLongingCircleLayoutSignature = "";
     lastGriefCircleLayoutSignature = "";
@@ -22429,6 +23118,7 @@
     lastHelplessnessLayoutSignature = "";
     lastDiamondLayoutSignature = "";
     render();
+    ensureHopeStippleReady();
     appStartupBootstrapping = false;
     syncFrameOverlayToggleButton();
     initSidebarScrollFocus();

@@ -732,10 +732,12 @@
   ];
 
   /** Overlapping radial layers for soft color mixing (pair with CSS blur on swatch). */
-  function getPaletteMeshGradient(paletteKey) {
+  function getPaletteMeshGradient(paletteKey, options) {
     var colors = getProminentPaletteColors(paletteKey);
     if (!colors.length) return "#cccccc";
     if (colors.length === 1) return colors[0];
+    var opaque = options && options.opaque;
+    var baseColor = colors[0];
     var layers = [];
     var i;
     for (i = 0; i < colors.length; i++) {
@@ -749,7 +751,9 @@
           colors[i] +
           " 0%, " +
           colors[i] +
-          " 42%, transparent 72%)"
+          " 42%, " +
+          (opaque ? baseColor : "transparent") +
+          " 72%)"
       );
     }
     return layers.join(", ");

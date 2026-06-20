@@ -8,8 +8,8 @@
         history.scrollRestoration = "manual";
       }
     </script>
-    <title>Octagon Grid — 68×180cm @ 300 DPI</title>
-    <link rel="stylesheet" href="css/styles.css?v=20260611-canvas-top" />
+    <title>Octagons Grid — 68×180cm @ 300 DPI</title>
+    <link rel="stylesheet" href="css/styles.css?v=20260619-madlibs-dropdown" />
   </head>
   <body>
     <div id="page2">
@@ -55,10 +55,10 @@
             <div class="page2-header-cell"></div>
             <div class="page2-header-cell">
               <span class="page2-col-title">
-                <span class="page2-col-title__en">design</span
+                <span class="page2-col-title__en">about</span
                 ><span class="page2-col-title__sep">/ </span
                 ><span class="page2-col-title__fa" lang="fa" dir="rtl"
-                  >طراحی</span
+                  >درباره</span
                 >
               </span>
             </div>
@@ -67,10 +67,10 @@
           <div class="page2-header-col" data-col="3">
             <div class="page2-header-cell">
               <span class="page2-col-title">
-                <span class="page2-col-title__en">shop</span
+                <span class="page2-col-title__en">design</span
                 ><span class="page2-col-title__sep">/ </span
                 ><span class="page2-col-title__fa" lang="fa" dir="rtl"
-                  >فروشگاه</span
+                  >طراحی</span
                 >
               </span>
             </div>
@@ -81,10 +81,10 @@
             <div class="page2-header-cell"></div>
             <div class="page2-header-cell">
               <span class="page2-col-title">
-                <span class="page2-col-title__en">about</span
+                <span class="page2-col-title__en">shop</span
                 ><span class="page2-col-title__sep">/ </span
                 ><span class="page2-col-title__fa" lang="fa" dir="rtl"
-                  >درباره</span
+                  >فروشگاه</span
                 >
               </span>
             </div>
@@ -93,10 +93,10 @@
           <div class="page2-header-col" data-col="5">
             <div class="page2-header-cell">
               <span class="page2-col-title">
-                <span class="page2-col-title__en">contact</span
+                <span class="page2-col-title__en">archive</span
                 ><span class="page2-col-title__sep">/ </span
                 ><span class="page2-col-title__fa" lang="fa" dir="rtl"
-                  >تماس</span
+                  >آרشیو</span
                 >
               </span>
             </div>
@@ -120,7 +120,12 @@
         </header>
 
         <div class="page2-logo" aria-label="Site logo">
-          <div class="page2-logo__slot">
+          <div
+            class="page2-logo__slot"
+            role="button"
+            tabindex="0"
+            aria-label="Go to home"
+          >
             <img
               class="page2-logo__image"
               src="website/logo.svg"
@@ -152,12 +157,24 @@
                 class="page2-home-bg__slide"
                 style="background-image: url('website/background%20home2.png')"
               ></div>
+              <div
+                class="page2-home-bg__slide"
+                style="background-image: url('website/background%20home4.jpeg')"
+              ></div>
             </div>
             <div class="page2-home-content">
               <p class="page2-home-intro page2-home-intro--en">
                 Modular fashion scarves expressing solidarity with Iranian
                 women&rsquo;s protest for bodily autonomy
               </p>
+              <div
+                class="page2-home-marker page2-home-marker--en"
+                aria-hidden="true"
+              ></div>
+              <div
+                class="page2-home-marker page2-home-marker--fa"
+                aria-hidden="true"
+              ></div>
               <p
                 class="page2-home-intro page2-home-intro--fa"
                 lang="fa"
@@ -170,8 +187,26 @@
           </section>
           <section
             class="page2-section"
-            id="section-design"
+            id="section-about"
             data-section-col="2"
+            aria-label="about"
+          >
+            <div class="page2-about-content">
+              <h2 class="page2-about-heading">about</h2>
+              <p class="page2-about-text">
+                Under is a modular headscarf brand that expresses solidarity and
+                support for Iranian women. Its designs are based on a visual sign
+                language that translates emotional states into graphic patterns,
+                giving voice to women for whom Iran is part of their identity.<br />
+                All designs on this website were created by Iranian women living
+                outside Iran.
+              </p>
+            </div>
+          </section>
+          <section
+            class="page2-section"
+            id="section-design"
+            data-section-col="3"
             aria-label="design"
           >
             <div
@@ -180,19 +215,29 @@
               aria-label="Profile questionnaire"
             >
               <div class="questionnaire-panel__grid">
+                <nav
+                  class="questionnaire-panel__progress"
+                  id="questionnaire-progress"
+                  aria-label="Section progress"
+                ></nav>
                 <div class="questionnaire-panel__content">
-                  <nav
-                    class="questionnaire-panel__progress"
-                    id="questionnaire-progress"
-                    aria-label="Question progress"
-                  ></nav>
                   <div class="questionnaire-panel__body">
-                    <p
-                      class="questionnaire-panel__section-label"
-                      id="questionnaire-section-label"
-                    >
-                      1/ Profile
-                    </p>
+                    <div class="questionnaire-panel__section-header">
+                      <p
+                        class="questionnaire-panel__section-label"
+                        id="questionnaire-section-label"
+                      >
+                        1/ profile
+                      </p>
+                      <button
+                        type="button"
+                        class="questionnaire-skip"
+                        id="questionnaire-skip-btn"
+                        hidden
+                      >
+                        Skip
+                      </button>
+                    </div>
                     <div
                       class="questionnaire-panel__viewport"
                       id="questionnaire-viewport"
@@ -563,7 +608,7 @@
                 class="sidebar__grid-btn"
                 aria-pressed="false"
               >
-                Octagon
+                Octagons
               </button>
               <button
                 type="button"
@@ -571,7 +616,7 @@
                 class="sidebar__grid-btn"
                 aria-pressed="false"
               >
-                Star grid
+                Stars
               </button>
               <button
                 type="button"
@@ -685,29 +730,6 @@
 
           <section class="sidebar__section sidebar__section--body-autonomy">
             <h2 class="sidebar__title">Family and friends in Iran</h2>
-            <div class="sidebar__grid-density-slider-wrap">
-              <div
-                class="sidebar__grid-density-range-labels"
-                aria-hidden="true"
-              >
-                <span class="sidebar__grid-density-range-label">None</span>
-                <span class="sidebar__grid-density-range-label">A lot</span>
-              </div>
-              <div class="sidebar__body-autonomy-control sidebar__item-control">
-                <input
-                  id="border-side-segments"
-                  type="range"
-                  min="1"
-                  max="3"
-                  value="1"
-                  step="1"
-                  aria-label="Family and friends in Iran. None to a lot."
-                />
-                <output id="border-side-segments-out" for="border-side-segments"
-                  >Thin</output
-                >
-              </div>
-            </div>
             <div class="sidebar__grid-density">
               <span class="sidebar__grid-density-label">Frame divisions</span>
               <div class="sidebar__grid-density-slider-wrap">
@@ -806,10 +828,10 @@
                     <input
                       id="anger-vertical-length"
                       type="range"
-                      min="0"
-                      max="30"
-                      value="0"
-                      step="7.5"
+                      min="1"
+                      max="10"
+                      value="1"
+                      step="1"
                       aria-label="Vertical line length"
                     />
                     <output id="anger-vertical-length-out" for="anger-vertical-length"
@@ -822,10 +844,10 @@
                       <input
                         id="anxiety-vertical-stroke"
                         type="range"
-                        min="0"
-                        max="100"
-                        value="0"
-                        step="25"
+                        min="1"
+                        max="10"
+                        value="1"
+                        step="1"
                         aria-label="Anxiety / Tension — vertical line thickness"
                       />
                       <output id="anxiety-vertical-stroke-out" for="anxiety-vertical-stroke"
@@ -844,10 +866,10 @@
                     <input
                       id="anger-triangle-density"
                       type="range"
-                      min="0"
-                      max="30"
-                      value="0"
-                      step="7.5"
+                      min="1"
+                      max="10"
+                      value="1"
+                      step="1"
                       aria-label="Anger triangle density"
                     />
                     <output id="anger-triangle-density-out" for="anger-triangle-density"
@@ -902,10 +924,10 @@
                     <input
                       id="circle-density"
                       type="range"
-                      min="0"
-                      max="30"
-                      value="0"
-                      step="7.5"
+                      min="1"
+                      max="10"
+                      value="1"
+                      step="1"
                       aria-label="Circle density"
                     />
                     <output id="circle-density-out" for="circle-density"
@@ -923,10 +945,10 @@
                     <input
                       id="longing-circle-density"
                       type="range"
-                      min="0"
-                      max="30"
-                      value="0"
-                      step="7.5"
+                      min="1"
+                      max="10"
+                      value="1"
+                      step="1"
                       aria-label="Longing circle density"
                     />
                     <output id="longing-circle-density-out" for="longing-circle-density"
@@ -944,10 +966,10 @@
                     <input
                       id="grief-circle-density"
                       type="range"
-                      min="0"
-                      max="30"
-                      value="0"
-                      step="7.5"
+                      min="1"
+                      max="10"
+                      value="1"
+                      step="1"
                       aria-label="Grief circle density"
                     />
                     <output id="grief-circle-density-out" for="grief-circle-density"
@@ -965,10 +987,10 @@
                     <input
                       id="strength-density"
                       type="range"
-                      min="0"
-                      max="30"
-                      value="0"
-                      step="7.5"
+                      min="1"
+                      max="10"
+                      value="1"
+                      step="1"
                       aria-label="Strength / Power circle-in-square density"
                     />
                     <output id="strength-density-out" for="strength-density"
@@ -986,10 +1008,10 @@
                     <input
                       id="auto-merge-intensity"
                       type="range"
-                      min="0"
-                      max="7"
-                      value="0"
-                      step="1.75"
+                      min="1"
+                      max="10"
+                      value="1"
+                      step="1"
                       aria-label="Pride merged area amount and size"
                     />
                     <output id="auto-merge-intensity-out" for="auto-merge-intensity"
@@ -1007,10 +1029,10 @@
                     <input
                       id="pride-fill-percent"
                       type="range"
-                      min="0"
-                      max="30"
-                      value="0"
-                      step="7.5"
+                      min="1"
+                      max="10"
+                      value="1"
+                      step="1"
                       aria-label="Pain diamond fill amount"
                     />
                     <output id="pride-fill-percent-out" for="pride-fill-percent"
@@ -1028,10 +1050,10 @@
                     <input
                       id="guilt-shame-fill-percent"
                       type="range"
-                      min="0"
-                      max="30"
-                      value="0"
-                      step="7.5"
+                      min="1"
+                      max="10"
+                      value="1"
+                      step="1"
                       aria-label="Guilt / Shame hollow diamond fill amount"
                     />
                     <output
@@ -1051,10 +1073,10 @@
                     <input
                       id="helplessness-percent"
                       type="range"
-                      min="0"
-                      max="30"
-                      value="0"
-                      step="7.5"
+                      min="1"
+                      max="10"
+                      value="1"
+                      step="1"
                       aria-label="Helplessness junction X mark density"
                     />
                     <output id="helplessness-percent-out" for="helplessness-percent"
@@ -1095,22 +1117,28 @@
           </section>
           <section
             class="page2-section"
-            id="section-archive"
-            data-section-col="3"
+            id="section-shop"
+            data-section-col="4"
             aria-label="shop"
           ></section>
           <section
             class="page2-section"
-            id="section-about"
-            data-section-col="4"
-            aria-label="about"
-          ></section>
-          <section
-            class="page2-section"
-            id="section-contact"
+            id="section-archive"
             data-section-col="5"
-            aria-label="contact"
-          ></section>
+            aria-label="archive"
+          >
+            <div class="archive-section">
+              <h2 class="archive-section__title">Handkerchief archive</h2>
+              <p class="archive-section__empty" id="archive-empty" hidden>
+                No saved handkerchiefs yet.
+              </p>
+              <div
+                class="archive-grid"
+                id="handkerchief-archive-grid"
+                role="list"
+              ></div>
+            </div>
+          </section>
         </main>
       </div>
     </div>
@@ -1132,13 +1160,23 @@
         --page2-margin: clamp(2rem, 2.894vw, 3.125rem); /* 50px @ ref */
         --page2-gutter: clamp(0.875rem, 1.157vw, 1.25rem); /* 20px @ ref */
         --page2-space-20: var(--page2-gutter);
+        --page2-header-row-height: calc(var(--page2-space-20) * 1.3);
+        --page2-header-row-height-bottom: calc(
+          var(--page2-header-row-height) * 0.5
+        );
+        --page2-header-band-height: calc(
+          var(--page2-space-20) + 2 * var(--page2-header-row-height) +
+            var(--page2-header-row-height-bottom)
+        );
+        --page2-header-cell-fill: #685450;
+        --page2-bg: #d9d9d9;
         --page2-section-count: 5;
 
         display: block;
         position: fixed;
         inset: 0;
         height: 100vh;
-        background: #d9d9d9;
+        background: var(--page2-bg);
         overflow: auto;
         scroll-snap-type: y mandatory;
       }
@@ -1199,6 +1237,61 @@
         position: relative;
         overflow: hidden;
         background-color: #d9d9d9;
+        cursor: default;
+      }
+
+      #page2 #section-about {
+        position: relative;
+        background-color: var(--page2-bg);
+      }
+
+      #page2 #section-about .page2-about-content {
+        display: grid;
+        grid-template-columns: repeat(12, 1fr);
+        column-gap: var(--page2-gutter);
+        row-gap: 50px;
+        box-sizing: border-box;
+        height: 100%;
+        padding-inline: var(--page2-margin);
+        padding-top: calc(var(--page2-header-band-height) + 200px);
+        align-content: start;
+        align-items: start;
+        justify-items: start;
+      }
+
+      #page2 .page2-about-heading,
+      #page2 .page2-about-text {
+        grid-column: 2 / span 6;
+        justify-self: start;
+        text-align: left;
+        margin: 0;
+        padding: 0;
+        max-width: 100%;
+      }
+
+      #page2 .page2-about-heading {
+        font-family: "OT2049", sans-serif;
+        font-weight: 400;
+        font-size: 130px;
+        line-height: 0.72;
+        letter-spacing: -9px;
+        color: var(--color-brown);
+        text-box-trim: trim-both;
+        text-box-edge: cap alphabetic;
+      }
+
+      @supports not (text-box-trim: trim-both) {
+        #page2 .page2-about-heading {
+          margin-bottom: calc(-130px * 0.28);
+        }
+      }
+
+      #page2 .page2-about-text {
+        font-family: "PP Radio Grotesk", sans-serif;
+        font-weight: 200;
+        font-size: 35px;
+        line-height: 1.1;
+        color: var(--color-brown);
       }
 
       #page2 #section-design {
@@ -1207,7 +1300,7 @@
         cursor: default;
         box-sizing: border-box;
         height: 100vh;
-        padding-top: calc(4 * var(--page2-space-20));
+        padding-top: var(--page2-header-band-height);
       }
 
       #page2 #section-design > .app-shell {
@@ -1217,6 +1310,12 @@
       #page2 #section-design .sidebar {
         border-right: none;
         border-left: 1px solid #ddd;
+      }
+
+      /* Hide design UI when another site section is active (prevents canvas bleed on home). */
+      #page2:not(.page2--design-active) #section-design > .app-shell,
+      #page2:not(.page2--design-active) #section-design > .questionnaire-panel {
+        display: none !important;
       }
 
       #page2 #section-home .page2-home-content {
@@ -1251,6 +1350,14 @@
         font-family: "DecoType Nastaleeq", "Noto Nastaliq Urdu", serif;
         font-weight: normal;
         text-align: right;
+      }
+
+      #page2 .page2-home-marker {
+        position: absolute;
+        width: 15px;
+        height: 15px;
+        background: #fff;
+        pointer-events: none;
       }
 
       #page2 #section-home .page2-home-bg {
@@ -1340,7 +1447,9 @@
       #page2 .page2-header-col {
         position: relative;
         display: grid;
-        grid-template-rows: repeat(3, var(--page2-space-20));
+        grid-template-rows:
+          var(--page2-header-row-height) var(--page2-header-row-height)
+          var(--page2-header-row-height-bottom);
         align-content: start;
         pointer-events: auto;
         cursor: default;
@@ -1357,10 +1466,14 @@
       }
 
       #page2 .page2-header-cell {
-        height: var(--page2-space-20);
+        height: var(--page2-header-row-height);
         background: transparent;
         box-shadow: none;
         transition: background 0.2s ease;
+      }
+
+      #page2 .page2-header-cell:nth-child(3) {
+        height: var(--page2-header-row-height-bottom);
       }
 
       #page2.page2--grid-lines-visible
@@ -1383,7 +1496,7 @@
       /* Edge columns: middle cell only (top/bottom stay default) */
       #page2 .page2-header-col--left-edge .page2-header-cell:nth-child(2),
       #page2 .page2-header-col--right-edge .page2-header-cell:nth-child(2) {
-        background: #000;
+        background: var(--page2-header-cell-fill);
         box-shadow: none;
         cursor: pointer;
       }
@@ -1397,14 +1510,14 @@
       /* Remaining columns keep the original 6-column checkerboard */
       #page2 .page2-header-col:nth-child(even) .page2-header-cell:nth-child(1),
       #page2 .page2-header-col:nth-child(even) .page2-header-cell:nth-child(3) {
-        background: #000;
+        background: var(--page2-header-cell-fill);
         box-shadow: none;
       }
 
       #page2
         .page2-header-col:nth-child(odd):not(:first-child)
         .page2-header-cell:nth-child(2) {
-        background: #000;
+        background: var(--page2-header-cell-fill);
         box-shadow: none;
       }
 
@@ -1413,6 +1526,7 @@
         align-items: center;
         box-sizing: border-box;
         padding: 2px;
+        padding-top: calc(2px + var(--page2-header-row-height) * 0.24);
         overflow: hidden;
       }
 
@@ -1421,11 +1535,11 @@
         direction: ltr;
         align-items: baseline;
         font-family: "DIN Condensed", sans-serif;
-        font-size: calc(var(--page2-space-20) - 4px);
+        font-size: calc(var(--page2-header-row-height) - 4px);
         font-weight: 700;
         line-height: 1.05;
-        color: #fff;
-        mix-blend-mode: exclusion;
+        color: var(--page2-bg);
+        mix-blend-mode: normal;
         white-space: nowrap;
         pointer-events: none;
       }
@@ -1449,7 +1563,7 @@
         mix-blend-mode: inherit;
       }
 
-      /* Home section: invert checkerboard — black cells → white */
+      /* Home section: invert checkerboard — filled cells → white */
       #page2.page2--header-invert
         .page2-header-col--left-edge
         .page2-header-cell:nth-child(2),
@@ -1498,7 +1612,7 @@
 
       #page2 .page2-logo {
         position: fixed;
-        bottom: var(--page2-space-20);
+        top: 0;
         left: 0;
         right: 0;
         z-index: 3;
@@ -1507,14 +1621,18 @@
         column-gap: var(--page2-gutter);
         padding-inline: var(--page2-margin);
         box-sizing: border-box;
-        align-items: end;
+        align-items: start;
         pointer-events: none;
+        will-change: top;
       }
 
       #page2 .page2-logo__slot {
         grid-column: 1 / span 2;
         width: 100%;
         min-width: 0;
+        will-change: transform, opacity;
+        pointer-events: auto;
+        cursor: pointer;
       }
 
       #page2 .page2-logo__image {
@@ -1602,6 +1720,16 @@
       (function () {
         var page2 = document.getElementById("page2");
         var header = page2 && page2.querySelector(".page2-header");
+        var logoEl = page2 && page2.querySelector(".page2-logo");
+        var homeSection = page2 && page2.querySelector("#section-home");
+        var homeMarkerEn =
+          page2 && page2.querySelector(".page2-home-marker--en");
+        var homeMarkerFa =
+          page2 && page2.querySelector(".page2-home-marker--fa");
+        var homeIntroEn =
+          page2 && page2.querySelector(".page2-home-intro--en");
+        var homeIntroFa =
+          page2 && page2.querySelector(".page2-home-intro--fa");
         if (!page2 || !header) return;
 
         var MIN_SPAN = 1;
@@ -1627,6 +1755,7 @@
         function openHomeSection(animate) {
           page2.scrollTop = 0;
           applyExpandedColumn(DEFAULT_OPEN_INDEX, animate === false ? false : undefined);
+          updateLogoPosition();
         }
 
         function spansForExpandedColumn(index) {
@@ -1637,7 +1766,7 @@
         }
 
         var HOME_COL_INDEX = DEFAULT_OPEN_INDEX;
-        var DESIGN_COL_INDEX = 2;
+        var DESIGN_COL_INDEX = 3;
 
         function updateHeaderInvertState() {
           page2.classList.toggle(
@@ -1647,10 +1776,19 @@
         }
 
         function updateDesignActiveState() {
+          var wasDesignActive = page2.classList.contains("page2--design-active");
           page2.classList.toggle(
             "page2--design-active",
             scrollActiveIndex === DESIGN_COL_INDEX
           );
+          if (
+            wasDesignActive !== (scrollActiveIndex === DESIGN_COL_INDEX) &&
+            typeof window.layoutStage === "function"
+          ) {
+            window.requestAnimationFrame(function () {
+              window.layoutStage();
+            });
+          }
           if (postHeaderAnimRefreshTimer) {
             window.clearTimeout(postHeaderAnimRefreshTimer);
             postHeaderAnimRefreshTimer = null;
@@ -1825,12 +1963,15 @@
         function scheduleRefresh() {
           requestAnimationFrame(function () {
             refreshLayout(false);
+            updateLogoPosition();
             requestAnimationFrame(function () {
               refreshLayout(false);
+              updateLogoPosition();
             });
           });
           window.setTimeout(function () {
             refreshLayout(false);
+            updateLogoPosition();
           }, 60);
         }
 
@@ -1919,14 +2060,37 @@
           sectionObserver = null;
         }
 
+        function goToHomeSection() {
+          if (!isPage2Visible() || !homeSection) return;
+          applyExpandedColumn(HOME_COL_INDEX);
+          scrollToSection(homeSection);
+          updateLogoPosition();
+        }
+
         headerCols.forEach(function (col, index) {
           if (isLockedColumn(index)) return;
           if (!col.querySelector(".page2-col-title")) return;
           col.addEventListener("click", function () {
             if (!isPage2Visible()) return;
+            applyExpandedColumn(index);
             scrollToSection(sectionForColumn(index));
           });
         });
+
+        var logoSlot = logoEl && logoEl.querySelector(".page2-logo__slot");
+        if (logoSlot) {
+          logoSlot.addEventListener("click", function (event) {
+            event.preventDefault();
+            event.stopPropagation();
+            goToHomeSection();
+          });
+          logoSlot.addEventListener("keydown", function (event) {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              goToHomeSection();
+            }
+          });
+        }
 
         header.querySelectorAll(".page2-header-cell").forEach(function (cell) {
           cell.addEventListener("mouseenter", function () {
@@ -1963,6 +2127,116 @@
           scrollToSection(sectionForColumn(headerColIndex));
         });
 
+        function getLogoBottomPaddingPx() {
+          var styles = window.getComputedStyle(page2);
+          return parseFloat(styles.getPropertyValue("--page2-space-20")) || 20;
+        }
+
+        function getLogoColumnOffsetX() {
+          var guides = page2.querySelector(".page2-guides");
+          if (!guides || !logoEl) return 0;
+          var gridCols = guides.querySelectorAll(".page2-col");
+          if (gridCols.length < 7) return 0;
+          var logoRect = logoEl.getBoundingClientRect();
+          var leftColLeft = gridCols[0].getBoundingClientRect().left;
+          var middleColLeft = gridCols[5].getBoundingClientRect().left;
+          return middleColLeft - leftColLeft;
+        }
+
+        var HOME_MARKER_SIZE_PX = 15;
+
+        function updateHomeMarkers() {
+          if (
+            !homeSection ||
+            !homeMarkerEn ||
+            !homeMarkerFa ||
+            !homeIntroEn ||
+            !homeIntroFa ||
+            !logoEl
+          ) {
+            return;
+          }
+
+          var slot = logoEl.querySelector(".page2-logo__slot");
+          if (!slot) return;
+
+          var sectionRect = homeSection.getBoundingClientRect();
+          var contentEl = homeSection.querySelector(".page2-home-content");
+          if (!contentEl) return;
+          var contentRect = contentEl.getBoundingClientRect();
+          var viewportHeight = page2.clientHeight || window.innerHeight;
+          var isHomeVisible =
+            sectionRect.bottom > 0 && sectionRect.top < viewportHeight;
+
+          homeMarkerEn.style.visibility = isHomeVisible ? "visible" : "hidden";
+          homeMarkerFa.style.visibility = isHomeVisible ? "visible" : "hidden";
+          if (!isHomeVisible) return;
+
+          var introEnRect = homeIntroEn.getBoundingClientRect();
+          var introFaRect = homeIntroFa.getBoundingClientRect();
+          var logoRect = slot.getBoundingClientRect();
+          var markerHalf = HOME_MARKER_SIZE_PX / 2;
+          var logoCenterY = logoRect.top + logoRect.height / 2;
+          var enCenterY =
+            (introEnRect.top +
+              introEnRect.height / 2 +
+              logoCenterY) /
+              2 -
+            contentRect.top -
+            markerHalf;
+          var faCenterY =
+            (introFaRect.top +
+              introFaRect.height / 2 +
+              logoCenterY) /
+              2 -
+            contentRect.top -
+            markerHalf;
+
+          var enCenterX =
+            (introEnRect.right + logoRect.left) / 2 -
+            contentRect.left -
+            markerHalf;
+          var faCenterX =
+            (introFaRect.left + logoRect.right) / 2 -
+            contentRect.left -
+            markerHalf;
+
+          homeMarkerEn.style.left = enCenterX + "px";
+          homeMarkerEn.style.top = enCenterY + "px";
+
+          homeMarkerFa.style.left = faCenterX + "px";
+          homeMarkerFa.style.top = faCenterY + "px";
+        }
+
+        function updateLogoPosition() {
+          if (!logoEl) return;
+          var slot = logoEl.querySelector(".page2-logo__slot");
+          if (!slot) return;
+          var logoHeight = slot.offsetHeight;
+          var viewportHeight = page2.clientHeight;
+          if (viewportHeight <= 0) return;
+
+          var centerTop = (viewportHeight - logoHeight) / 2;
+          var bottomTop =
+            viewportHeight - logoHeight - getLogoBottomPaddingPx();
+          var scrollProgress = Math.min(
+            1,
+            Math.max(0, page2.scrollTop / viewportHeight)
+          );
+
+          /* Y down through scroll; fade completes at 3/4 of downward travel. */
+          var yProgress = Math.min(1, scrollProgress * 2);
+          var fadeProgress = Math.min(1, yProgress / 0.75);
+          var middleOffsetX = getLogoColumnOffsetX();
+
+          logoEl.style.top =
+            centerTop + (bottomTop - centerTop) * yProgress + "px";
+          slot.style.transform = "translateX(" + middleOffsetX + "px)";
+          slot.style.opacity = String(1 - fadeProgress);
+          slot.style.pointerEvents = fadeProgress >= 1 ? "none" : "auto";
+          updateHomeMarkers();
+        }
+
         function syncActiveSectionFromScroll() {
           if (!scrollBootstrapComplete || !isPage2Visible()) return;
           var viewportMid =
@@ -1985,9 +2259,14 @@
           }
         }
 
-        page2.addEventListener("scroll", syncActiveSectionFromScroll, {
-          passive: true,
-        });
+        page2.addEventListener(
+          "scroll",
+          function () {
+            updateLogoPosition();
+            syncActiveSectionFromScroll();
+          },
+          { passive: true }
+        );
 
         page2.addEventListener("page2:show", function () {
           openHomeSection(false);
@@ -2087,12 +2366,14 @@
     <script defer src="js/nestedStarOctagonsGeometry.js"></script>
     <script defer src="js/circlesGridGeometry.js"></script>
     <script defer src="js/diamondsGridGeometry.js"></script>
+    <script defer src="js/gridUnitIcons.js"></script>
     <script defer src="js/identityControls.js?v=20260611-questionnaire-sync"></script>
     <script defer src="js/sectionProgression.js?v=20260611-canvas-grid"></script>
-    <script defer src="js/questionnaire.js?v=20260611-canvas-sync"></script>
+    <script defer src="js/questionnaire.js?v=20260619-madlibs-dropdown"></script>
     <script defer src="js/locationCoordinates.js"></script>
     <script defer src="js/embeddedCombinationsCsv.js"></script>
     <script defer src="js/handkerchiefCombinations.js"></script>
-    <script defer src="js/app.js?v=20260611-canvas-anchor4"></script>
+    <script defer src="js/app.js?v=20260618-fan-drag"></script>
+    <script defer src="js/handkerchiefArchive.js"></script>
   </body>
 </html>

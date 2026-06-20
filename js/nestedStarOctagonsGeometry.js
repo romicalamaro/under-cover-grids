@@ -1017,6 +1017,28 @@ function roundCoord(v) {
           return roundCoord(half * starScale);
         }
 
+        /**
+         * Single unit cell at origin for thumbnails (no junction diamonds).
+         * @param {number} tileSize
+         * @param {number} [pinwheelFactor]
+         * @returns {{ segments: object[], starFills: object[], starRhombusFills: object[] }}
+         */
+        function buildUnitCellPattern(tileSize, pinwheelFactor) {
+          if (typeof pinwheelFactor !== "number") {
+            pinwheelFactor = 0;
+          }
+          var T = tileSize;
+          var map = new Map();
+          var starFills = [];
+          var starRhombusFills = [];
+          addUnitCell(map, starFills, starRhombusFills, 0, 0, T, pinwheelFactor);
+          return {
+            segments: Array.from(map.values()),
+            starFills: starFills,
+            starRhombusFills: starRhombusFills,
+          };
+        }
+
         function buildPattern(layout, pinwheelFactor) {
           if (typeof pinwheelFactor !== "number") {
             pinwheelFactor = 0;
@@ -1309,6 +1331,7 @@ function roundCoord(v) {
     computeLayoutFromN: computeLayoutFromN,
     buildValidLayouts: buildValidLayouts,
     snapLayoutToN: snapLayoutToN,
+    buildUnitCellPattern: buildUnitCellPattern,
     buildPattern: buildPattern,
     closedPolygonPathD: closedPolygonPathD,
     roundCoord: roundCoord,

@@ -76,7 +76,9 @@
   function isSectionUnlocked(sectionId) {
     if (sectionId === "identity") return true;
     if (sectionId === "combinations") return false;
-    if (sectionId === "grid") return isProfileSectionComplete();
+    if (sectionId === "grid") {
+      return isProfileSectionComplete() || questionnaireProfileComplete;
+    }
     if (sectionId === "color-divisions") return gridTypeChosen;
     if (sectionId === "body-autonomy") return gridTypeChosen;
     if (sectionId === "body-autonomy-wear") return frameSectionEngaged;
