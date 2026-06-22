@@ -29,35 +29,13 @@
           <div class="page2-col"></div>
         </div>
 
-        <div
-          class="page2-header-margin page2-header-margin--left"
-          aria-hidden="true"
-        >
-          <div class="page2-header-margin__cell"></div>
-          <div class="page2-header-margin__cell"></div>
-          <div class="page2-header-margin__cell"></div>
-        </div>
-        <div
-          class="page2-header-margin page2-header-margin--right"
-          aria-hidden="true"
-        >
-          <div class="page2-header-margin__cell"></div>
-          <div class="page2-header-margin__cell"></div>
-          <div class="page2-header-margin__cell"></div>
-        </div>
-
         <header class="page2-header" aria-label="Header grid">
-          <div class="page2-header-col" data-col="0">
+          <div
+            class="page2-header-col page2-header-col--left-edge"
+            data-col="0"
+          >
             <div class="page2-header-cell"></div>
-            <div class="page2-header-cell">
-              <span class="page2-col-title">
-                <span class="page2-col-title__en">section</span
-                ><span class="page2-col-title__sep">/ </span
-                ><span class="page2-col-title__fa" lang="fa" dir="rtl"
-                  >بخش</span
-                >
-              </span>
-            </div>
+            <div class="page2-header-cell"></div>
             <div class="page2-header-cell"></div>
           </div>
           <div class="page2-header-col" data-col="1">
@@ -125,17 +103,12 @@
             <div class="page2-header-cell"></div>
             <div class="page2-header-cell"></div>
           </div>
-          <div class="page2-header-col" data-col="6">
+          <div
+            class="page2-header-col page2-header-col--right-edge"
+            data-col="6"
+          >
             <div class="page2-header-cell"></div>
-            <div class="page2-header-cell">
-              <span class="page2-col-title">
-                <span class="page2-col-title__en">section</span
-                ><span class="page2-col-title__sep">/ </span
-                ><span class="page2-col-title__fa" lang="fa" dir="rtl"
-                  >بخش</span
-                >
-              </span>
-            </div>
+            <div class="page2-header-cell"></div>
             <div class="page2-header-cell"></div>
           </div>
         </header>
@@ -159,16 +132,6 @@
         </div>
 
         <main class="page2-sections" aria-label="Site sections">
-          <section
-            class="page2-section"
-            id="section-new-left"
-            data-section-col="0"
-            aria-label="section left"
-          >
-            <div class="page2-edge-section">
-              <p class="page2-edge-section__intro"></p>
-            </div>
-          </section>
           <section
             class="page2-section"
             id="section-home"
@@ -730,16 +693,6 @@
               <p class="signals-section__intro"></p>
             </div>
           </section>
-          <section
-            class="page2-section"
-            id="section-new-right"
-            data-section-col="6"
-            aria-label="section right"
-          >
-            <div class="page2-edge-section">
-              <p class="page2-edge-section__intro"></p>
-            </div>
-          </section>
         </main>
       </div>
     </div>
@@ -767,7 +720,7 @@
         );
         --page2-header-cell-fill: #685450;
         --page2-bg: #fff;
-        --page2-section-count: 7;
+        --page2-section-count: 5;
 
         display: block;
         position: fixed;
@@ -1179,103 +1132,6 @@
         background: rgba(100, 120, 160, 0.04);
       }
 
-      #page2 #section-new-left,
-      #page2 #section-new-right {
-        position: relative;
-        background-color: var(--page2-bg);
-      }
-
-      #page2 .page2-edge-section {
-        box-sizing: border-box;
-        height: 100%;
-        padding-top: var(--page2-header-band-height);
-        padding-inline: var(--page2-margin);
-      }
-
-      #page2 .page2-edge-section__intro {
-        margin: 0;
-        font-family: "DIN Condensed", sans-serif;
-        font-size: calc((var(--page2-space-20) - 4px) * 0.9);
-        font-weight: 700;
-        color: #888;
-      }
-
-      #page2 .page2-header-margin {
-        position: fixed;
-        top: var(--page2-space-20);
-        width: var(--page2-margin);
-        z-index: 3;
-        pointer-events: auto;
-        display: grid;
-        grid-template-rows:
-          var(--page2-header-row-height) var(--page2-header-row-height)
-          var(--page2-header-row-height-bottom);
-        align-content: start;
-      }
-
-      #page2 .page2-header-margin--left {
-        left: 0;
-      }
-
-      #page2 .page2-header-margin--right {
-        right: 0;
-      }
-
-      #page2 .page2-header-margin__cell {
-        box-shadow: none;
-        transition: background 0.2s ease, box-shadow 0.2s ease;
-      }
-
-      #page2 .page2-header-margin__cell:nth-child(1) {
-        height: var(--page2-header-row-height);
-        background: #fff;
-      }
-
-      #page2 .page2-header-margin__cell:nth-child(2) {
-        height: var(--page2-header-row-height);
-        background: transparent;
-        cursor: pointer;
-      }
-
-      #page2 .page2-header-margin__cell:nth-child(3) {
-        height: var(--page2-header-row-height-bottom);
-        background: #fff;
-      }
-
-      @media (prefers-reduced-motion: reduce) {
-        #page2 .page2-header-margin__cell {
-          transition: none;
-        }
-      }
-
-      #page2.page2--grid-lines-visible
-        .page2-header-margin__cell:nth-child(1),
-      #page2.page2--grid-lines-visible
-        .page2-header-margin__cell:nth-child(3) {
-        background: rgba(80, 70, 60, 0.08);
-        box-shadow: inset 0 0 0 1px rgba(80, 70, 60, 0.28);
-      }
-
-      #page2.page2--grid-lines-visible
-        .page2-header-margin__cell:nth-child(2) {
-        background: transparent;
-        box-shadow: inset 0 0 0 1px rgba(80, 70, 60, 0.28);
-      }
-
-      #page2.page2--header-invert
-        .page2-header-margin__cell:nth-child(1),
-      #page2.page2--header-invert
-        .page2-header-margin__cell:nth-child(3) {
-        background: #fff;
-        box-shadow: none;
-      }
-
-      #page2.page2--header-invert
-        .page2-header-margin__cell:nth-child(2) {
-        background: transparent;
-        box-shadow: none;
-      }
-
       #page2 .page2-header {
         display: grid;
         column-gap: 0;
@@ -1349,14 +1205,24 @@
         box-shadow: inset 0 0 0 1px rgba(80, 70, 60, 0.28);
       }
 
-      /* Checkerboard pattern for 7 section columns */
+      /* Edge columns: middle cell only (top/bottom stay default) */
+      #page2 .page2-header-col--left-edge .page2-header-cell:nth-child(2),
+      #page2 .page2-header-col--right-edge .page2-header-cell:nth-child(2) {
+        background: var(--page2-header-cell-fill);
+        box-shadow: none;
+        cursor: pointer;
+      }
+
+      /* Remaining columns keep the original 6-column checkerboard */
       #page2 .page2-header-col:nth-child(even) .page2-header-cell:nth-child(1),
       #page2 .page2-header-col:nth-child(even) .page2-header-cell:nth-child(3) {
         background: var(--page2-header-cell-fill);
         box-shadow: none;
       }
 
-      #page2 .page2-header-col:nth-child(odd) .page2-header-cell:nth-child(2) {
+      #page2
+        .page2-header-col:nth-child(odd):not(:first-child)
+        .page2-header-cell:nth-child(2) {
         background: var(--page2-header-cell-fill);
         box-shadow: none;
       }
@@ -1405,6 +1271,16 @@
 
       /* Home section: invert checkerboard — filled cells → white */
       #page2.page2--header-invert
+        .page2-header-col--left-edge
+        .page2-header-cell:nth-child(2),
+      #page2.page2--header-invert
+        .page2-header-col--right-edge
+        .page2-header-cell:nth-child(2) {
+        background: #fff;
+        box-shadow: none;
+      }
+
+      #page2.page2--header-invert
         .page2-header-col:nth-child(even)
         .page2-header-cell:nth-child(1),
       #page2.page2--header-invert
@@ -1415,7 +1291,7 @@
       }
 
       #page2.page2--header-invert
-        .page2-header-col:nth-child(odd)
+        .page2-header-col:nth-child(odd):not(:first-child)
         .page2-header-cell:nth-child(2) {
         background: #fff;
         box-shadow: none;
@@ -1479,7 +1355,7 @@
         var gridLinesTrigger =
           page2 &&
           page2.querySelector(
-            ".page2-header-margin--left .page2-header-margin__cell:nth-child(2)"
+            ".page2-header-col--left-edge .page2-header-cell:nth-child(2)"
           );
         var gridLinesVisible = false;
 
@@ -1545,19 +1421,14 @@
         var scrollBootstrapComplete = false;
 
         function openHomeSection(animate) {
+          page2.scrollTop = 0;
           applyExpandedColumn(DEFAULT_OPEN_INDEX, animate === false ? false : undefined);
-          if (homeSection) {
-            page2.scrollTop +=
-              homeSection.getBoundingClientRect().top -
-              page2.getBoundingClientRect().top;
-          } else {
-            page2.scrollTop = 0;
-          }
           updateLogoPosition();
         }
 
         function spansForExpandedColumn(index) {
           return Array.prototype.map.call(headerCols, function (_, i) {
+            if (isLockedColumn(i)) return edgeSpanForColumn(i);
             return i === index ? MAX_SPAN : MIN_SPAN;
           });
         }
@@ -1660,12 +1531,16 @@
           var metrics = getGridMetrics();
           if (!metrics) return null;
           return spans.map(function (span, index) {
-            return spanToPixels(span, index === spans.length - 1, metrics);
+            var edgePx = edgeTrackPx(index, metrics);
+            return edgePx !== null
+              ? edgePx
+              : spanToPixels(span, index === spans.length - 1, metrics);
           });
         }
 
         function applyHeaderHoverOffset(widths, hoveredCol, openCol) {
           if (hoveredCol < 0 || hoveredCol === openCol) return widths;
+          if (isLockedColumn(hoveredCol) || isLockedColumn(openCol)) return widths;
           if (widths[openCol] - HEADER_HOVER_EXPAND_PX < getMinOpenColumnWidthPx()) {
             return widths;
           }
@@ -1673,6 +1548,24 @@
           next[hoveredCol] += HEADER_HOVER_EXPAND_PX;
           next[openCol] -= HEADER_HOVER_EXPAND_PX;
           return next;
+        }
+
+        function isLockedColumn(index) {
+          return index === 0 || index === lastColIndex;
+        }
+
+        function edgeSpanForColumn(index) {
+          return MIN_SPAN;
+        }
+
+        function edgeTrackPx(index, metrics) {
+          if (index === 0) {
+            return spanToPixels(MIN_SPAN, false, metrics);
+          }
+          if (index === lastColIndex) {
+            return spanToPixels(MIN_SPAN, true, metrics);
+          }
+          return null;
         }
 
         function isPage2Visible() {
@@ -1813,7 +1706,7 @@
                   entry.target.getAttribute("data-section-col"),
                   10
                 );
-                if (isNaN(colIndex)) return;
+                if (isNaN(colIndex) || isLockedColumn(colIndex)) return;
                 if (scrollActiveIndex === colIndex) return;
                 ensureLayoutReady();
                 applyExpandedColumn(colIndex);
@@ -1843,6 +1736,7 @@
         }
 
         headerCols.forEach(function (col, index) {
+          if (isLockedColumn(index)) return;
           if (!col.querySelector(".page2-col-title")) return;
           col.addEventListener("click", function () {
             if (!isPage2Visible()) return;
@@ -1873,7 +1767,7 @@
             if (!col) return;
             var index = getHeaderColIndex(col);
             if (index < 0) return;
-            if (index === scrollActiveIndex) return;
+            if (index === scrollActiveIndex || isLockedColumn(index)) return;
             ensureLayoutReady();
             hoveredHeaderColIndex = index;
             updateHeaderHoverClasses();
@@ -1897,7 +1791,7 @@
           if (gridColIndex < 0) return;
 
           var headerColIndex = headerColForGridCol(gridColIndex);
-          if (headerColIndex === null) return;
+          if (headerColIndex === null || isLockedColumn(headerColIndex)) return;
 
           scrollToSection(sectionForColumn(headerColIndex));
         });
@@ -2024,7 +1918,7 @@
                 section.getAttribute("data-section-col"),
                 10
               );
-              if (isNaN(colIndex)) return;
+              if (isNaN(colIndex) || isLockedColumn(colIndex)) return;
               if (scrollActiveIndex !== colIndex) {
                 ensureLayoutReady();
                 applyExpandedColumn(colIndex);
