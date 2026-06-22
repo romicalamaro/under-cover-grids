@@ -302,7 +302,16 @@
 
   var palettes = emptyPalettes();
 
-  var activePalette = "palette1";
+  function getDefaultSheetPaletteKey() {
+    var n =
+      typeof DEFAULT_SHEET_PALETTE_NUM !== "undefined"
+        ? Number(DEFAULT_SHEET_PALETTE_NUM)
+        : 3;
+    if (!Number.isFinite(n) || n < 1 || n > PALETTE_KEYS.length) n = 3;
+    return "palette" + n;
+  }
+
+  var activePalette = getDefaultSheetPaletteKey();
   var loaded = false;
   /** @type {"google"|"local"|"embedded"|null} */
   var lastLoadSource = null;
@@ -310,7 +319,6 @@
   /** Incremented on full reload to cancel stale in-flight gviz JSONP requests. */
   var sheetLoadGeneration = 0;
   var GVIZ_SCRIPT_ATTR = "data-sheet-palette-gviz";
-  var ACTIVE_PALETTE_STORAGE_KEY = "undercover.activeSheetPalette";
   /** Fingerprint of last applied sheet data — skip UI refresh when unchanged. */
   var lastPaletteFingerprint = null;
   /** Google gviz `sig` changes when the sheet is edited — used for live sync. */
@@ -779,30 +787,9 @@
     return true;
   }
 
-  function rememberActivePalette(key) {
-    try {
-      if (global.sessionStorage) {
-        global.sessionStorage.setItem(ACTIVE_PALETTE_STORAGE_KEY, key);
-      }
-    } catch (e) {
-      /* ignore */
-    }
-  }
-
-  function getRememberedActivePalette() {
-    try {
-      if (!global.sessionStorage) return null;
-      var saved = global.sessionStorage.getItem(ACTIVE_PALETTE_STORAGE_KEY);
-      return PALETTE_KEYS.indexOf(saved) !== -1 ? saved : null;
-    } catch (e) {
-      return null;
-    }
-  }
-
   function setActivePalette(key) {
     if (PALETTE_KEYS.indexOf(key) === -1) return false;
     activePalette = key;
-    rememberActivePalette(key);
     syncBorderGlobals();
     updatePaletteButtonStates();
     if (GVIZ_CSV_ONLY_PALETTE_KEYS.indexOf(key) !== -1) {
@@ -1939,8 +1926,8 @@
     getPaletteConicGradient: getPaletteConicGradient,
     setSlotColor: setSlotColor,
     setActivePalette: setActivePalette,
+    getDefaultSheetPaletteKey: getDefaultSheetPaletteKey,
     getActivePaletteKey: getActivePaletteKey,
-    getRememberedActivePalette: getRememberedActivePalette,
     toggleSheetPalette: toggleSheetPalette,
     pickRandomPalette: pickRandomPalette,
     syncBorderGlobals: syncBorderGlobals,

@@ -69,13 +69,26 @@ var CANVAS_EDGE_BROWN_BAR_HEIGHT_PX = 100;
 var CANVAS_EDGE_BROWN_BAR_OUTWARD_EXTEND_PX = 20;
 /** Extra canvas area above bottom label bar included in profile questionnaire zoom */
 var PROFILE_LABEL_FOCUS_PAD_ABOVE_PX = 280;
-/** Gap between handkerchief bottom and viewport bottom in large mode (CSS px) */
+/** Legacy bottom gap constant (profile zoom now centers label on viewport Y) */
 var PROFILE_LABEL_FOCUS_BOTTOM_SCREEN_GAP_PX = 100;
+/** Shift profile label focus above viewport center (CSS px; positive = higher) */
+var PROFILE_LABEL_FOCUS_CENTER_OFFSET_UP_PX = 80;
 /** Additional upward clip extension beyond header alignment (CSS px) */
 var PROFILE_LABEL_FOCUS_EXTRA_EXTEND_UP_PX = 100;
-/** Profile zoom target: grid columns (1-based) — focus rect fills this span on the right */
-var PROFILE_LABEL_FOCUS_GRID_COL_START = 8;
-var PROFILE_LABEL_FOCUS_GRID_COL_SPAN = 5;
+/** Profile zoom target: grid columns (1-based) — profile section only */
+var PROFILE_LABEL_FOCUS_GRID_COL_START = 7;
+var PROFILE_LABEL_FOCUS_GRID_COL_SPAN = 6;
+/** Pre-family grid/color + body-autonomy focus columns (1-based) */
+var QUESTIONNAIRE_FOCUS_GRID_COL_START = 8;
+var QUESTIONNAIRE_FOCUS_GRID_COL_SPAN = 5;
+/** #design-svg box-shadow bleed reserved in large profile zoom layout (CSS px) */
+var CANVAS_LAYOUT_BOX_SHADOW_BLEED_PX = 12;
+/** Extra canvas area below top brown bar included in body-autonomy questionnaire zoom */
+var BODY_AUTONOMY_FOCUS_PAD_BELOW_PX = 450;
+/** Gap between handkerchief top focus and viewport header in large body-autonomy mode (CSS px) */
+var BODY_AUTONOMY_FOCUS_TOP_SCREEN_GAP_PX = 100;
+/** Grid + palette: gap from handkerchief bottom to viewport bottom (CSS px) */
+var GRID_COLOR_FOCUS_BOTTOM_SCREEN_GAP_PX = 150;
 var CANVAS_EDGE_BROWN_BAR_COLOR = "#685450";
 /** Label bar background (color picker default) */
 var LABEL_BAR_BACKGROUND_COLOR_DEFAULT = CANVAS_EDGE_BROWN_BAR_COLOR;
@@ -200,6 +213,8 @@ var LABEL_BAR_HOME_AT_SVGS = {
   whereILive: "home/WHERE I LIVE.svg",
   nowhere: "home/NOWHERE.svg",
 };
+/** Default home-at sign in questionnaire + label bar before / as fallback choice */
+var LABEL_BAR_HOME_AT_DEFAULT_SVG = "home/NOWHERE.svg";
 /** Multi-color or non-tintable SVGs on the label bar (original colors preserved) */
 var LABEL_BAR_NATIVE_COLOR_SVGS = [];
 /** Profile “Yes” → this sign on the label; “No” → OUTSIDE IRAN (legacy, unused for duration question) */
@@ -235,6 +250,15 @@ var LABEL_BAR_LEFT_LION_INNER_ROW1_SVG = "";
 /** Row 1: fixed sun icon removed — Profile “at home” icon sits here (see LABEL_BAR_HOME_AT_SVGS) */
 var LABEL_BAR_LEFT_LION_INNER_ROW1_SUN_SVG = "reshetsmall.svg";
 var LABEL_BAR_AGE_SVG = "age.svg";
+/** Profile mad-libs blanks — static question signs (same assets as label bar) */
+var PROFILE_MADLIBS_FIELD_ICONS = {
+  age: LABEL_BAR_AGE_SVG,
+  livingDuration: LABEL_BAR_LIVING_IN_IRAN_SVG,
+  leavingYear: LABEL_BAR_LEFT_SVG,
+  from: LABEL_BAR_FROM_SVG,
+  nowIn: LABEL_BAR_NOW_IN_SVG,
+  homeAt: LABEL_BAR_HOME_AT_DEFAULT_SVG,
+};
 /** Fixed caption left of the Age icon (row 1, inward from undercover english) */
 var LABEL_BAR_AGE_LABEL_TEXT = "AGE";
 /** Circle center in age.svg viewBox (for profile age digits overlay) */
@@ -489,7 +513,7 @@ var AUTO_MERGE_SHADOW_OPACITY = 0.9;
 var AUTO_MERGE_SHADOW_FILTER_ID = "auto-merge-region-shadow";
 
 /** Feelings sidebar sliders: discrete positions between each control's min and max */
-var FEELINGS_SLIDER_STEPS = 10;
+var FEELINGS_SLIDER_STEPS = 5;
 
 /**
  * @param {number} stepNumber 1 = min (0 marks), FEELINGS_SLIDER_STEPS = max marks
@@ -905,6 +929,9 @@ var COLOR_PALETTE = [
   "#FFFCE8",
 ];
 var COLOR_PALETTE_PICK_COUNT = 5;
+
+/** Sheet palette on first load and pre-selected in the questionnaire (1–12). */
+var DEFAULT_SHEET_PALETTE_NUM = 3;
 
 /** Default 5-color session shown on first load (Active palette row). */
 var DEFAULT_ACTIVE_PALETTE = [

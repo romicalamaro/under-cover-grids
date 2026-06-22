@@ -51,6 +51,9 @@
   /** @type {HTMLElement | null} */
   var madlibsBlankSizer = null;
 
+  /** @type {null | function(): void} */
+  var syncNameModeDropdownLabels = null;
+
   var palettesLoadedHookRegistered = false;
 
   function focusWithoutScroll(el) {
@@ -69,13 +72,18 @@
     from: "",
     nowIn: "",
     name: "",
-    nameDisplayMode: null,
+    nameDisplayMode: "anonymous",
     age: "",
     homeAt: null,
     gridType: null,
     octagonsN: 5,
     innerScale: 10,
-    palette: 1,
+    palette:
+      typeof DEFAULT_SHEET_PALETTE_NUM !== "undefined"
+        ? DEFAULT_SHEET_PALETTE_NUM
+        : 3,
+    closeFamilyInIran: null,
+    iranLossTypes: null,
     borderFrameDivisions: 2,
     borderSideWhiteFill: 0,
     fanLeaves: 0,
@@ -131,12 +139,14 @@
 
   var COLORS_STEP_ORDER = ["palette"];
 
-  var FAMILY_STEP_ORDER = ["borderFrameDivisions", "borderSideWhiteFill"];
+  /** Family section: questions drive hidden frame / margin sliders via FamilyControls. */
+  var FAMILY_STEP_ORDER = ["closeFamilyInIran", "iranLossTypes"];
   var FAMILY_ALL_STEP_ID = "__family_all__";
 
   var BODY_AUTONOMY_STEP_ORDER = ["fanLeaves"];
 
   var FEELINGS_ALL_STEP_ID = "__feelings_all__";
+  var SUBMIT_ORDER_STEP_ID = "__submit_order__";
 
   var FEELINGS_STEP_ORDER = [
     "angerVerticalLength",
@@ -202,6 +212,29 @@
       heading: "Helplessness",
       controls: [{ stepId: "helplessnessPercent" }],
     },
+  ];
+
+  /** Questionnaire feelings table: one row per slider (Hope is outside the table). */
+  var FEELINGS_TABLE_ROWS = [
+    { label: "Fear", stepId: "angerVerticalLength" },
+    { label: "Anxiety / Tension", stepId: "anxietyVerticalStroke" },
+    { label: "Anger", stepId: "angerTriangleDensity" },
+    { label: "Sadness", stepId: "circleDensity" },
+    { label: "Longing", stepId: "longingCircleDensity" },
+    { label: "Grief", stepId: "griefCircleDensity" },
+    { label: "Strength / Power", stepId: "strengthDensity" },
+    { label: "Pride", stepId: "autoMergeIntensity" },
+    { label: "Pain", stepId: "prideFillPercent" },
+    { label: "Guilt / Shame", stepId: "guiltShameFillPercent" },
+    { label: "Helplessness", stepId: "helplessnessPercent" },
+  ];
+
+  var FEELINGS_SCALE_LABELS = [
+    "I do not feel this at all",
+    "I feel this occasionally",
+    "I feel this somewhat",
+    "I feel this clearly",
+    "This feeling is very strong",
   ];
 
   var FEELINGS_SLIDER_BOUNDS = {
@@ -291,8 +324,8 @@
   /** @type {Record<string, boolean>} */
   var familyStepsReached = {
     __family_all__: false,
-    borderFrameDivisions: false,
-    borderSideWhiteFill: false,
+    closeFamilyInIran: false,
+    iranLossTypes: false,
   };
 
   /** @type {Record<string, boolean>} */
@@ -325,6 +358,7 @@
     family: false,
     bodyAutonomy: false,
     feelings: false,
+    submitOrder: false,
   };
 
   var STEPS = {
@@ -375,7 +409,7 @@
       letter: "F",
       label: "Name",
       type: "name",
-      placeholder: "Full name",
+      placeholder: "Name",
       ariaLabel: "Name",
       modeAriaLabel: "How name appears on the label",
       modes: [
@@ -418,24 +452,28 @@
     },
     octagonsN: {
       letter: "",
-      label: "How much do I feel part of the Iranian community?",
+      label:
+        "How much do you feel part of an Iranian community around you (physical or online)?",
       type: "slider",
       ariaLabel:
-        "How much do I feel part of the Iranian community? Not part at all to very much part.",
+        "How much do you feel part of an Iranian community around you (physical or online)? Barely part to very much part.",
       min: 1,
       max: 10,
       step: 1,
-      rangeLabels: ["Not part at all", "Very much part"],
+      rangeLabels: ["Barely part", "Very much part"],
       wrap: true,
     },
     innerScale: {
       letter: "",
-      label: "How much is my Iranian identity at the center of my life?",
+      label:
+        "How much do you feel that Iranian identity is a central part of your life today?",
       type: "slider",
-      ariaLabel: "How much is my Iranian identity at the center of my life?",
+      ariaLabel:
+        "How much do you feel that Iranian identity is a central part of your life today? Very much in the background to at the center of my life.",
       min: 1,
       max: 10,
       step: 1,
+      rangeLabels: ["Very much in the background", "At the center of my life"],
       wrap: true,
     },
     palette: {
@@ -448,34 +486,80 @@
       letter: "",
       label: "Frame divisions",
       type: "slider",
-      ariaLabel: "Frame divisions. Minimum to maximum.",
+      ariaLabel: "Frame horizontal divisions",
       min: 1,
       max: 3,
       step: 1,
-      rangeLabels: ["Minimum", "Maximum"],
     },
     borderSideWhiteFill: {
       letter: "",
-      label: "Color fade",
+      label: "Margin empty cells",
       type: "slider",
-      ariaLabel:
-        "Family and friends in Iran color fade. Full color to 50 percent white.",
+      ariaLabel: "Margin empty cell fill",
       min: 0,
       max: 100,
       step: 25,
-      rangeLabels: ["Full color", "50% white"],
       outputSuffix: "%",
+    },
+    closeFamilyInIran: {
+      letter: "",
+      label: "Do you have close family still living in Iran today?",
+      type: "choice",
+      ariaLabel: "Do you have close family still living in Iran today?",
+      wrap: true,
+      options: [
+        {
+          value: "largePart",
+          label: "Yes, a large part of the family",
+        },
+        {
+          value: "someMembers",
+          label: "Yes, some family members",
+        },
+        {
+          value: "almostAllOutside",
+          label: "No, almost everyone is outside Iran",
+        },
+      ],
+    },
+    iranLossTypes: {
+      letter: "",
+      label:
+        "What type of loss / disconnection do you feel in relation to Iran? (select all that apply)",
+      type: "multi-choice",
+      ariaLabel:
+        "What type of loss or disconnection do you feel in relation to Iran? Select all that apply.",
+      wrap: true,
+      options: [
+        { value: "lovedOne", label: "Loss of a loved one" },
+        {
+          value: "place",
+          label: "Loss of place (home, neighborhood, city)",
+        },
+        {
+          value: "languageCulture",
+          label: "Loss of language / culture in daily life",
+        },
+        {
+          value: "freedomOfMovement",
+          label: "Loss of freedom of movement (cannot return / visit)",
+        },
+        {
+          value: "familyFriendsConnection",
+          label: "Loss of connection with part of the family or friends",
+        },
+      ],
     },
     fanLeaves: {
       letter: "",
-      label: "How much were you able to control what you wear?",
+      label: "When you lived in Iran, how free did you feel to choose how to dress in public spaces?",
       type: "slider",
       ariaLabel:
         "Fan leaves. Step 0 fully open, step 9 four ribs, step 10 closed.",
       min: 0,
       max: 10,
       step: 1,
-      rangeLabels: ["Fully open", "Closed"],
+      rangeLabels: ["No freedom of choice at all", "Feeling relatively free to choose"],
       wrap: true,
     },
     angerVerticalLength: {
@@ -632,6 +716,41 @@
     );
   }
 
+  /**
+   * @param {string} fullName
+   * @returns {string}
+   */
+  function formatNameInitials(fullName) {
+    var parts = String(fullName || "")
+      .trim()
+      .split(/\s+/)
+      .filter(function (part) {
+        return part.length > 0;
+      });
+    if (!parts.length) return "";
+    var letters = [];
+    var i;
+    for (i = 0; i < parts.length; i++) {
+      letters.push(parts[i].charAt(0).toUpperCase());
+    }
+    return letters.join(".");
+  }
+
+  /**
+   * @param {null | string} mode
+   * @param {string} nameValue
+   * @returns {string}
+   */
+  function getNameModeDisplayLabel(mode, nameValue) {
+    if (mode === "anonymous") return "Anonymous";
+    var trimmed = String(nameValue || "").trim();
+    if (mode === "initials") {
+      return trimmed ? formatNameInitials(trimmed) : "Initials";
+    }
+    if (mode === "name") return trimmed || "Name";
+    return "";
+  }
+
   function isProfileMadlibsBlank(stepId) {
     return PROFILE_MADLIBS_BLANK_ORDER.indexOf(stepId) >= 0;
   }
@@ -645,8 +764,10 @@
       if (dropdownValue) answers[stepId] = dropdownValue;
       return;
     }
-    if (el.tagName === "INPUT" && !el.disabled) {
-      answers[stepId] = el.value;
+    if (el.tagName === "INPUT" && !el.disabled && !el.readOnly) {
+      answers[stepId] = normalizeProfileAnswerInputValue(
+        /** @type {HTMLInputElement} */ (el)
+      );
       return;
     }
     if (el.tagName === "SELECT" && el.value) {
@@ -694,6 +815,9 @@
 
   function syncProfileBlankReached(stepId) {
     syncProfileMadlibsAnswersFromDom();
+    if (stepId === "homeAt") {
+      updateProfileMadlibsFieldIcon("homeAt");
+    }
     if (isStepComplete(stepId)) {
       profileStepsReached[stepId] = true;
       try {
@@ -707,16 +831,36 @@
     updateProgressDotsForProfile();
   }
 
+  function getProfileNameInlineInput() {
+    if (!activeStepEl) return null;
+    return activeStepEl.querySelector(
+      ".questionnaire-madlibs-name-mode__input[data-step-id='name']"
+    );
+  }
+
   function focusProfileBlank(stepId) {
     if (!activeStepEl) return;
     if (stepId === "name" && !shouldShowNameTextInput()) {
       stepId = "nameDisplayMode";
     }
+    if (stepId === "name" || stepId === "nameDisplayMode") {
+      var inlineNameInput = getProfileNameInlineInput();
+      if (inlineNameInput) {
+        currentProfileBlankId = shouldShowNameTextInput()
+          ? "name"
+          : "nameDisplayMode";
+        focusWithoutScroll(inlineNameInput);
+        updateProgressDotsForProfile();
+        return;
+      }
+    }
     currentProfileBlankId = stepId;
     var el = activeStepEl.querySelector('[data-step-id="' + stepId + '"]');
     if (el) {
       if (el.classList.contains("questionnaire-madlibs-dropdown")) {
-        var trigger = el.querySelector(".questionnaire-madlibs-dropdown__trigger");
+        var trigger = el.querySelector(
+          ".questionnaire-madlibs-dropdown__trigger:not([hidden])"
+        );
         if (trigger) focusWithoutScroll(trigger);
       } else {
         focusWithoutScroll(el);
@@ -789,6 +933,7 @@
   }
 
   function isAllFamilyComplete() {
+    if (!FAMILY_STEP_ORDER.length) return true;
     var i;
     for (i = 0; i < FAMILY_STEP_ORDER.length; i++) {
       if (!isStepComplete(FAMILY_STEP_ORDER[i])) {
@@ -863,7 +1008,7 @@
     }
 
     if (fromId === FEELINGS_ALL_STEP_ID) {
-      return "__feelings_complete__";
+      return SUBMIT_ORDER_STEP_ID;
     }
 
     return null;
@@ -945,14 +1090,27 @@
           Number(answers.borderSideWhiteFill) >= 0 &&
           Number(answers.borderSideWhiteFill) <= 100
         );
+      case "closeFamilyInIran":
+        return (
+          answers.closeFamilyInIran === "largePart" ||
+          answers.closeFamilyInIran === "someMembers" ||
+          answers.closeFamilyInIran === "almostAllOutside"
+        );
+      case "iranLossTypes":
+        return answers.iranLossTypes !== null;
       case "fanLeaves":
         return isNumericInRange(answers.fanLeaves, 0, 10);
       case "hopeMode":
         return answers.hopeMode === "view" || answers.hopeMode === "merge";
       default:
         if (FEELINGS_SLIDER_BOUNDS[stepId]) {
-          var bounds = FEELINGS_SLIDER_BOUNDS[stepId];
-          return isNumericInRange(answers[stepId], bounds[0], bounds[1]);
+          var feelingsBounds = getQuestionnaireFeelingsBounds(stepId);
+          if (!feelingsBounds) return false;
+          return isNumericInRange(
+            answers[stepId],
+            feelingsBounds[0],
+            feelingsBounds[1]
+          );
         }
         return false;
     }
@@ -1013,6 +1171,27 @@
     return Object.prototype.hasOwnProperty.call(FEELINGS_SLIDER_BOUNDS, stepId);
   }
 
+  /**
+   * Grid-aware min/max for questionnaire feelings (matches combo + panel sliders).
+   * @param {string} stepId
+   * @returns {[number, number]|null}
+   */
+  function getQuestionnaireFeelingsBounds(stepId) {
+    if (
+      window.UnderCoverComboBridge &&
+      window.UnderCoverComboBridge.getFeelingsSliderBounds
+    ) {
+      var gridBounds =
+        window.UnderCoverComboBridge.getFeelingsSliderBounds(stepId);
+      if (gridBounds) {
+        return [gridBounds.min, gridBounds.max];
+      }
+    }
+    var bounds = FEELINGS_SLIDER_BOUNDS[stepId];
+    if (!bounds) return null;
+    return [bounds[0], bounds[1]];
+  }
+
   function hasFeelingsProgress() {
     var stepId;
     for (stepId in feelingsStepsReached) {
@@ -1036,19 +1215,43 @@
     syncGridTypeToPanel();
   }
 
-  function triggerFeelingsCanvasUpdate() {
+  function buildQuestionnaireFeelingsPayload() {
+    var payload = {};
+    var i;
+    for (i = 0; i < FEELINGS_TABLE_ROWS.length; i++) {
+      payload[FEELINGS_TABLE_ROWS[i].stepId] = answers[FEELINGS_TABLE_ROWS[i].stepId];
+    }
+    return payload;
+  }
+
+  function applyQuestionnaireFeelingsToCanvas() {
+    ensureQuestionnaireGridReady();
+    ensureQuestionnaireCanvasUnlock(FEELINGS_ALL_STEP_ID);
     if (
       window.UnderCoverComboBridge &&
-      window.UnderCoverComboBridge.refreshQuestionnaireCanvas
+      window.UnderCoverComboBridge.applyFeelingsFromQuestionnaire
     ) {
-      window.UnderCoverComboBridge.refreshQuestionnaireCanvas();
+      window.UnderCoverComboBridge.applyFeelingsFromQuestionnaire(
+        buildQuestionnaireFeelingsPayload()
+      );
       return;
     }
+    triggerFeelingsCanvasUpdate();
+  }
+
+  function triggerFeelingsCanvasUpdate() {
     if (
       window.UnderCoverComboBridge &&
       window.UnderCoverComboBridge.finalizeApply
     ) {
       window.UnderCoverComboBridge.finalizeApply();
+      return;
+    }
+    if (
+      window.UnderCoverComboBridge &&
+      window.UnderCoverComboBridge.refreshQuestionnaireCanvas
+    ) {
+      window.UnderCoverComboBridge.refreshQuestionnaireCanvas();
       return;
     }
     triggerCanvasRender();
@@ -1111,9 +1314,15 @@
     var domValue = value;
     var outputValue = value;
     if (panelStepId && isFeelingsSliderStep(panelStepId)) {
-      var bounds = FEELINGS_SLIDER_BOUNDS[panelStepId];
-      domValue = feelingsStepFromValue(Number(value), bounds[0], bounds[1]);
-      outputValue = domValue;
+      var panelBounds = getQuestionnaireFeelingsBounds(panelStepId);
+      if (panelBounds) {
+        domValue = feelingsStepFromValue(
+          Number(value),
+          panelBounds[0],
+          panelBounds[1]
+        );
+        outputValue = domValue;
+      }
     }
     slider.value = String(domValue);
     if (outputId) {
@@ -1184,23 +1393,56 @@
     }
   }
 
+  function syncFamilyDerivedAnswers() {
+    if (
+      typeof window.FamilyControls !== "undefined" &&
+      window.FamilyControls.getBorderFrameDivisions
+    ) {
+      answers.borderFrameDivisions =
+        window.FamilyControls.getBorderFrameDivisions();
+      answers.borderSideWhiteFill =
+        window.FamilyControls.getBorderSideWhiteFill();
+      return;
+    }
+    if (
+      typeof window.FamilyControls !== "undefined" &&
+      window.FamilyControls.borderFrameDivisionsFromCloseFamily
+    ) {
+      answers.borderFrameDivisions =
+        window.FamilyControls.borderFrameDivisionsFromCloseFamily(
+          answers.closeFamilyInIran
+        );
+      answers.borderSideWhiteFill =
+        window.FamilyControls.borderSideWhiteFillFromLossTypes(
+          answers.iranLossTypes
+        );
+    }
+  }
+
+  function applyFamilyAnswersToPanel(commit) {
+    syncFamilyDerivedAnswers();
+    if (
+      typeof window.FamilyControls === "undefined" ||
+      !window.FamilyControls.applyFamilyState
+    ) {
+      return;
+    }
+    window.FamilyControls.applyFamilyState(
+      {
+        closeFamilyInIran: answers.closeFamilyInIran,
+        iranLossTypes: answers.iranLossTypes,
+      },
+      !commit
+    );
+  }
+
   function syncFamilyToPanel() {
-    var stepId;
-    for (stepId in familyStepsReached) {
-      if (
-        Object.prototype.hasOwnProperty.call(familyStepsReached, stepId) &&
-        familyStepsReached[stepId]
-      ) {
-        var domIds = PANEL_SLIDER_DOM[stepId];
-        if (domIds) {
-          syncPanelSliderDom(
-            domIds[0],
-            domIds[1],
-            answers[stepId],
-            true
-          );
-        }
-      }
+    if (
+      familyStepsReached.closeFamilyInIran ||
+      familyStepsReached.iranLossTypes ||
+      familyStepsReached[FAMILY_ALL_STEP_ID]
+    ) {
+      applyFamilyAnswersToPanel(true);
     }
   }
 
@@ -1312,6 +1554,7 @@
     family: { num: 4, name: "Family and friends in Iran" },
     bodyAutonomy: { num: 5, name: "Body autonomy" },
     feelings: { num: 6, name: "Feelings" },
+    submitOrder: { num: 7, name: "submit&order" },
   };
 
   var QUESTIONNAIRE_SECTION_ORDER = [
@@ -1321,11 +1564,14 @@
     { key: "family", entryStepId: FAMILY_ALL_STEP_ID },
     { key: "bodyAutonomy", entryStepId: "fanLeaves" },
     { key: "feelings", entryStepId: FEELINGS_ALL_STEP_ID },
+    { key: "submitOrder", entryStepId: SUBMIT_ORDER_STEP_ID },
   ];
 
   function getSectionKeyFromStepId(stepId) {
+    if (stepId === SUBMIT_ORDER_STEP_ID) {
+      return "submitOrder";
+    }
     if (
-      stepId === "__feelings_complete__" ||
       stepId === FEELINGS_ALL_STEP_ID ||
       isFeelingsStep(stepId)
     ) {
@@ -1357,9 +1603,6 @@
   }
 
   function getCurrentSectionIndex(stepId) {
-    if (stepId === "__feelings_complete__") {
-      return QUESTIONNAIRE_SECTION_ORDER.length;
-    }
     return getSectionIndex(getSectionKeyFromStepId(stepId));
   }
 
@@ -1400,7 +1643,7 @@
     if (!fromStepId || !nextStepId) return;
 
     var fromSectionKey = getSectionKeyFromStepId(fromStepId);
-    if (nextStepId === "__feelings_complete__") {
+    if (nextStepId === SUBMIT_ORDER_STEP_ID) {
       markSectionPassed("feelings");
       return;
     }
@@ -1426,7 +1669,7 @@
   }
 
   function navigateToSection(targetSectionKey) {
-    var stepId = displayStepId || "__feelings_complete__";
+    var stepId = displayStepId || SUBMIT_ORDER_STEP_ID;
     if (!canNavigateToSection(stepId, targetSectionKey)) {
       return;
     }
@@ -1454,8 +1697,11 @@
 
   function updateSectionLabel(stepId) {
     if (!sectionLabelEl) return;
+    if (stepId === SUBMIT_ORDER_STEP_ID) {
+      sectionLabelEl.textContent = formatSectionLabel("submitOrder");
+      return;
+    }
     if (
-      stepId === "__feelings_complete__" ||
       stepId === FEELINGS_ALL_STEP_ID ||
       isFeelingsStep(stepId)
     ) {
@@ -1603,6 +1849,137 @@
     answersWrap.appendChild(continueBtn);
   }
 
+  function appendQuestionnaireYesNoControl(parent, stepConfig, stepId, onChange) {
+    var group = document.createElement("div");
+    group.className = "questionnaire-options questionnaire-options--row";
+    group.setAttribute("role", "group");
+    group.setAttribute("aria-label", stepConfig.ariaLabel);
+
+    function makeBtn(label, value) {
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "questionnaire-option";
+      btn.textContent = label;
+      if (answers[stepId] === value) {
+        btn.classList.add("is-selected");
+      }
+      btn.addEventListener("click", function () {
+        answers[stepId] = value;
+        group.querySelectorAll(".questionnaire-option").forEach(function (el) {
+          el.classList.remove("is-selected");
+        });
+        btn.classList.add("is-selected");
+        applyFamilyAnswersToPanel(false);
+        triggerCanvasUpdateAfterSync(stepId);
+        if (onChange) onChange();
+      });
+      return btn;
+    }
+
+    group.appendChild(makeBtn("Yes", true));
+    group.appendChild(makeBtn("No", false));
+    parent.appendChild(group);
+  }
+
+  function createFamilyDotOptionButton(opt, isSelected) {
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "family-dot-option";
+    if (isSelected) {
+      btn.classList.add("is-selected");
+    }
+    btn.setAttribute("data-value", opt.value);
+    btn.setAttribute("aria-pressed", String(isSelected));
+
+    var circle = document.createElement("span");
+    circle.className = "family-dot-option__circle";
+    circle.setAttribute("aria-hidden", "true");
+
+    var label = document.createElement("span");
+    label.className = "family-dot-option__label";
+    label.textContent = opt.label;
+
+    btn.appendChild(circle);
+    btn.appendChild(label);
+    return btn;
+  }
+
+  function appendQuestionnaireSingleChoiceControl(
+    parent,
+    stepConfig,
+    stepId,
+    onChange
+  ) {
+    var group = document.createElement("div");
+    group.className = "family-dot-options questionnaire-family-dot-options";
+    group.setAttribute("role", "radiogroup");
+    group.setAttribute("aria-label", stepConfig.ariaLabel);
+
+    stepConfig.options.forEach(function (opt) {
+      var btn = createFamilyDotOptionButton(opt, answers[stepId] === opt.value);
+      btn.addEventListener("click", function () {
+        answers[stepId] = opt.value;
+        group.querySelectorAll(".family-dot-option").forEach(function (el) {
+          el.classList.remove("is-selected");
+          el.setAttribute("aria-pressed", "false");
+        });
+        btn.classList.add("is-selected");
+        btn.setAttribute("aria-pressed", "true");
+        applyFamilyAnswersToPanel(false);
+        triggerCanvasUpdateAfterSync(stepId);
+        if (onChange) onChange();
+      });
+      group.appendChild(btn);
+    });
+
+    parent.appendChild(group);
+  }
+
+  function appendQuestionnaireMultiChoiceControl(
+    parent,
+    stepConfig,
+    stepId,
+    onChange
+  ) {
+    if (!Array.isArray(answers[stepId]) && answers[stepId] !== null) {
+      answers[stepId] = null;
+    }
+
+    var group = document.createElement("div");
+    group.className =
+      "family-dot-options questionnaire-family-dot-options family-dot-options--multi";
+    group.setAttribute("role", "group");
+    group.setAttribute("aria-label", stepConfig.ariaLabel);
+
+    stepConfig.options.forEach(function (opt) {
+      var selected = Array.isArray(answers[stepId])
+        ? answers[stepId].indexOf(opt.value) >= 0
+        : false;
+      var btn = createFamilyDotOptionButton(opt, selected);
+      btn.addEventListener("click", function () {
+        if (!Array.isArray(answers[stepId])) {
+          answers[stepId] = [];
+        }
+        var idx = answers[stepId].indexOf(opt.value);
+        if (idx >= 0) {
+          answers[stepId].splice(idx, 1);
+          btn.classList.remove("is-selected");
+          btn.setAttribute("aria-pressed", "false");
+        } else {
+          answers[stepId].push(opt.value);
+          btn.classList.add("is-selected");
+          btn.setAttribute("aria-pressed", "true");
+        }
+        applyFamilyAnswersToPanel(false);
+        triggerCanvasUpdateAfterSync(stepId);
+        if (onChange) onChange();
+      });
+      group.appendChild(btn);
+    });
+
+    parent.appendChild(group);
+  }
+
   function renderYesNo(stepConfig, stepId) {
     var answersWrap = document.createElement("div");
     answersWrap.className = "questionnaire-step__answers";
@@ -1635,6 +2012,36 @@
     group.appendChild(makeBtn("No", false));
     answersWrap.appendChild(group);
     appendContinueIfComplete(answersWrap, stepId);
+    return answersWrap;
+  }
+
+  function renderMultiChoice(stepConfig, stepId) {
+    var answersWrap = document.createElement("div");
+    answersWrap.className = "questionnaire-step__answers";
+
+    var continueBtn = document.createElement("button");
+    continueBtn.type = "button";
+    continueBtn.className = "questionnaire-continue";
+    continueBtn.textContent = "Continue";
+    continueBtn.disabled = !isStepComplete(stepId);
+
+    appendQuestionnaireMultiChoiceControl(
+      answersWrap,
+      stepConfig,
+      stepId,
+      function () {
+        continueBtn.disabled = !isStepComplete(stepId);
+      }
+    );
+
+    continueBtn.addEventListener("click", function () {
+      if (answers.iranLossTypes === null) {
+        answers.iranLossTypes = [];
+        applyFamilyAnswersToPanel(false);
+      }
+      if (isStepComplete(stepId)) advance();
+    });
+    answersWrap.appendChild(continueBtn);
     return answersWrap;
   }
 
@@ -1911,6 +2318,7 @@
     var track = slider.closest(".questionnaire-slider-track");
     if (track) {
       track.style.setProperty("--bar-fill", fill);
+      track.classList.toggle("is-at-min", val <= min);
       track.classList.toggle("is-at-max", val >= max);
     }
   }
@@ -1993,6 +2401,100 @@
     control.appendChild(output);
     sliderWrap.appendChild(control);
     parent.appendChild(sliderWrap);
+  }
+
+  function appendFeelingsGridTable(parent, onChange) {
+    var steps =
+      typeof FEELINGS_SLIDER_STEPS !== "undefined" ? FEELINGS_SLIDER_STEPS : 5;
+    var grid = document.createElement("div");
+    grid.className = "questionnaire-feelings-grid";
+    grid.setAttribute("role", "grid");
+    grid.setAttribute("aria-label", "Feelings intensity");
+
+    var headerRow = document.createElement("div");
+    headerRow.className =
+      "questionnaire-feelings-grid__row questionnaire-feelings-grid__row--header";
+    headerRow.setAttribute("role", "row");
+
+    var headerLabelCell = document.createElement("div");
+    headerLabelCell.className =
+      "questionnaire-feelings-grid__label-cell questionnaire-feelings-grid__label-cell--header";
+    headerLabelCell.setAttribute("role", "columnheader");
+    headerRow.appendChild(headerLabelCell);
+
+    var headerIdx;
+    for (headerIdx = 0; headerIdx < steps; headerIdx++) {
+      var headerCell = document.createElement("div");
+      headerCell.className = "questionnaire-feelings-grid__scale-header";
+      headerCell.setAttribute("role", "columnheader");
+
+      var headerNumber = document.createElement("span");
+      headerNumber.className = "questionnaire-feelings-grid__scale-number";
+      headerNumber.textContent = String(headerIdx + 1);
+      headerCell.appendChild(headerNumber);
+
+      var headerText = document.createElement("span");
+      headerText.className = "questionnaire-feelings-grid__scale-label";
+      headerText.textContent =
+        FEELINGS_SCALE_LABELS[headerIdx] || String(headerIdx + 1);
+      headerCell.appendChild(headerText);
+
+      headerRow.appendChild(headerCell);
+    }
+    grid.appendChild(headerRow);
+
+    FEELINGS_TABLE_ROWS.forEach(function (rowDef) {
+      var stepId = rowDef.stepId;
+      var bounds = getQuestionnaireFeelingsBounds(stepId);
+      if (!bounds) return;
+      var min = bounds[0];
+      var max = bounds[1];
+      var currentStep = feelingsStepFromValue(answers[stepId], min, max);
+
+      var rowEl = document.createElement("div");
+      rowEl.className = "questionnaire-feelings-grid__row";
+      rowEl.setAttribute("role", "radiogroup");
+      rowEl.setAttribute("aria-label", rowDef.label + " — intensity");
+
+      var labelCell = document.createElement("div");
+      labelCell.className = "questionnaire-feelings-grid__label-cell";
+      labelCell.setAttribute("role", "rowheader");
+      labelCell.textContent = rowDef.label;
+      rowEl.appendChild(labelCell);
+
+      var stepNum;
+      for (stepNum = 1; stepNum <= steps; stepNum++) {
+        var cell = document.createElement("div");
+        cell.className = "questionnaire-feelings-grid__cell";
+        cell.setAttribute("role", "gridcell");
+
+        var radio = document.createElement("input");
+        radio.type = "radio";
+        radio.className = "questionnaire-feelings-grid__radio";
+        radio.name = "feelings-" + stepId;
+        radio.value = String(stepNum);
+        radio.checked = currentStep === stepNum;
+        radio.setAttribute(
+          "aria-label",
+          rowDef.label + ": " + (FEELINGS_SCALE_LABELS[stepNum - 1] || stepNum)
+        );
+
+        radio.addEventListener("change", function () {
+          if (!this.checked) return;
+          var chosenStep = clampFeelingsStepNumber(this.value);
+          answers[stepId] = feelingsValueFromStep(chosenStep, min, max);
+          applyQuestionnaireFeelingsToCanvas();
+          if (onChange) onChange();
+        });
+
+        cell.appendChild(radio);
+        rowEl.appendChild(cell);
+      }
+
+      grid.appendChild(rowEl);
+    });
+
+    parent.appendChild(grid);
   }
 
   function appendQuestionnaireHopeChoice(parent, stepConfig, stepId, onChange) {
@@ -2082,22 +2584,36 @@
 
   function syncMadlibsTextInputWidth(input) {
     if (!input || input.tagName !== "INPUT") return;
-    if (supportsFieldSizingContent()) {
-      input.style.width = "";
-      return;
-    }
     var style = window.getComputedStyle(input);
     var minWidth = parseFloat(style.minWidth) || 0;
     var padX =
       parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
     var text = input.value || "";
+    if (!text && input.placeholder) {
+      text = input.placeholder;
+    }
     var textWidth = text ? measureMadlibsTextPx(text, input) : 0;
     var target = Math.max(minWidth, textWidth + padX + 2);
+    if (supportsFieldSizingContent()) {
+      input.style.minWidth = Math.ceil(target) + "px";
+      input.style.width = "";
+      return;
+    }
     input.style.width = Math.ceil(target) + "px";
   }
 
   function syncMadlibsDropdownWidth(wrap) {
     if (!wrap || !wrap.classList.contains("questionnaire-madlibs-dropdown")) {
+      return;
+    }
+    if (wrap.classList.contains("questionnaire-madlibs-name-mode")) {
+      var nameModeInput = wrap.querySelector(
+        ".questionnaire-madlibs-name-mode__input"
+      );
+      if (nameModeInput) {
+        syncMadlibsTextInputWidth(/** @type {HTMLInputElement} */ (nameModeInput));
+      }
+      wrap.style.width = "";
       return;
     }
     var trigger = wrap.querySelector(".questionnaire-madlibs-dropdown__trigger");
@@ -2150,6 +2666,178 @@
     }
   }
 
+  function getHomeAtMadlibsIconFile(value) {
+    var map =
+      typeof LABEL_BAR_HOME_AT_SVGS !== "undefined"
+        ? LABEL_BAR_HOME_AT_SVGS
+        : {
+            inIran: "home/IN IRAN home.svg",
+            whereILive: "home/WHERE I LIVE.svg",
+            nowhere: "home/NOWHERE.svg",
+          };
+    var defaultFile =
+      typeof LABEL_BAR_HOME_AT_DEFAULT_SVG !== "undefined"
+        ? LABEL_BAR_HOME_AT_DEFAULT_SVG
+        : map.nowhere;
+    if (value === "inIran") return map.inIran;
+    if (value === "whereILive") return map.whereILive;
+    if (value === "nowhere") return map.nowhere;
+    return defaultFile;
+  }
+
+  function getProfileMadlibsIconFile(stepId) {
+    if (stepId === "homeAt") {
+      return getHomeAtMadlibsIconFile(answers.homeAt);
+    }
+    var map =
+      typeof PROFILE_MADLIBS_FIELD_ICONS !== "undefined"
+        ? PROFILE_MADLIBS_FIELD_ICONS
+        : {};
+    return map[stepId] || "";
+  }
+
+  function resolveProfileMadlibsEmbeddedKey(filename) {
+    var embedded =
+      typeof window !== "undefined" ? window.LABEL_BAR_SVG_EMBEDDED : null;
+    if (!filename || !embedded) return null;
+    if (embedded[filename]) return filename;
+    var slash = filename.lastIndexOf("/");
+    if (slash >= 0) {
+      var dir = filename.slice(0, slash);
+      var base = filename.slice(slash + 1);
+      if (dir !== "home" && embedded[base]) return base;
+    }
+    return null;
+  }
+
+  function getProfileMadlibsIconInnerMarkup(filename) {
+    var key = resolveProfileMadlibsEmbeddedKey(filename);
+    if (
+      !key ||
+      !window.LABEL_BAR_SVG_EMBEDDED ||
+      !window.LABEL_BAR_SVG_EMBEDDED[key]
+    ) {
+      return "";
+    }
+    return String(window.LABEL_BAR_SVG_EMBEDDED[key])
+      .replace(/<defs[\s\S]*?<\/defs>/gi, "")
+      .replace(/\sclass="[^"]*"/gi, "");
+  }
+
+  function getProfileMadlibsIconDimensions(filename) {
+    if (
+      typeof LABEL_BAR_SVG_DIMENSIONS !== "undefined" &&
+      LABEL_BAR_SVG_DIMENSIONS[filename]
+    ) {
+      return LABEL_BAR_SVG_DIMENSIONS[filename];
+    }
+    return { width: 1, height: 1 };
+  }
+
+  function createMadlibsFieldIcon(stepId) {
+    var file = getProfileMadlibsIconFile(stepId);
+    if (!file) return null;
+    var innerMarkup = getProfileMadlibsIconInnerMarkup(file);
+    if (!innerMarkup) return null;
+    var dims = getProfileMadlibsIconDimensions(file);
+    var icon = document.createElement("span");
+    icon.className = "questionnaire-madlibs-field__icon";
+    icon.setAttribute("aria-hidden", "true");
+
+    var svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute(
+      "viewBox",
+      "0 0 " + String(dims.width) + " " + String(dims.height)
+    );
+    svg.setAttribute("focusable", "false");
+    svg.setAttribute("aria-hidden", "true");
+    svg.innerHTML = innerMarkup;
+    icon.appendChild(svg);
+
+    if (dims.width && dims.height) {
+      var ratio = dims.width / dims.height;
+      icon.style.height = "1.15em";
+      icon.style.width = "calc(1.15em * " + ratio + ")";
+    }
+    return icon;
+  }
+
+  function updateProfileMadlibsFieldIcon(stepId) {
+    if (!viewport) return;
+    var file = getProfileMadlibsIconFile(stepId);
+    if (!file) return;
+    var innerMarkup = getProfileMadlibsIconInnerMarkup(file);
+    if (!innerMarkup) return;
+    var dims = getProfileMadlibsIconDimensions(file);
+    var fieldWrap = viewport.querySelector(
+      '.questionnaire-madlibs-field[data-field-id="' + stepId + '"]'
+    );
+    if (!fieldWrap) return;
+    var iconWrap = fieldWrap.querySelector(".questionnaire-madlibs-field__icon");
+    if (!iconWrap) return;
+    var svg = iconWrap.querySelector("svg");
+    if (!svg) return;
+    svg.setAttribute(
+      "viewBox",
+      "0 0 " + String(dims.width) + " " + String(dims.height)
+    );
+    svg.innerHTML = innerMarkup;
+    if (dims.width && dims.height) {
+      var ratio = dims.width / dims.height;
+      iconWrap.style.height = "1.15em";
+      iconWrap.style.width = "calc(1.15em * " + ratio + ")";
+    }
+  }
+
+  function wrapMadlibsFieldWithIcon(stepId, blankEl) {
+    var icon = createMadlibsFieldIcon(stepId);
+    if (!icon) return blankEl;
+    var wrap = document.createElement("span");
+    wrap.className = "questionnaire-madlibs-field";
+    wrap.setAttribute("data-field-id", stepId);
+    wrap.appendChild(icon);
+    wrap.appendChild(blankEl);
+    return wrap;
+  }
+
+  function resolveMadlibsBlankEl(el) {
+    if (!el) return null;
+    if (el.classList.contains("questionnaire-madlibs-field")) {
+      return el.querySelector(
+        ".questionnaire-madlibs-blank, .questionnaire-madlibs-dropdown"
+      );
+    }
+    return el;
+  }
+
+  function isMadlibsBlankSegment(el) {
+    return (
+      el.classList.contains("questionnaire-madlibs-field") ||
+      el.classList.contains("questionnaire-madlibs-blank") ||
+      el.classList.contains("questionnaire-madlibs-dropdown")
+    );
+  }
+
+  function normalizeProfileAnswerInputValue(input) {
+    if (!input || input.readOnly) {
+      return String(input ? input.value : "");
+    }
+    var normalized = String(input.value || "").toUpperCase();
+    if (normalized !== input.value) {
+      var start = input.selectionStart;
+      var end = input.selectionEnd;
+      input.value = normalized;
+      if (typeof start === "number" && typeof end === "number") {
+        try {
+          input.setSelectionRange(start, end);
+        } catch (err) {
+          /* ignore invalid selection on some input types */
+        }
+      }
+    }
+    return normalized;
+  }
+
   function createMadlibsTextBlank(stepId, sizeClass) {
     var stepConfig = STEPS[stepId];
     var input = document.createElement("input");
@@ -2158,7 +2846,8 @@
       "questionnaire-madlibs-blank questionnaire-madlibs-blank--" + sizeClass;
     input.setAttribute("data-step-id", stepId);
     input.setAttribute("aria-label", stepConfig.ariaLabel);
-    input.value = String(answers[stepId] || "");
+    input.value = String(answers[stepId] || "").toUpperCase();
+    answers[stepId] = input.value;
     input.autocomplete = "off";
     input.spellcheck = false;
     if (stepConfig.english) {
@@ -2172,15 +2861,21 @@
       input.maxLength = stepConfig.maxLength;
     }
     input.addEventListener("input", function () {
-      answers[stepId] = input.value;
+      answers[stepId] = normalizeProfileAnswerInputValue(input);
+      if (stepId === "name" && syncNameModeDropdownLabels) {
+        syncNameModeDropdownLabels();
+      }
       syncProfileBlankReached(stepId);
     });
     input.addEventListener("change", function () {
-      answers[stepId] = input.value;
+      answers[stepId] = normalizeProfileAnswerInputValue(input);
+      if (stepId === "name" && syncNameModeDropdownLabels) {
+        syncNameModeDropdownLabels();
+      }
       syncProfileBlankReached(stepId);
     });
     input.addEventListener("blur", function () {
-      answers[stepId] = input.value;
+      answers[stepId] = normalizeProfileAnswerInputValue(input);
       syncProfileContinueBtn();
     });
     appendMadlibsEnterAdvance(input, stepId);
@@ -2202,8 +2897,12 @@
     if (!dropdown) return;
     var menu = dropdown.querySelector(".questionnaire-madlibs-dropdown__menu");
     var trigger = dropdown.querySelector(".questionnaire-madlibs-dropdown__trigger");
+    var caretBtn = dropdown.querySelector(
+      ".questionnaire-madlibs-name-mode__caret-btn"
+    );
     if (menu) menu.hidden = true;
     if (trigger) trigger.setAttribute("aria-expanded", "false");
+    if (caretBtn) caretBtn.setAttribute("aria-expanded", "false");
     if (activeMadlibsDropdown === dropdown) {
       activeMadlibsDropdown = null;
     }
@@ -2220,8 +2919,16 @@
     activeMadlibsDropdown = dropdown;
   }
 
-  function createMadlibsDropdown(stepId, sizeClass, ariaLabel, options, onSelect) {
+  function createMadlibsDropdown(
+    stepId,
+    sizeClass,
+    ariaLabel,
+    options,
+    onSelect,
+    labelOverrides
+  ) {
     ensureMadlibsDropdownDismiss();
+    labelOverrides = labelOverrides || {};
 
     var wrap = document.createElement("div");
     wrap.className =
@@ -2265,7 +2972,12 @@
 
     function syncTriggerLabel() {
       var value = String(answers[stepId] || "");
-      var label = findOptionLabel(value);
+      var label;
+      if (labelOverrides.getTriggerLabel) {
+        label = labelOverrides.getTriggerLabel();
+      } else {
+        label = findOptionLabel(value);
+      }
       labelEl.textContent = label || "\u00a0";
       labelEl.classList.toggle("is-placeholder", !label);
       if (value) {
@@ -2274,6 +2986,31 @@
         wrap.removeAttribute("data-value");
       }
       syncMadlibsDropdownWidth(wrap);
+    }
+
+    function syncOptionLabels() {
+      if (!labelOverrides.getOptionDisplayLabel) return;
+      var optionEls = menu.querySelectorAll(
+        ".questionnaire-madlibs-dropdown__option"
+      );
+      var i;
+      for (i = 0; i < optionEls.length; i++) {
+        var optValue = optionEls[i].getAttribute("data-value");
+        var j;
+        for (j = 0; j < options.length; j++) {
+          if (options[j].value === optValue) {
+            optionEls[i].textContent = labelOverrides.getOptionDisplayLabel(
+              options[j]
+            );
+            break;
+          }
+        }
+      }
+    }
+
+    function syncAllLabels() {
+      syncTriggerLabel();
+      syncOptionLabels();
     }
 
     function setSelectedOption(value) {
@@ -2291,7 +3028,9 @@
       item.className = "questionnaire-madlibs-dropdown__option";
       item.setAttribute("role", "option");
       item.setAttribute("data-value", opt.value);
-      item.textContent = opt.label;
+      item.textContent = labelOverrides.getOptionDisplayLabel
+        ? labelOverrides.getOptionDisplayLabel(opt)
+        : opt.label;
       if (answers[stepId] === opt.value) {
         item.classList.add("is-selected");
         item.setAttribute("aria-selected", "true");
@@ -2302,7 +3041,7 @@
         event.stopPropagation();
         answers[stepId] = opt.value;
         wrap.setAttribute("data-value", opt.value);
-        syncTriggerLabel();
+        syncAllLabels();
         setSelectedOption(opt.value);
         closeMadlibsDropdown(wrap);
         if (onSelect) onSelect(opt.value);
@@ -2311,7 +3050,11 @@
       menu.appendChild(item);
     });
 
-    syncTriggerLabel();
+    syncAllLabels();
+
+    if (labelOverrides.registerSync) {
+      labelOverrides.registerSync(syncAllLabels);
+    }
 
     trigger.addEventListener("click", function (event) {
       event.stopPropagation();
@@ -2353,33 +3096,257 @@
   }
 
   function createMadlibsNameModeSelect(sizeClass) {
-    return createMadlibsDropdown(
-      "nameDisplayMode",
-      sizeClass,
-      STEPS.name.modeAriaLabel,
-      STEPS.name.modes,
-      function () {
-        syncProfileBlankReached("name");
-        if (activeStepEl) {
-          var nameInput = activeStepEl.querySelector(
-            '.questionnaire-madlibs-name-text[data-step-id="name"]'
-          );
-          if (nameInput) {
-            var showName = shouldShowNameTextInput();
-            nameInput.hidden = !showName;
-            nameInput.disabled = !showName;
-            if (showName) {
-              focusProfileBlank("name");
-              syncMadlibsTextInputWidth(
-                /** @type {HTMLInputElement} */ (nameInput)
-              );
-            } else {
-              nameInput.style.width = "";
-            }
+    ensureMadlibsDropdownDismiss();
+
+    var stepId = "nameDisplayMode";
+    var options = STEPS.name.modes;
+    var ariaLabel = STEPS.name.modeAriaLabel;
+    var nameInputEditing = false;
+
+    var wrap = document.createElement("div");
+    wrap.className =
+      "questionnaire-madlibs-dropdown questionnaire-madlibs-name-mode questionnaire-madlibs-blank questionnaire-madlibs-blank--" +
+      sizeClass;
+    wrap.setAttribute("data-step-id", stepId);
+    if (answers[stepId]) {
+      wrap.setAttribute("data-value", String(answers[stepId]));
+    }
+
+    var surface = document.createElement("div");
+    surface.className = "questionnaire-madlibs-name-mode__surface";
+
+    var nameInput = document.createElement("input");
+    nameInput.type = "text";
+    nameInput.className = "questionnaire-madlibs-name-mode__input";
+    nameInput.setAttribute("data-step-id", "name");
+    nameInput.setAttribute("aria-label", STEPS.name.ariaLabel);
+    nameInput.placeholder = STEPS.name.placeholder;
+    nameInput.autocomplete = "off";
+    nameInput.spellcheck = false;
+    nameInput.lang = "en";
+
+    var caretBtn = document.createElement("button");
+    caretBtn.type = "button";
+    caretBtn.className = "questionnaire-madlibs-name-mode__caret-btn";
+    caretBtn.setAttribute("aria-label", ariaLabel);
+    caretBtn.setAttribute("aria-haspopup", "listbox");
+    caretBtn.setAttribute("aria-expanded", "false");
+
+    var caretBtnIcon = document.createElement("span");
+    caretBtnIcon.className = "questionnaire-madlibs-dropdown__caret";
+    caretBtnIcon.setAttribute("aria-hidden", "true");
+    caretBtn.appendChild(caretBtnIcon);
+
+    surface.appendChild(nameInput);
+    surface.appendChild(caretBtn);
+
+    var menu = document.createElement("ul");
+    menu.className = "questionnaire-madlibs-dropdown__menu";
+    menu.setAttribute("role", "listbox");
+    menu.setAttribute("aria-label", ariaLabel);
+    menu.hidden = true;
+
+    function syncMenuExpanded(isOpen) {
+      caretBtn.setAttribute("aria-expanded", isOpen ? "true" : "false");
+    }
+
+    function closeNameModeMenu() {
+      menu.hidden = true;
+      syncMenuExpanded(false);
+      if (activeMadlibsDropdown === wrap) {
+        activeMadlibsDropdown = null;
+      }
+    }
+
+    function openNameModeMenu() {
+      if (activeMadlibsDropdown && activeMadlibsDropdown !== wrap) {
+        closeMadlibsDropdown(activeMadlibsDropdown);
+      }
+      menu.hidden = false;
+      syncMenuExpanded(true);
+      activeMadlibsDropdown = wrap;
+    }
+
+    function syncOptionLabels() {
+      var optionEls = menu.querySelectorAll(
+        ".questionnaire-madlibs-dropdown__option"
+      );
+      var i;
+      for (i = 0; i < optionEls.length; i++) {
+        var optValue = optionEls[i].getAttribute("data-value");
+        var j;
+        for (j = 0; j < options.length; j++) {
+          if (options[j].value === optValue) {
+            optionEls[i].textContent = getNameModeDisplayLabel(
+              options[j].value,
+              answers.name
+            );
+            break;
           }
         }
       }
-    );
+    }
+
+    function syncAllLabels() {
+      syncOptionLabels();
+      syncMadlibsDropdownWidth(wrap);
+    }
+
+    syncNameModeDropdownLabels = syncAllLabels;
+
+    function setSelectedOption(value) {
+      var optionEls = menu.querySelectorAll(
+        ".questionnaire-madlibs-dropdown__option"
+      );
+      var i;
+      for (i = 0; i < optionEls.length; i++) {
+        var isSelected = optionEls[i].getAttribute("data-value") === value;
+        optionEls[i].classList.toggle("is-selected", isSelected);
+        optionEls[i].setAttribute(
+          "aria-selected",
+          isSelected ? "true" : "false"
+        );
+      }
+    }
+
+    function applyInputDisplay() {
+      var mode = answers.nameDisplayMode;
+      var isAnonymous = mode === "anonymous";
+      wrap.classList.toggle("is-anonymous-mode", isAnonymous);
+      wrap.classList.toggle("is-name-editing", !isAnonymous);
+      nameInput.readOnly = isAnonymous;
+      if (answers.nameDisplayMode) {
+        wrap.setAttribute("data-value", String(answers.nameDisplayMode));
+      }
+      if (isAnonymous) {
+        nameInput.value = getNameModeDisplayLabel("anonymous", answers.name);
+        nameInput.placeholder = "";
+      } else if (mode === "initials" && !nameInputEditing) {
+        var initialsLabel = getNameModeDisplayLabel("initials", answers.name);
+        nameInput.value = initialsLabel === "Initials" ? "" : initialsLabel;
+        nameInput.placeholder = "Initials";
+      } else if (mode === "name" && !nameInputEditing) {
+        var nameLabel = getNameModeDisplayLabel("name", answers.name);
+        nameInput.value =
+          nameLabel === "Name" ? "" : String(answers.name || "").toUpperCase();
+        nameInput.placeholder = "Name";
+      } else {
+        nameInput.value = String(answers.name || "").toUpperCase();
+        nameInput.placeholder = STEPS.name.placeholder;
+      }
+      syncMadlibsDropdownWidth(wrap);
+    }
+
+    function applyModeUi(focusInput) {
+      applyInputDisplay();
+      if (focusInput) {
+        currentProfileBlankId = "name";
+        focusWithoutScroll(nameInput);
+      }
+    }
+
+    options.forEach(function (opt) {
+      var item = document.createElement("li");
+      item.className = "questionnaire-madlibs-dropdown__option";
+      item.setAttribute("role", "option");
+      item.setAttribute("data-value", opt.value);
+      item.textContent = getNameModeDisplayLabel(opt.value, answers.name);
+      if (answers[stepId] === opt.value) {
+        item.classList.add("is-selected");
+        item.setAttribute("aria-selected", "true");
+      } else {
+        item.setAttribute("aria-selected", "false");
+      }
+      item.addEventListener("click", function (event) {
+        event.stopPropagation();
+        answers[stepId] = opt.value;
+        wrap.setAttribute("data-value", opt.value);
+        setSelectedOption(opt.value);
+        closeNameModeMenu();
+        applyModeUi(opt.value === "initials" || opt.value === "name");
+        syncAllLabels();
+        syncProfileBlankReached(stepId);
+        syncProfileBlankReached("name");
+      });
+      menu.appendChild(item);
+    });
+
+    nameInput.addEventListener("input", function () {
+      if (nameInput.readOnly) return;
+      answers.name = normalizeProfileAnswerInputValue(nameInput);
+      syncOptionLabels();
+      syncProfileBlankReached("name");
+    });
+    nameInput.addEventListener("change", function () {
+      if (nameInput.readOnly) return;
+      answers.name = normalizeProfileAnswerInputValue(nameInput);
+      syncOptionLabels();
+      syncProfileBlankReached("name");
+    });
+    nameInput.addEventListener("blur", function () {
+      if (!nameInput.readOnly) {
+        answers.name = normalizeProfileAnswerInputValue(nameInput);
+      }
+      nameInputEditing = false;
+      applyInputDisplay();
+      syncProfileContinueBtn();
+    });
+    nameInput.addEventListener("focus", function () {
+      nameInputEditing = true;
+      if (answers.nameDisplayMode === "initials") {
+        nameInput.value = String(answers.name || "").toUpperCase();
+        nameInput.placeholder = STEPS.name.placeholder;
+      }
+      currentProfileBlankId =
+        answers.nameDisplayMode === "anonymous" ? stepId : "name";
+      updateProgressDotsForProfile();
+    });
+    nameInput.addEventListener("click", function (event) {
+      if (nameInput.readOnly) {
+        event.stopPropagation();
+        openNameModeMenu();
+      }
+    });
+    nameInput.addEventListener("keydown", function (event) {
+      if (event.key === "Escape") {
+        closeNameModeMenu();
+        return;
+      }
+      if (event.key === "Enter" && answers.nameDisplayMode === "anonymous") {
+        if (isStepComplete(stepId)) {
+          event.preventDefault();
+          var next = getNextProfileBlank(stepId);
+          if (next) {
+            focusProfileBlank(next);
+            return;
+          }
+          focusProfileContinueBtn();
+        }
+      }
+    });
+    appendMadlibsEnterAdvance(nameInput, "name");
+    bindMadlibsTextInputAutoWidth(nameInput);
+
+    caretBtn.addEventListener("click", function (event) {
+      event.stopPropagation();
+      if (activeMadlibsDropdown === wrap) {
+        closeNameModeMenu();
+        return;
+      }
+      openNameModeMenu();
+    });
+
+    menu.addEventListener("click", function (event) {
+      event.stopPropagation();
+    });
+
+    wrap.appendChild(surface);
+    wrap.appendChild(menu);
+
+    applyModeUi(false);
+    syncAllLabels();
+
+    return wrap;
   }
 
   function createMadlibsSelectBlank(stepId, sizeClass) {
@@ -2427,22 +3394,32 @@
   }
 
   function getBlankCharCount(el) {
-    if (el.classList.contains("questionnaire-madlibs-blank--short")) {
+    var blankEl = resolveMadlibsBlankEl(el) || el;
+    if (blankEl.classList.contains("questionnaire-madlibs-blank--short")) {
       return TYPEWRITER_BLANK_CHARS.short;
     }
-    if (el.classList.contains("questionnaire-madlibs-blank--long")) {
+    if (blankEl.classList.contains("questionnaire-madlibs-blank--long")) {
       return TYPEWRITER_BLANK_CHARS.long;
     }
     return TYPEWRITER_BLANK_CHARS.medium;
   }
 
   function setBlankTabBlocked(el, blocked) {
-    if (el.tagName === "INPUT") {
-      if (blocked) el.setAttribute("tabindex", "-1");
-      else el.removeAttribute("tabindex");
+    var blankEl = resolveMadlibsBlankEl(el) || el;
+    if (blankEl.tagName === "INPUT") {
+      if (blocked) blankEl.setAttribute("tabindex", "-1");
+      else blankEl.removeAttribute("tabindex");
       return;
     }
-    var trigger = el.querySelector(".questionnaire-madlibs-dropdown__trigger");
+    var trigger = blankEl.querySelector(".questionnaire-madlibs-dropdown__trigger");
+    var nameModeInput = blankEl.querySelector(
+      ".questionnaire-madlibs-name-mode__input"
+    );
+    if (nameModeInput) {
+      if (blocked) nameModeInput.setAttribute("tabindex", "-1");
+      else nameModeInput.removeAttribute("tabindex");
+      return;
+    }
     if (trigger) {
       if (blocked) trigger.setAttribute("tabindex", "-1");
       else trigger.removeAttribute("tabindex");
@@ -2466,13 +3443,16 @@
         }
       } else if (child.nodeType === Node.ELEMENT_NODE) {
         var el = /** @type {HTMLElement} */ (child);
-        setBlankTabBlocked(el, true);
-        segments.push({
-          type: "blank",
-          el: el,
-          placeholderChars: getBlankCharCount(el),
-          skipTyping: el.hasAttribute("hidden"),
-        });
+        if (isMadlibsBlankSegment(el)) {
+          var blankEl = resolveMadlibsBlankEl(el) || el;
+          setBlankTabBlocked(blankEl, true);
+          segments.push({
+            type: "blank",
+            el: el,
+            placeholderChars: getBlankCharCount(blankEl),
+            skipTyping: blankEl.hasAttribute("hidden"),
+          });
+        }
       }
       child = next;
     }
@@ -2494,6 +3474,29 @@
     return state;
   }
 
+  function clearTypewriterUnderlineDraw(seg) {
+    var blankEl = resolveMadlibsBlankEl(seg.el) || seg.el;
+    seg.el.classList.remove(
+      "is-active",
+      "is-typewriter-drawing-underline"
+    );
+    if (blankEl) {
+      blankEl.classList.remove("is-typewriter-drawing-underline");
+      blankEl.style.removeProperty("--typewriter-underline-progress");
+    }
+  }
+
+  function syncMadlibsBlankWidth(blankEl) {
+    if (!blankEl) return;
+    if (blankEl.classList.contains("questionnaire-madlibs-dropdown")) {
+      syncMadlibsDropdownWidth(blankEl);
+      return;
+    }
+    if (blankEl.tagName === "INPUT") {
+      syncMadlibsTextInputWidth(/** @type {HTMLInputElement} */ (blankEl));
+    }
+  }
+
   function completeTypewriterReveal(madlibsEl, lines, onComplete) {
     var li;
     var si;
@@ -2505,15 +3508,13 @@
           seg.el.textContent = seg.content || "";
           seg.el.classList.remove("is-active");
         } else if (seg.type === "blank") {
+          clearTypewriterUnderlineDraw(seg);
           seg.el.classList.add("is-typewriter-revealed");
+          var revealedBlank = resolveMadlibsBlankEl(seg.el) || seg.el;
+          revealedBlank.classList.add("is-typewriter-revealed");
           setBlankTabBlocked(seg.el, false);
         }
       }
-      lines[li].lineEl
-        .querySelectorAll(".questionnaire-typewriter-chunk--blank")
-        .forEach(function (el) {
-          el.remove();
-        });
     }
     madlibsEl.classList.remove("is-typewriting");
     madlibsEl.removeAttribute("aria-busy");
@@ -2581,36 +3582,53 @@
       }
       if (seg.skipTyping) {
         seg.el.classList.add("is-typewriter-revealed");
+        var skippedBlank = resolveMadlibsBlankEl(seg.el) || seg.el;
+        skippedBlank.classList.add("is-typewriter-revealed");
         setBlankTabBlocked(seg.el, false);
         cb();
         return;
       }
 
-      var tempSpan = document.createElement("span");
-      tempSpan.className =
-        "questionnaire-typewriter-chunk questionnaire-typewriter-chunk--blank is-active";
-      lineEl.insertBefore(tempSpan, seg.el);
+      var blankEl = resolveMadlibsBlankEl(seg.el) || seg.el;
+      syncMadlibsBlankWidth(blankEl);
+
+      seg.el.classList.add(
+        "is-typewriter-revealed",
+        "is-typewriter-drawing-underline",
+        "is-active"
+      );
+      blankEl.classList.add("is-typewriter-drawing-underline");
+      blankEl.style.setProperty("--typewriter-underline-progress", "0");
 
       var index = 0;
+      var total = seg.placeholderChars || 0;
+
+      function finishBlank() {
+        clearTypewriterUnderlineDraw(seg);
+        blankEl.classList.add("is-typewriter-revealed");
+        setBlankTabBlocked(seg.el, false);
+        cb();
+      }
+
       function step() {
         if (controller.isCancelled()) {
-          tempSpan.remove();
+          clearTypewriterUnderlineDraw(seg);
           cb();
           return;
         }
-        if (index >= (seg.placeholderChars || 0)) {
-          tempSpan.remove();
-          seg.el.classList.add("is-typewriter-revealed");
-          setBlankTabBlocked(seg.el, false);
-          cb();
+        if (index >= total) {
+          finishBlank();
           return;
         }
-        tempSpan.textContent += "_";
         index += 1;
+        blankEl.style.setProperty(
+          "--typewriter-underline-progress",
+          String(index / total)
+        );
         controller.wait(TYPEWRITER_CHAR_MS, function (ok) {
           if (ok) step();
           else {
-            tempSpan.remove();
+            clearTypewriterUnderlineDraw(seg);
             cb();
           }
         });
@@ -2666,34 +3684,49 @@
     line1.className = "questionnaire-madlibs-line";
     line1.appendChild(document.createTextNode("My name is "));
     line1.appendChild(createMadlibsNameModeSelect("medium"));
-    var nameTextInput = createMadlibsTextBlank("name", "medium");
-    nameTextInput.classList.add("questionnaire-madlibs-name-text");
-    var showNameText = shouldShowNameTextInput();
-    nameTextInput.hidden = !showNameText;
-    nameTextInput.disabled = !showNameText;
-    line1.appendChild(nameTextInput);
     line1.appendChild(document.createTextNode(", I'm "));
-    line1.appendChild(createMadlibsTextBlank("age", "short"));
+    line1.appendChild(
+      wrapMadlibsFieldWithIcon("age", createMadlibsTextBlank("age", "short"))
+    );
     line1.appendChild(document.createTextNode(" years old."));
     madlibs.appendChild(line1);
 
     var line2 = document.createElement("p");
     line2.className = "questionnaire-madlibs-line";
     line2.appendChild(document.createTextNode("I lived in Iran "));
-    line2.appendChild(createMadlibsSelectBlank("livingDuration", "medium"));
+    line2.appendChild(
+      wrapMadlibsFieldWithIcon(
+        "livingDuration",
+        createMadlibsSelectBlank("livingDuration", "medium")
+      )
+    );
     line2.appendChild(document.createTextNode(" until "));
-    line2.appendChild(createMadlibsTextBlank("leavingYear", "short"));
+    line2.appendChild(
+      wrapMadlibsFieldWithIcon(
+        "leavingYear",
+        createMadlibsTextBlank("leavingYear", "short")
+      )
+    );
     line2.appendChild(document.createTextNode(", I came from "));
-    line2.appendChild(createMadlibsTextBlank("from", "medium"));
+    line2.appendChild(
+      wrapMadlibsFieldWithIcon("from", createMadlibsTextBlank("from", "medium"))
+    );
     line2.appendChild(document.createTextNode(" to "));
-    line2.appendChild(createMadlibsTextBlank("nowIn", "medium"));
+    line2.appendChild(
+      wrapMadlibsFieldWithIcon("nowIn", createMadlibsTextBlank("nowIn", "medium"))
+    );
     line2.appendChild(document.createTextNode("."));
     madlibs.appendChild(line2);
 
     var line3 = document.createElement("p");
     line3.className = "questionnaire-madlibs-line";
     line3.appendChild(document.createTextNode("I feel most at home in "));
-    line3.appendChild(createMadlibsSelectBlank("homeAt", "medium"));
+    line3.appendChild(
+      wrapMadlibsFieldWithIcon(
+        "homeAt",
+        createMadlibsSelectBlank("homeAt", "medium")
+      )
+    );
     line3.appendChild(document.createTextNode("."));
     madlibs.appendChild(line3);
 
@@ -2727,6 +3760,12 @@
     var answersWrap = document.createElement("div");
     answersWrap.className = "questionnaire-step__answers";
 
+    var intro = document.createElement("p");
+    intro.className = "questionnaire-feelings-intro";
+    intro.textContent =
+      "How much do you feel these emotions when you think about Iran?";
+    answersWrap.appendChild(intro);
+
     var list = document.createElement("div");
     list.className = "questionnaire-feelings-list";
     list.setAttribute("role", "group");
@@ -2742,45 +3781,26 @@
       continueBtn.disabled = !isAllFeelingsComplete();
     }
 
-    FEELINGS_EMOTION_GROUPS.forEach(function (group) {
-      var emotionEl = document.createElement("div");
-      emotionEl.className = "questionnaire-feelings-emotion";
+    appendFeelingsGridTable(list, syncContinue);
 
-      var heading = document.createElement("h4");
-      heading.className = "questionnaire-feelings-emotion-heading";
-      heading.textContent = group.heading;
-      emotionEl.appendChild(heading);
+    var hopeBlock = document.createElement("div");
+    hopeBlock.className = "questionnaire-feelings-hope-block";
 
-      var controlsWrap = document.createElement("div");
-      controlsWrap.className = "questionnaire-feelings-emotion-controls";
+    var hopeHeading = document.createElement("h4");
+    hopeHeading.className = "questionnaire-feelings-emotion-heading";
+    hopeHeading.textContent = "Hope";
+    hopeBlock.appendChild(hopeHeading);
 
-      group.controls.forEach(function (controlDef) {
-        var stepId = controlDef.stepId;
-        var stepConfig = STEPS[stepId];
-        if (!stepConfig) return;
-
-        if (controlDef.subLabel) {
-          var subLabel = document.createElement("span");
-          subLabel.className = "questionnaire-feelings-sublabel";
-          subLabel.textContent = controlDef.subLabel;
-          controlsWrap.appendChild(subLabel);
-        }
-
-        if (controlDef.type === "choice" || stepConfig.type === "choice") {
-          appendQuestionnaireHopeChoice(
-            controlsWrap,
-            stepConfig,
-            stepId,
-            syncContinue
-          );
-        } else if (stepConfig.type === "slider") {
-          appendQuestionnaireSliderControl(controlsWrap, stepConfig, stepId);
-        }
-      });
-
-      emotionEl.appendChild(controlsWrap);
-      list.appendChild(emotionEl);
-    });
+    var hopeStepConfig = STEPS.hopeMode;
+    if (hopeStepConfig) {
+      appendQuestionnaireHopeChoice(
+        hopeBlock,
+        hopeStepConfig,
+        "hopeMode",
+        syncContinue
+      );
+    }
+    list.appendChild(hopeBlock);
 
     continueBtn.addEventListener("click", function () {
       if (isAllFeelingsComplete()) advance();
@@ -2789,6 +3809,9 @@
     answersWrap.appendChild(list);
     answersWrap.appendChild(continueBtn);
     stepEl.appendChild(answersWrap);
+
+    applyQuestionnaireFeelingsToCanvas();
+
     return stepEl;
   }
 
@@ -2888,16 +3911,43 @@
       var questionBlock = document.createElement("div");
       questionBlock.className = "questionnaire-section-question";
       appendQuestionnaireSectionQuestionHeading(questionBlock, stepConfig.label);
-      appendQuestionnaireSliderControl(
-        questionBlock,
-        stepConfig,
-        stepId,
-        syncContinue
-      );
+      if (stepConfig.type === "choice") {
+        appendQuestionnaireSingleChoiceControl(
+          questionBlock,
+          stepConfig,
+          stepId,
+          syncContinue
+        );
+      } else if (stepConfig.type === "yesno") {
+        appendQuestionnaireYesNoControl(
+          questionBlock,
+          stepConfig,
+          stepId,
+          syncContinue
+        );
+      } else if (stepConfig.type === "multi-choice") {
+        appendQuestionnaireMultiChoiceControl(
+          questionBlock,
+          stepConfig,
+          stepId,
+          syncContinue
+        );
+      } else if (stepConfig.type === "slider") {
+        appendQuestionnaireSliderControl(
+          questionBlock,
+          stepConfig,
+          stepId,
+          syncContinue
+        );
+      }
       list.appendChild(questionBlock);
     });
 
     continueBtn.addEventListener("click", function () {
+      if (answers.iranLossTypes === null) {
+        answers.iranLossTypes = [];
+        applyFamilyAnswersToPanel(false);
+      }
       if (isAllFamilyComplete()) advance();
     });
 
@@ -3155,22 +4205,15 @@
     return answersWrap;
   }
 
-  function renderComplete(title, message) {
+  function renderComplete() {
     var stepEl = document.createElement("div");
     stepEl.className = "questionnaire-step questionnaire-step--complete";
-
-    var heading = document.createElement("h3");
-    heading.className = "questionnaire-step__heading";
-    heading.textContent = title;
-
-    var text = document.createElement("p");
-    text.className = "questionnaire-step__complete-text";
-    text.textContent = message;
+    stepEl.setAttribute("data-step-id", SUBMIT_ORDER_STEP_ID);
 
     var saveBtn = document.createElement("button");
     saveBtn.type = "button";
     saveBtn.className = "questionnaire-continue questionnaire-archive-btn";
-    saveBtn.textContent = "Save";
+    saveBtn.textContent = "submit & order";
 
     var confirmEl = document.createElement("p");
     confirmEl.className = "questionnaire-archive-confirm";
@@ -3193,9 +4236,10 @@
           window.HandkerchiefArchive.saveCurrentDesign()
             .then(function () {
               confirmEl.hidden = false;
-              var section = document.getElementById("section-archive");
-              if (section) {
-                section.scrollIntoView({ behavior: "smooth", block: "start" });
+              if (
+                window.HandkerchiefArchive.revealDesignArchive
+              ) {
+                window.HandkerchiefArchive.revealDesignArchive();
               }
             })
             .catch(function (err) {
@@ -3210,8 +4254,6 @@
       });
     });
 
-    stepEl.appendChild(heading);
-    stepEl.appendChild(text);
     stepEl.appendChild(saveBtn);
     stepEl.appendChild(confirmEl);
     return stepEl;
@@ -3268,11 +4310,8 @@
       stepEl = renderAllFamily();
     } else if (stepId === FEELINGS_ALL_STEP_ID) {
       stepEl = renderAllFeelings();
-    } else if (stepId === "__feelings_complete__") {
-      stepEl = renderComplete(
-        "Feelings complete",
-        "Thank you. Your feeling choices are applied to the handkerchief."
-      );
+    } else if (stepId === SUBMIT_ORDER_STEP_ID) {
+      stepEl = renderComplete();
     } else {
       var stepConfig = STEPS[stepId];
       if (!stepConfig) return null;
@@ -3288,6 +4327,9 @@
       switch (stepConfig.type) {
         case "yesno":
           answersEl = renderYesNo(stepConfig, stepId);
+          break;
+        case "multi-choice":
+          answersEl = renderMultiChoice(stepConfig, stepId);
           break;
         case "choice":
           answersEl = renderChoice(stepConfig, stepId);
@@ -3322,15 +4364,35 @@
       }
       var blankEl = stepEl.querySelector('[data-step-id="' + blankId + '"]');
       if (blankEl) {
+        if (blankEl.classList.contains("questionnaire-madlibs-name-mode")) {
+          var comboboxInput = blankEl.querySelector(
+            ".questionnaire-madlibs-name-mode__input"
+          );
+          if (comboboxInput) return comboboxInput;
+        }
         if (blankEl.classList.contains("questionnaire-madlibs-dropdown")) {
+          if (blankId === "name") {
+            var inlineName = blankEl.querySelector(
+              ".questionnaire-madlibs-name-mode__input"
+            );
+            if (inlineName) return inlineName;
+          }
           return blankEl.querySelector(
             ".questionnaire-madlibs-dropdown__trigger"
           );
         }
         return blankEl;
       }
+      var nameModeWrap = stepEl.querySelector(
+        ".questionnaire-madlibs-name-mode"
+      );
+      if (nameModeWrap) {
+        return nameModeWrap.querySelector(
+          ".questionnaire-madlibs-name-mode__input"
+        );
+      }
       return stepEl.querySelector(
-        ".questionnaire-madlibs-dropdown[data-step-id='nameDisplayMode'] .questionnaire-madlibs-dropdown__trigger"
+        ".questionnaire-madlibs-name-mode__input"
       );
     }
     return stepEl.querySelector(
@@ -3340,7 +4402,7 @@
 
   function applyStepUIState(stepId, stepEl) {
     displayStepId = stepId;
-    currentStepId = stepId === "__feelings_complete__" ? null : stepId;
+    currentStepId = stepId === SUBMIT_ORDER_STEP_ID ? null : stepId;
     activeStepEl = stepEl;
     updateSectionLabel(stepId);
     updateSkipButtonVisibility(stepId);
@@ -3633,7 +4695,7 @@
       showStep(nextId);
       return;
     }
-    showStep("__feelings_complete__");
+    showStep(SUBMIT_ORDER_STEP_ID);
   }
 
   function startEnterAnimation(nextStepEl, resolvedId, direction, enteringClass) {
@@ -3690,7 +4752,7 @@
   }
 
   function runStepTransition(nextId, direction) {
-    var resolvedId = nextId || "__feelings_complete__";
+    var resolvedId = nextId || SUBMIT_ORDER_STEP_ID;
     direction = direction === "back" ? "back" : "forward";
 
     if (!activeStepEl || !viewport) {
@@ -3807,19 +4869,33 @@
     transitionToStep(nextId);
   }
 
-  function init() {
-    viewport = document.getElementById("questionnaire-viewport");
-    sectionLabelEl = document.getElementById("questionnaire-section-label");
-    progressEl = document.getElementById("questionnaire-progress");
-    skipSectionBtn = document.getElementById("questionnaire-skip-btn");
-    if (skipSectionBtn) {
-      skipSectionBtn.addEventListener("click", skipProfileSection);
+  var questionnaireStarted = false;
+
+  function beginQuestionnaire() {
+    if (questionnaireStarted || !viewport) return;
+    questionnaireStarted = true;
+
+    var sectionDesign = document.getElementById("section-design");
+    var designStart = document.getElementById("design-start");
+    var questionnairePanel = document.getElementById("questionnaire-panel");
+    if (sectionDesign) {
+      sectionDesign.classList.add("section-design--questionnaire-started");
     }
-    if (!viewport) return;
+    if (designStart) {
+      designStart.hidden = true;
+    }
+    if (questionnairePanel) {
+      questionnairePanel.hidden = false;
+    }
+
     showStep(PROFILE_ALL_STEP_ID, {
       skipEnterAnimation: true,
       deferFocus: true,
     });
+
+    if (typeof window.render === "function") {
+      window.render();
+    }
 
     var madlibs = viewport.querySelector(".questionnaire-profile-madlibs");
     if (madlibs && !profileTypewriterPlayed && !prefersReducedMotion()) {
@@ -3833,6 +4909,41 @@
     focusProfileBlank("nameDisplayMode");
   }
 
+  function init() {
+    viewport = document.getElementById("questionnaire-viewport");
+    sectionLabelEl = document.getElementById("questionnaire-section-label");
+    progressEl = document.getElementById("questionnaire-progress");
+    skipSectionBtn = document.getElementById("questionnaire-skip-btn");
+    if (skipSectionBtn) {
+      skipSectionBtn.addEventListener("click", skipProfileSection);
+    }
+    var startBtn = document.getElementById("design-start-btn");
+    if (startBtn) {
+      startBtn.addEventListener("click", beginQuestionnaire);
+    }
+    if (
+      typeof window.FamilyControls !== "undefined" &&
+      window.FamilyControls.setOnFamilyChange
+    ) {
+      window.FamilyControls.setOnFamilyChange(function () {
+        answers.closeFamilyInIran = window.FamilyControls.getCloseFamilyInIran();
+        answers.iranLossTypes = window.FamilyControls.getIranLossTypes();
+        syncFamilyDerivedAnswers();
+        if (
+          answers.closeFamilyInIran === "largePart" ||
+          answers.closeFamilyInIran === "someMembers" ||
+          answers.closeFamilyInIran === "almostAllOutside"
+        ) {
+          familyStepsReached.closeFamilyInIran = true;
+        }
+        if (answers.iranLossTypes !== null) {
+          familyStepsReached.iranLossTypes = true;
+        }
+        triggerCanvasUpdateAfterSync("closeFamilyInIran");
+      });
+    }
+  }
+
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", init);
   } else {
@@ -3840,8 +4951,15 @@
   }
 
   window.Questionnaire = {
+    start: beginQuestionnaire,
+    isStarted: function () {
+      return questionnaireStarted;
+    },
     getAnswers: function () {
       return Object.assign({}, answers);
+    },
+    getNameLabelText: function () {
+      return getNameModeDisplayLabel(answers.nameDisplayMode, answers.name);
     },
     getCurrentStepId: function () {
       return currentStepId;
@@ -3849,5 +4967,6 @@
     isProfileStep: isProfileStep,
     isGridStep: isGridStep,
     isPreFamilyQuestionnaireStep: isPreFamilyQuestionnaireStep,
+    isBodyAutonomyStep: isBodyAutonomyStep,
   };
 })();

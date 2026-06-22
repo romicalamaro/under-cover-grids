@@ -34,6 +34,8 @@
   var removedEdges = new Set();
   /** Edges removed by Auto Merge (separate from manual merge mask/dots). */
   var autoMergeEdgeKeys = new Set();
+  /** Last Pride intensity applied by runAutoMerge (internal slider value). */
+  var lastAppliedAutoMergeIntensity = -1;
   /** @type {{ points: { x: number, y: number }[] }[] | null} */
   var autoMergeFillRegions = null;
   var dragPath = [];
@@ -2302,6 +2304,7 @@
     if (step === 3) return "Maximum";
     return "Medium";
   }
+  window.borderFrameDivisionsLabel = borderFrameDivisionsLabel;
 
   /**
    * Border strip thickness is fixed to a single column (Thin).
@@ -2366,6 +2369,7 @@
       out.textContent = String(getBorderSideWhiteFillTargetPercent()) + "%";
     }
   }
+  window.syncBorderSideWhiteFillOutput = syncBorderSideWhiteFillOutput;
 
   /**
    * @param {string[]|null} cachedOrder
@@ -6648,9 +6652,12 @@
     updateHopeResetButton();
   }
 
-  function clearAutoMergeState() {
+  function clearAutoMergeState(resetIntensityTracking) {
     autoMergeEdgeKeys.clear();
     autoMergeFillRegions = null;
+    if (resetIntensityTracking !== false) {
+      lastAppliedAutoMergeIntensity = -1;
+    }
     updateHopeResetButton();
     renderAutoMergeFillsLayer();
   }
@@ -6701,12 +6708,14 @@
   }
 
   function runAutoMerge() {
+    var intensity = getAutoMergeIntensity();
     var prideSegments = getSegmentsForPrideAutoMerge();
     if (!prideSegments.length) return;
 
-    clearAutoMergeState();
+    clearAutoMergeState(false);
 
-    if (getAutoMergeIntensity() <= 0) {
+    if (intensity <= 0) {
+      lastAppliedAutoMergeIntensity = 0;
       renderPatternAndVerticalLayers();
       renderAutoMergeFillsLayer();
       updateHopeResetButton();
@@ -6797,6 +6806,7 @@
     renderPatternAndVerticalLayers();
     renderAutoMergeFillsLayer();
     updateHopeResetButton();
+    lastAppliedAutoMergeIntensity = intensity;
   }
 
   /**
@@ -7639,7 +7649,13 @@
    */
   function syncVerticalGridLines(force) {
     var sig = buildVerticalGridLayoutSignature();
-    if (!force && sig === lastVerticalGridLayoutSignature) return;
+    if (
+      !force &&
+      sig === lastVerticalGridLayoutSignature &&
+      cachedVerticalGridLines.length > 0
+    ) {
+      return;
+    }
     lastVerticalGridLayoutSignature = sig;
 
     var xs = isStarGrid()
@@ -7729,6 +7745,7 @@
 
   function renderVerticalGridLayer() {
     if (!designSvg) return;
+    syncVerticalGridLines(false);
     ensureFearVerticalGridMounted();
     clearInactiveVerticalGridLayer();
     var layer = getActiveVerticalGridLayer();
@@ -12358,6 +12375,24 @@
   }
 
   /** Sign from Profile “where do you feel at home?” */
+  function isQuestionnaireActiveForLabelBar() {
+    return (
+      typeof window.SectionProgression !== "undefined" &&
+      window.SectionProgression.isQuestionnaireActive &&
+      window.SectionProgression.isQuestionnaireActive()
+    );
+  }
+
+  function getLabelBarHomeAtDefaultSvgFile() {
+    if (typeof LABEL_BAR_HOME_AT_DEFAULT_SVG !== "undefined") {
+      return LABEL_BAR_HOME_AT_DEFAULT_SVG;
+    }
+    if (typeof LABEL_BAR_HOME_AT_SVGS !== "undefined" && LABEL_BAR_HOME_AT_SVGS.nowhere) {
+      return LABEL_BAR_HOME_AT_SVGS.nowhere;
+    }
+    return "home/NOWHERE.svg";
+  }
+
   function getHomeAtLabelSvgFile() {
     var choice;
     var map;
@@ -12369,13 +12404,18 @@
     }
     if (
       typeof window.SectionProgression !== "undefined" &&
-      window.SectionProgression.shouldShowProfileLabelPart &&
-      !window.SectionProgression.shouldShowProfileLabelPart("homeAt")
+      window.SectionProgression.shouldShowProfileLabelSymbol &&
+      !window.SectionProgression.shouldShowProfileLabelSymbol("homeAt")
     ) {
       return null;
     }
     choice = window.IdentityControls.getHomeAt();
-    if (choice === null) return null;
+    if (choice === null) {
+      if (isQuestionnaireActiveForLabelBar()) {
+        return getLabelBarHomeAtDefaultSvgFile();
+      }
+      return null;
+    }
     map =
       typeof LABEL_BAR_HOME_AT_SVGS !== "undefined"
         ? LABEL_BAR_HOME_AT_SVGS
@@ -13092,11 +13132,13 @@
       return getLabelBarLivingNeverInIranSvgFile();
     }
     choice = window.IdentityControls.getLivingInIran();
-    if (choice === null) return null;
+    if (choice === null) {
+      return null;
+    }
     if (
       typeof window.SectionProgression !== "undefined" &&
-      window.SectionProgression.shouldShowProfileLabelPart &&
-      !window.SectionProgression.shouldShowProfileLabelPart("livingInIran")
+      window.SectionProgression.shouldShowProfileLabelSymbol &&
+      !window.SectionProgression.shouldShowProfileLabelSymbol("livingInIran")
     ) {
       return null;
     }
@@ -13105,8 +13147,8 @@
     }
     if (
       typeof window.SectionProgression !== "undefined" &&
-      window.SectionProgression.shouldShowProfileLabelPart &&
-      !window.SectionProgression.shouldShowProfileLabelPart("livingDuration")
+      window.SectionProgression.shouldShowProfileLabelSymbol &&
+      !window.SectionProgression.shouldShowProfileLabelSymbol("livingDuration")
     ) {
       return null;
     }
@@ -13372,6 +13414,26 @@
     return true;
   }
 
+  function shouldShowProfileLabelSymbol(partId) {
+    if (
+      typeof window.SectionProgression !== "undefined" &&
+      window.SectionProgression.shouldShowProfileLabelSymbol
+    ) {
+      return window.SectionProgression.shouldShowProfileLabelSymbol(partId);
+    }
+    return shouldShowProfileLabelPart(partId);
+  }
+
+  function shouldShowProfileLabelText(partId) {
+    if (
+      typeof window.SectionProgression !== "undefined" &&
+      window.SectionProgression.shouldShowProfileLabelText
+    ) {
+      return window.SectionProgression.shouldShowProfileLabelText(partId);
+    }
+    return shouldShowProfileLabelPart(partId);
+  }
+
   /**
    * @param {ReturnType<typeof getLabelBarContentArea>} area
    * @param {ReturnType<typeof getLabelBarContentArea>} endCapArea
@@ -13502,29 +13564,47 @@
     var leavingYearTextSpec = leavingYearText
       ? buildLabelBarProfileFieldTextSpec(leavingYearText, area)
       : null;
-    var showLeavingYear =
+    var livingInIranChoice =
       typeof window.IdentityControls !== "undefined" &&
-      window.IdentityControls.getLivingInIran &&
-      window.IdentityControls.getLivingInIran() === true &&
-      shouldShowProfileLabelPart("leavingYear");
+      window.IdentityControls.getLivingInIran
+        ? window.IdentityControls.getLivingInIran()
+        : null;
+    var showLeavingYearCluster = false;
+    if (shouldShowProfileLabelSymbol("leavingYear")) {
+      if (isQuestionnaireActiveForLabelBar()) {
+        showLeavingYearCluster = livingInIranChoice !== false;
+      } else {
+        showLeavingYearCluster =
+          livingInIranChoice === true &&
+          shouldShowProfileLabelPart("leavingYear");
+      }
+    }
 
-    if (!shouldShowProfileLabelPart("age")) {
+    if (!shouldShowProfileLabelSymbol("age")) {
       ageLabelSpec = null;
       ageSpec = null;
     }
-    if (!shouldShowProfileLabelPart("from")) {
-      fromTextSpec = null;
+    if (!shouldShowProfileLabelSymbol("from")) {
       fromSpec = null;
     }
-    if (!shouldShowProfileLabelPart("nowIn")) {
+    if (!shouldShowProfileLabelText("from")) {
+      fromTextSpec = null;
+    }
+    if (!shouldShowProfileLabelText("nowIn")) {
       nowInTextSpec = null;
     }
-    if (!shouldShowProfileLabelPart("coordinates")) {
+    if (!shouldShowProfileLabelText("coordinates")) {
       unionCoordinatesSpec = null;
     }
+    if (!shouldShowProfileLabelText("leavingYear")) {
+      leavingYearTextSpec = null;
+    }
+    if (!shouldShowProfileLabelSymbol("homeAt")) {
+      homeAtSpec = null;
+    }
     if (
-      !shouldShowProfileLabelPart("livingInIran") &&
-      !shouldShowProfileLabelPart("livingDuration")
+      !shouldShowProfileLabelSymbol("livingInIran") &&
+      !shouldShowProfileLabelSymbol("livingDuration")
     ) {
       livingDurationSpec = null;
     }
@@ -13535,7 +13615,7 @@
         leftWordSpec ? { spec: leftWordSpec, svgArea: area } : null,
       ])
     );
-    if (showLeavingYear) {
+    if (showLeavingYearCluster) {
       pushRowCluster(
         row1Clusters,
         buildLabelBarCluster([
@@ -13563,7 +13643,9 @@
           ? {
               spec: ageSpec,
               svgArea: area,
-              ageOverlayText: getProfileAgeText(),
+              ageOverlayText: shouldShowProfileLabelText("age")
+                ? getProfileAgeText()
+                : "",
             }
           : null,
       ])
@@ -13604,7 +13686,7 @@
         nowInTextSpec ? { spec: nowInTextSpec, svgArea: livingRowArea } : null,
       ])
     );
-    var nameText = shouldShowProfileLabelPart("name") ? getProfileNameText() : "";
+    var nameText = shouldShowProfileLabelText("name") ? getProfileNameText() : "";
     var nameTextSpec = nameText
       ? buildLabelBarProfileFieldTextSpec(nameText, livingRowArea)
       : null;
@@ -13614,7 +13696,7 @@
         womenSpec ? { spec: womenSpec, svgArea: livingRowArea } : null,
       ])
     );
-    if (nameTextSpec && shouldShowProfileLabelPart("name")) {
+    if (nameTextSpec && shouldShowProfileLabelText("name")) {
       pushRowCluster(
         row2Clusters,
         buildLabelBarCluster([{ spec: nameTextSpec, svgArea: livingRowArea }])
@@ -15155,6 +15237,39 @@
     }
   }
 
+  function renderJunctionCircleEmotionMarkers() {
+    if (!designSvg) return;
+    ensureEmotionMarkersMounted();
+
+    var circleEmotionsLayer = designSvg.querySelector("#layer-circle-emotions");
+    if (!circleEmotionsLayer) return;
+
+    while (circleEmotionsLayer.firstChild) {
+      circleEmotionsLayer.removeChild(circleEmotionsLayer.firstChild);
+    }
+
+    var helplessnessMarks = getActiveHelplessnessMarks();
+    if (helplessnessMarks.length) {
+      circleEmotionsLayer.appendChild(helplessnessToGroup(helplessnessMarks));
+    }
+    var circles = getActiveCircles();
+    if (circles.length) {
+      circleEmotionsLayer.appendChild(circlesToGroup(circles));
+    }
+    var longingCircles = getActiveLongingCircles();
+    if (longingCircles.length) {
+      circleEmotionsLayer.appendChild(longingCirclesToGroup(longingCircles));
+    }
+    var griefCircles = getActiveGriefCircles();
+    if (griefCircles.length) {
+      circleEmotionsLayer.appendChild(griefCirclesToGroup(griefCircles));
+    }
+    var strengthMarks = getActiveStrengthMarks();
+    if (strengthMarks.length) {
+      circleEmotionsLayer.appendChild(strengthMarksToGroup(strengthMarks));
+    }
+  }
+
   function renderCirclesLikeEmotionMarkersLayer() {
     if (!designSvg || !isCirclesLikeGrid()) return;
     ensureEmotionMarkersMounted();
@@ -15162,32 +15277,7 @@
     renderDiamondFillsLayer();
     renderHollowDiamondFillsLayer();
 
-    var circleEmotionsLayer = designSvg.querySelector("#layer-circle-emotions");
-    if (circleEmotionsLayer) {
-      while (circleEmotionsLayer.firstChild) {
-        circleEmotionsLayer.removeChild(circleEmotionsLayer.firstChild);
-      }
-      var helplessnessMarks = getActiveHelplessnessMarks();
-      if (helplessnessMarks.length) {
-        circleEmotionsLayer.appendChild(helplessnessToGroup(helplessnessMarks));
-      }
-      var circles = getActiveCircles();
-      if (circles.length) {
-        circleEmotionsLayer.appendChild(circlesToGroup(circles));
-      }
-      var longingCircles = getActiveLongingCircles();
-      if (longingCircles.length) {
-        circleEmotionsLayer.appendChild(longingCirclesToGroup(longingCircles));
-      }
-      var griefCircles = getActiveGriefCircles();
-      if (griefCircles.length) {
-        circleEmotionsLayer.appendChild(griefCirclesToGroup(griefCircles));
-      }
-      var strengthMarks = getActiveStrengthMarks();
-      if (strengthMarks.length) {
-        circleEmotionsLayer.appendChild(strengthMarksToGroup(strengthMarks));
-      }
-    }
+    renderJunctionCircleEmotionMarkers();
 
     renderAngerDiamondTrianglesLayer();
   }
@@ -20061,26 +20151,7 @@
       patternLayer.appendChild(
         segmentsToGroup(getVisibleSegments(getAllSegmentsForTracing()))
       );
-      var starHelplessnessMarks = getActiveHelplessnessMarks();
-      if (starHelplessnessMarks.length) {
-        patternLayer.appendChild(helplessnessToGroup(starHelplessnessMarks));
-      }
-      var starCircles = getActiveCircles();
-      if (starCircles.length) {
-        patternLayer.appendChild(circlesToGroup(starCircles));
-      }
-      var starLongingCircles = getActiveLongingCircles();
-      if (starLongingCircles.length) {
-        patternLayer.appendChild(longingCirclesToGroup(starLongingCircles));
-      }
-      var starGriefCircles = getActiveGriefCircles();
-      if (starGriefCircles.length) {
-        patternLayer.appendChild(griefCirclesToGroup(starGriefCircles));
-      }
-      var starStrengthMarks = getActiveStrengthMarks();
-      if (starStrengthMarks.length) {
-        patternLayer.appendChild(strengthMarksToGroup(starStrengthMarks));
-      }
+      renderJunctionCircleEmotionMarkers();
       renderAngerDiamondTrianglesLayer();
       return;
     }
@@ -20104,26 +20175,7 @@
       appendCirclesGridFrameJunctionDots(patternLayer);
     }
     if (!isCirclesLikeGrid()) {
-      var helplessnessMarks = getActiveHelplessnessMarks();
-      if (helplessnessMarks.length) {
-        patternLayer.appendChild(helplessnessToGroup(helplessnessMarks));
-      }
-      var circles = getActiveCircles();
-      if (circles.length) {
-        patternLayer.appendChild(circlesToGroup(circles));
-      }
-      var longingCircles = getActiveLongingCircles();
-      if (longingCircles.length) {
-        patternLayer.appendChild(longingCirclesToGroup(longingCircles));
-      }
-      var griefCircles = getActiveGriefCircles();
-      if (griefCircles.length) {
-        patternLayer.appendChild(griefCirclesToGroup(griefCircles));
-      }
-      var strengthMarks = getActiveStrengthMarks();
-      if (strengthMarks.length) {
-        patternLayer.appendChild(strengthMarksToGroup(strengthMarks));
-      }
+      renderJunctionCircleEmotionMarkers();
       renderAngerDiamondTrianglesLayer();
     }
     if (isCirclesLikeGrid()) {
@@ -20853,15 +20905,24 @@
     syncAngerTriangleSelection(forceReshuffle);
 
     if (getAutoMergeIntensity() > 0) {
-      if (options.skipRender) {
+      var prideIntensity = getAutoMergeIntensity();
+      var prideIntensityChanged =
+        prideIntensity !== lastAppliedAutoMergeIntensity;
+      if (
+        options.skipRender &&
+        (!hasActivePrideAutoMergeRegions() || prideIntensityChanged)
+      ) {
+        runAutoMerge();
+      } else if (options.skipRender) {
         /* deferred until after startup render or idle callback */
-      } else if (forceReshuffle || !hasActivePrideAutoMergeRegions()) {
+      } else if (!hasActivePrideAutoMergeRegions() || prideIntensityChanged) {
         runAutoMerge();
         return;
       }
-      /* Keep existing Pride auto-merge regions; repaint layers below. */
+      /* Existing Pride regions at same intensity: repaint other feeling markers below. */
     } else {
       clearAutoMergeState();
+      lastAppliedAutoMergeIntensity = 0;
     }
 
     if (options.skipRender) return;
@@ -20965,6 +21026,115 @@
     applyFeelingsControlState({ forceReshuffle: true });
   }
 
+  var QUESTIONNAIRE_FEELINGS_SLIDER_DOM = {
+    angerVerticalLength: ["anger-vertical-length", "anger-vertical-length-out"],
+    anxietyVerticalStroke: [
+      "anxiety-vertical-stroke",
+      "anxiety-vertical-stroke-out",
+    ],
+    angerTriangleDensity: [
+      "anger-triangle-density",
+      "anger-triangle-density-out",
+    ],
+    circleDensity: ["circle-density", "circle-density-out"],
+    longingCircleDensity: [
+      "longing-circle-density",
+      "longing-circle-density-out",
+    ],
+    griefCircleDensity: ["grief-circle-density", "grief-circle-density-out"],
+    strengthDensity: ["strength-density", "strength-density-out"],
+    autoMergeIntensity: ["auto-merge-intensity", "auto-merge-intensity-out"],
+    prideFillPercent: ["pride-fill-percent", "pride-fill-percent-out"],
+    guiltShameFillPercent: [
+      "guilt-shame-fill-percent",
+      "guilt-shame-fill-percent-out",
+    ],
+    helplessnessPercent: ["helplessness-percent", "helplessness-percent-out"],
+  };
+
+  function getFeelingsSliderBoundsResolved(key) {
+    var comboBounds = getFeelingsSliderBoundsForCombo(key);
+    if (comboBounds) return comboBounds;
+    switch (key) {
+      case "angerVerticalLength":
+        return {
+          min: ANGER_VERTICAL_LENGTH_MIN,
+          max: ANGER_VERTICAL_LENGTH_MAX,
+        };
+      case "anxietyVerticalStroke":
+        return {
+          min:
+            typeof ANXIETY_VERTICAL_STROKE_MIN !== "undefined"
+              ? ANXIETY_VERTICAL_STROKE_MIN
+              : 0,
+          max:
+            typeof ANXIETY_VERTICAL_STROKE_MAX !== "undefined"
+              ? ANXIETY_VERTICAL_STROKE_MAX
+              : 100,
+        };
+      case "angerTriangleDensity":
+        return {
+          min:
+            typeof ANGER_TRIANGLE_DENSITY_MIN !== "undefined"
+              ? ANGER_TRIANGLE_DENSITY_MIN
+              : 0,
+          max: getAngerTriangleDensityMaxForActiveGrid(),
+        };
+      case "circleDensity":
+        return { min: CIRCLE_DENSITY_MIN, max: CIRCLE_DENSITY_MAX };
+      case "autoMergeIntensity":
+        return {
+          min:
+            typeof AUTO_MERGE_INTENSITY_MIN !== "undefined"
+              ? AUTO_MERGE_INTENSITY_MIN
+              : 0,
+          max:
+            typeof AUTO_MERGE_INTENSITY_MAX !== "undefined"
+              ? AUTO_MERGE_INTENSITY_MAX
+              : 7,
+        };
+      default:
+        return null;
+    }
+  }
+
+  function syncFeelingsSlidersFromQuestionnaireValues(valuesByKey) {
+    var key;
+    for (key in valuesByKey) {
+      if (!Object.prototype.hasOwnProperty.call(valuesByKey, key)) continue;
+      var dom = QUESTIONNAIRE_FEELINGS_SLIDER_DOM[key];
+      if (!dom) continue;
+      var bounds = getFeelingsSliderBoundsResolved(key);
+      if (!bounds) continue;
+      var internal = Number(valuesByKey[key]);
+      if (!isFinite(internal)) continue;
+      setFeelingsSliderInternalValue(dom[0], internal, bounds.min, bounds.max);
+      if (dom[1]) {
+        setFeelingsStepOutputById(dom[1], internal, bounds.min, bounds.max);
+      }
+    }
+    syncAllFeelingsSliderOutputs();
+  }
+
+  function applyFeelingsFromQuestionnaire(valuesByKey, options) {
+    options = options || {};
+    if (!isGridContentUnlocked()) {
+      return;
+    }
+    syncBorderSideWhiteFillOutput();
+    syncJunctionEmotionSliderRangesForGridType();
+    syncAngerPainGuiltSliderRangesForGridType();
+    syncFeelingsSlidersFromQuestionnaireValues(valuesByKey);
+    if (options.resetLayoutSignatures === true) {
+      resetFeelingsLayoutSignatures();
+    }
+    var forceReshuffle = options.forceReshuffle === true;
+    applyFeelingsControlState({ skipRender: true, forceReshuffle: forceReshuffle });
+    refreshLocationCoordinates();
+    refreshLabelBarContent();
+    render();
+  }
+
   function resetPage2QuestionnaireCanvasLayoutCache() {
     page2QuestionnaireCanvasLayoutCache = null;
   }
@@ -20981,10 +21151,17 @@
     return page2 && page2.classList.contains("page2--design-active");
   }
 
+  /** Design section start gate: hide canvas until the user clicks Start. */
+  function isPage2DesignPreQuestionnaireStart() {
+    if (!isPage2DesignSectionActive()) return false;
+    var q = window.Questionnaire;
+    return !q || typeof q.isStarted !== "function" || !q.isStarted();
+  }
+
   function resetPage2DesignCanvasLayout(wrap) {
     resetPage2QuestionnaireCanvasLayoutCache();
     applyQuestionnaireCanvasClipExtend(wrap, null);
-    setProfileLabelZoomClass(wrap, false);
+    setQuestionnaireFocusZoomClass(wrap, false);
     var svg = document.getElementById("design-svg");
     if (svg) {
       svg.style.display = "none";
@@ -20999,35 +21176,61 @@
   }
 
   /**
-   * Lock bottom clip + upward extend from the first questionnaire layout
+   * Lock clip + extend from the first questionnaire layout
    * (natural .main height — before stage-wrap margin tweaks).
+   * @param {"profile-bottom" | "body-autonomy-top"} mode
    */
-  function ensurePage2QuestionnaireCanvasLayoutCache(wrap, f) {
-    if (page2QuestionnaireCanvasLayoutCache) {
+  function ensurePage2QuestionnaireCanvasLayoutCache(wrap, f, mode) {
+    var gridCols = getQuestionnaireFocusGridCols(mode);
+    if (
+      page2QuestionnaireCanvasLayoutCache &&
+      page2QuestionnaireCanvasLayoutCache.mode === mode &&
+      page2QuestionnaireCanvasLayoutCache.colStart === gridCols.start &&
+      page2QuestionnaireCanvasLayoutCache.colSpan === gridCols.span
+    ) {
       return page2QuestionnaireCanvasLayoutCache;
     }
-    if (!wrap) return null;
+    page2QuestionnaireCanvasLayoutCache = null;
+    if (!wrap || !mode) return null;
     var main = wrap.closest("#section-design .main");
     if (!main) return null;
     var mainRect = main.getBoundingClientRect();
     var naturalHeight = mainRect.height;
     var naturalWrapTop = mainRect.top;
-    var focusRect = getProfileLabelFocusRect();
-    var slot = getPage2CanvasSlot(wrap);
+    var focusRect =
+      mode === "body-autonomy-top"
+        ? getBodyAutonomyTopFocusRect()
+        : getProfileLabelFocusRect();
+    var slot = getPage2CanvasSlot(wrap, gridCols.start, gridCols.span);
     if (!slot || slot.slotWidth <= 0) return null;
 
-    var profileScale = slot.slotWidth / focusRect.width;
-    var totalH = CANVAS_H + 2 * f;
-    var focusCenterY =
+    var profileScale = getProfileLabelFocusScale(
+      slot.slotWidth,
+      f,
+      focusRect.width
+    );
+
+    if (mode === "body-autonomy-top") {
+      page2QuestionnaireCanvasLayoutCache = {
+        mode: mode,
+        colStart: gridCols.start,
+        colSpan: gridCols.span,
+        extendUp: 0,
+        profileScale: profileScale,
+      };
+      return page2QuestionnaireCanvasLayoutCache;
+    }
+
+    var focusCenterOffset =
       (focusRect.y + f + focusRect.height / 2) * profileScale;
-    var centeredTopInWrap = naturalHeight / 2 - focusCenterY;
-    var focusTopInWrap = centeredTopInWrap + (focusRect.y + f) * profileScale;
-    var headerBottom = getPage2HeaderBottomPx();
-    var targetTopInWrap = Math.max(0, headerBottom - naturalWrapTop);
+    var desiredSvgTop = getProfileLabelFocusCenterScreenYPx() - focusCenterOffset;
     var extendUp =
-      Math.max(0, focusTopInWrap - targetTopInWrap) +
+      Math.max(0, naturalWrapTop - desiredSvgTop) +
       getProfileLabelFocusExtraExtendUpPx();
     page2QuestionnaireCanvasLayoutCache = {
+      mode: mode,
+      colStart: gridCols.start,
+      colSpan: gridCols.span,
       extendUp: extendUp,
       profileScale: profileScale,
     };
@@ -21057,6 +21260,36 @@
     positionQuestionnaireProfileCanvasBottom(svg, wrap, cache);
   }
 
+  function applyQuestionnaireCanvasTopAnchor(svg, wrap, scale, f) {
+    if (!svg || !wrap) return;
+
+    svg.style.position = "absolute";
+    svg.style.bottom = "auto";
+    svg.style.transform = "none";
+
+    void svg.offsetHeight;
+    positionQuestionnaireBodyAutonomyCanvasTop(svg, wrap, scale, f);
+  }
+
+  function positionQuestionnaireBodyAutonomyCanvasTop(svg, wrap, scale, f) {
+    var gap = getBodyAutonomyFocusTopScreenGapPx();
+    var targetFocusTop = getPage2HeaderBottomPx() + gap;
+    var focusRect = getBodyAutonomyTopFocusRect();
+    var focusTopOffsetInSvg = (focusRect.y + f) * scale;
+
+    void svg.offsetHeight;
+    var wrapRect = wrap.getBoundingClientRect();
+    var topInWrap = targetFocusTop - focusTopOffsetInSvg - wrapRect.top;
+    svg.style.top = topInWrap + "px";
+
+    void svg.offsetHeight;
+    var drift =
+      wrapRect.top + topInWrap + focusTopOffsetInSvg - targetFocusTop;
+    if (Math.abs(drift) > 0.5) {
+      svg.style.top = topInWrap - drift + "px";
+    }
+  }
+
   function getViewportBottomPx() {
     if (window.visualViewport) {
       return window.visualViewport.offsetTop + window.visualViewport.height;
@@ -21064,56 +21297,94 @@
     return window.innerHeight;
   }
 
-  /** Screen bottom for large handkerchief gap (always the visible viewport). */
-  function getProfileCanvasViewportBottomPx() {
-    return getViewportBottomPx();
+  /** Vertical center of the visible viewport (profile label focus anchor). */
+  function getViewportCenterYPx() {
+    if (window.visualViewport) {
+      return (
+        window.visualViewport.offsetTop + window.visualViewport.height / 2
+      );
+    }
+    return window.innerHeight / 2;
   }
 
   function positionQuestionnaireProfileCanvasBottom(svg, wrap, cache) {
-    var gap = getProfileLabelFocusBottomScreenGapPx();
-    var targetSvgBottom = getProfileCanvasViewportBottomPx() - gap;
+    if (!svg || !wrap || !cache) return;
+    var scale = cache.profileScale;
+    var framePx = getHandkerchiefOuterFramePx();
+    var focusRect = getProfileLabelFocusRect();
+    var focusCenterOffsetInSvg =
+      (focusRect.y + framePx + focusRect.height / 2) * scale;
+    var targetFocusCenterY = getProfileLabelFocusCenterScreenYPx();
 
     void svg.offsetHeight;
-    var svgRect = svg.getBoundingClientRect();
-    var svgHeight = svgRect.height;
-    if (!(svgHeight > 0)) return;
-
     var wrapRect = wrap.getBoundingClientRect();
-    var topInWrap = targetSvgBottom - svgHeight - wrapRect.top;
+    var topInWrap = targetFocusCenterY - focusCenterOffsetInSvg - wrapRect.top;
 
     svg.style.top = topInWrap + "px";
     svg.style.bottom = "auto";
 
     void svg.offsetHeight;
-    var drift = svg.getBoundingClientRect().bottom - targetSvgBottom;
+    var actualFocusCenterY =
+      wrapRect.top + topInWrap + focusCenterOffsetInSvg;
+    var drift = actualFocusCenterY - targetFocusCenterY;
     if (Math.abs(drift) > 0.5) {
       svg.style.top = topInWrap - drift + "px";
     }
   }
 
-  function applyQuestionnaireProfileCanvasHorizontalPosition(svg, wrap, scale, f) {
+  function applyQuestionnaireFocusCanvasHorizontalPosition(
+    svg,
+    wrap,
+    scale,
+    f,
+    focusRect,
+    colStart,
+    colSpan
+  ) {
     var page2 = document.getElementById("page2");
-    if (!page2 || !wrap || !svg) return;
+    if (!page2 || !wrap || !svg || !focusRect) return;
     var cols = page2.querySelectorAll(".page2-guides .page2-col");
-    var colStartIndex =
-      typeof PROFILE_LABEL_FOCUS_GRID_COL_START !== "undefined"
-        ? PROFILE_LABEL_FOCUS_GRID_COL_START - 1
-        : 7;
-    var colSpan =
-      typeof PROFILE_LABEL_FOCUS_GRID_COL_SPAN !== "undefined"
-        ? PROFILE_LABEL_FOCUS_GRID_COL_SPAN
-        : 5;
+    var colStartIndex = colStart - 1;
     var colEndIndex = colStartIndex + colSpan - 1;
     if (cols.length <= colEndIndex) return;
-    var colStart = cols[colStartIndex].getBoundingClientRect();
-    var colEnd = cols[colEndIndex].getBoundingClientRect();
+    var colStartRect = cols[colStartIndex].getBoundingClientRect();
     var wrapRect = wrap.getBoundingClientRect();
-    var focusRect = getProfileLabelFocusRect();
     svg.style.left =
-      colStart.left -
+      colStartRect.left -
       wrapRect.left -
       (focusRect.x + f) * scale +
       "px";
+  }
+
+  function applyQuestionnaireProfileCanvasHorizontalPosition(svg, wrap, scale, f) {
+    var gridCols = getQuestionnaireFocusGridCols("profile-bottom");
+    applyQuestionnaireFocusCanvasHorizontalPosition(
+      svg,
+      wrap,
+      scale,
+      f,
+      getProfileLabelFocusRect(),
+      gridCols.start,
+      gridCols.span
+    );
+  }
+
+  function applyQuestionnaireBodyAutonomyCanvasHorizontalPosition(
+    svg,
+    wrap,
+    scale,
+    f
+  ) {
+    var gridCols = getQuestionnaireFocusGridCols("body-autonomy-top");
+    applyQuestionnaireFocusCanvasHorizontalPosition(
+      svg,
+      wrap,
+      scale,
+      f,
+      getBodyAutonomyTopFocusRect(),
+      gridCols.start,
+      gridCols.span
+    );
   }
 
   function applyQuestionnaireFullCanvasHorizontalPosition(svg, wrap) {
@@ -21186,16 +21457,34 @@
     return wrap.getBoundingClientRect();
   }
 
-  function getProfileLabelFocusBottomScreenGapPx() {
-    return typeof PROFILE_LABEL_FOCUS_BOTTOM_SCREEN_GAP_PX !== "undefined"
-      ? PROFILE_LABEL_FOCUS_BOTTOM_SCREEN_GAP_PX
-      : 100;
+  function getProfileLabelFocusCenterScreenYPx() {
+    var offset =
+      typeof PROFILE_LABEL_FOCUS_CENTER_OFFSET_UP_PX !== "undefined"
+        ? PROFILE_LABEL_FOCUS_CENTER_OFFSET_UP_PX
+        : 0;
+    return getViewportCenterYPx() - offset;
   }
 
   function getProfileLabelFocusExtraExtendUpPx() {
     return typeof PROFILE_LABEL_FOCUS_EXTRA_EXTEND_UP_PX !== "undefined"
       ? PROFILE_LABEL_FOCUS_EXTRA_EXTEND_UP_PX
       : 0;
+  }
+
+  /** Scale so inner canvas + 1 cm outer frame + box-shadow fit the grid slot width. */
+  function getProfileLabelFocusScale(slotWidth, f, focusWidth) {
+    if (!(slotWidth > 0)) return 1;
+    var innerW =
+      typeof focusWidth === "number" && focusWidth > 0
+        ? focusWidth
+        : CANVAS_W;
+    var framePx = typeof f === "number" ? f : getHandkerchiefOuterFramePx();
+    var shadowBleed =
+      typeof CANVAS_LAYOUT_BOX_SHADOW_BLEED_PX !== "undefined"
+        ? CANVAS_LAYOUT_BOX_SHADOW_BLEED_PX
+        : 12;
+    var availW = Math.max(1, slotWidth - 2 * shadowBleed);
+    return availW / (innerW + 2 * framePx);
   }
 
   /** Focus rect for profile questionnaire zoom (bottom label band). */
@@ -21214,41 +21503,181 @@
     };
   }
 
-  function isProfileQuestionnaireZoomActive() {
-    var q = window.Questionnaire;
-    if (!q || !q.getCurrentStepId || !q.isPreFamilyQuestionnaireStep) return false;
-    var stepId = q.getCurrentStepId();
-    if (!stepId) return false;
-    return q.isPreFamilyQuestionnaireStep(stepId);
+  function getBodyAutonomyFocusPadBelowPx() {
+    return typeof BODY_AUTONOMY_FOCUS_PAD_BELOW_PX !== "undefined"
+      ? BODY_AUTONOMY_FOCUS_PAD_BELOW_PX
+      : 450;
   }
 
-  function getPage2CanvasSlot(wrap) {
+  function getBodyAutonomyFocusTopScreenGapPx() {
+    return typeof BODY_AUTONOMY_FOCUS_TOP_SCREEN_GAP_PX !== "undefined"
+      ? BODY_AUTONOMY_FOCUS_TOP_SCREEN_GAP_PX
+      : 100;
+  }
+
+  /** Focus rect for body-autonomy questionnaire zoom (top brown bar + fan). */
+  function getBodyAutonomyTopFocusRect() {
+    var pad = getBodyAutonomyFocusPadBelowPx();
+    var bar = getCanvasEdgeBrownBarLayout("top");
+    var geo = getSharedFanGeometry();
+    var extraPad = 40;
+    var focusBottom = Math.max(
+      bar.y + bar.height + pad,
+      geo.focalY + geo.outerArcRadius + extraPad
+    );
+    return {
+      x: 0,
+      y: 0,
+      width: CANVAS_W,
+      height: Math.min(CANVAS_H, focusBottom),
+    };
+  }
+
+  function isProfileQuestionnaireZoomActive() {
+    return isProfileOnlyQuestionnaireZoomActive();
+  }
+
+  /** Grid + palette: large canvas in 5 grid cols, lower than profile label focus. */
+  function isGridColorQuestionnaireLayoutActive() {
+    var q = window.Questionnaire;
+    if (!q || !q.getCurrentStepId || !q.isGridStep) return false;
+    var stepId = q.getCurrentStepId();
+    if (!stepId) return false;
+    return q.isGridStep(stepId) || stepId === "palette";
+  }
+
+  function getGridColorFocusBottomScreenGapPx() {
+    return typeof GRID_COLOR_FOCUS_BOTTOM_SCREEN_GAP_PX !== "undefined"
+      ? GRID_COLOR_FOCUS_BOTTOM_SCREEN_GAP_PX
+      : 150;
+  }
+
+  function layoutQuestionnaireGridColorCanvas(wrap, svg, rect, f, totalW, totalH) {
+    applyQuestionnaireCanvasClipExtend(wrap, null);
+    var gridCols = getQuestionnaireFocusGridCols("body-autonomy-top");
+    var slot = getPage2CanvasSlot(wrap, gridCols.start, gridCols.span);
+    var availW = Math.max(60, rect.width - VIEW_MARGIN * 2);
+    var availH = Math.max(60, rect.height - VIEW_MARGIN * 2);
+    var scale =
+      slot && slot.slotWidth > 0
+        ? getProfileLabelFocusScale(slot.slotWidth, f, CANVAS_W)
+        : Math.min(availW / totalW, availH / totalH);
+    var gcSvgH = totalH * scale;
+    svg.style.width = totalW * scale + "px";
+    svg.style.height = gcSvgH + "px";
+    void svg.offsetHeight;
+    applyQuestionnaireFocusCanvasHorizontalPosition(
+      svg,
+      wrap,
+      scale,
+      f,
+      { x: 0, y: 0, width: CANVAS_W, height: CANVAS_H },
+      gridCols.start,
+      gridCols.span
+    );
+    setQuestionnaireFocusZoomClass(wrap, true);
+    var targetSvgBottom =
+      getViewportBottomPx() - getGridColorFocusBottomScreenGapPx();
+    var wrapRect = wrap.getBoundingClientRect();
+    var bottomInWrap = targetSvgBottom - wrapRect.top;
+    var topInWrap = bottomInWrap - gcSvgH;
+    svg.style.position = "absolute";
+    svg.style.top = topInWrap + "px";
+    svg.style.bottom = "auto";
+    svg.style.transform = "none";
+
+    void svg.offsetHeight;
+    var actualSvgBottom = wrapRect.top + topInWrap + gcSvgH;
+    var drift = actualSvgBottom - targetSvgBottom;
+    if (Math.abs(drift) > 0.5) {
+      svg.style.top = topInWrap - drift + "px";
+    }
+  }
+
+  function isBodyAutonomyQuestionnaireZoomActive() {
+    var q = window.Questionnaire;
+    if (!q || !q.getCurrentStepId || !q.isBodyAutonomyStep) return false;
+    var stepId = q.getCurrentStepId();
+    if (!stepId) return false;
+    return q.isBodyAutonomyStep(stepId);
+  }
+
+  function isQuestionnaireFocusZoomActive() {
+    return (
+      isProfileQuestionnaireZoomActive() ||
+      isBodyAutonomyQuestionnaireZoomActive()
+    );
+  }
+
+  function isProfileOnlyQuestionnaireZoomActive() {
+    var q = window.Questionnaire;
+    if (!q || !q.getCurrentStepId || !q.isProfileStep) return false;
+    var stepId = q.getCurrentStepId();
+    if (!stepId) return false;
+    return q.isProfileStep(stepId);
+  }
+
+  function getQuestionnaireFocusGridCols(mode) {
+    if (mode === "body-autonomy-top") {
+      return {
+        start:
+          typeof QUESTIONNAIRE_FOCUS_GRID_COL_START !== "undefined"
+            ? QUESTIONNAIRE_FOCUS_GRID_COL_START
+            : 8,
+        span:
+          typeof QUESTIONNAIRE_FOCUS_GRID_COL_SPAN !== "undefined"
+            ? QUESTIONNAIRE_FOCUS_GRID_COL_SPAN
+            : 5,
+      };
+    }
+    if (isProfileOnlyQuestionnaireZoomActive()) {
+      return {
+        start:
+          typeof PROFILE_LABEL_FOCUS_GRID_COL_START !== "undefined"
+            ? PROFILE_LABEL_FOCUS_GRID_COL_START
+            : 7,
+        span:
+          typeof PROFILE_LABEL_FOCUS_GRID_COL_SPAN !== "undefined"
+            ? PROFILE_LABEL_FOCUS_GRID_COL_SPAN
+            : 6,
+      };
+    }
+    return {
+      start:
+        typeof QUESTIONNAIRE_FOCUS_GRID_COL_START !== "undefined"
+          ? QUESTIONNAIRE_FOCUS_GRID_COL_START
+          : 8,
+      span:
+        typeof QUESTIONNAIRE_FOCUS_GRID_COL_SPAN !== "undefined"
+          ? QUESTIONNAIRE_FOCUS_GRID_COL_SPAN
+          : 5,
+    };
+  }
+
+  function getPage2CanvasSlot(wrap, colStart, colSpan) {
     var page2 = document.getElementById("page2");
     var sectionDesign = wrap ? wrap.closest("#section-design") : null;
     if (!page2 || !sectionDesign || !wrap) return null;
+    var gridCols =
+      typeof colStart === "number" && typeof colSpan === "number"
+        ? { start: colStart, span: colSpan }
+        : getQuestionnaireFocusGridCols("profile-bottom");
     var cols = page2.querySelectorAll(".page2-guides .page2-col");
-    var colStartIndex =
-      typeof PROFILE_LABEL_FOCUS_GRID_COL_START !== "undefined"
-        ? PROFILE_LABEL_FOCUS_GRID_COL_START - 1
-        : 7;
-    var colSpan =
-      typeof PROFILE_LABEL_FOCUS_GRID_COL_SPAN !== "undefined"
-        ? PROFILE_LABEL_FOCUS_GRID_COL_SPAN
-        : 5;
-    var colEndIndex = colStartIndex + colSpan - 1;
+    var colStartIndex = gridCols.start - 1;
+    var colEndIndex = colStartIndex + gridCols.span - 1;
     if (cols.length <= colEndIndex) return null;
-    var colStart = cols[colStartIndex].getBoundingClientRect();
-    var colEnd = cols[colEndIndex].getBoundingClientRect();
+    var colStartRect = cols[colStartIndex].getBoundingClientRect();
+    var colEndRect = cols[colEndIndex].getBoundingClientRect();
     return {
-      slotLeft: colStart.left,
-      slotWidth: colEnd.right - colStart.left,
+      slotLeft: colStartRect.left,
+      slotWidth: colEndRect.right - colStartRect.left,
       wrapRect: wrap.getBoundingClientRect(),
     };
   }
 
-  function setProfileLabelZoomClass(wrap, active) {
+  function setQuestionnaireFocusZoomClass(wrap, active) {
     if (!wrap) return;
-    wrap.classList.toggle("is-profile-label-zoom", active);
+    wrap.classList.toggle("is-questionnaire-focus-zoom", active);
   }
 
   function syncPage2CanvasGridPosition() {
@@ -21297,7 +21726,8 @@
       if (
         isPage2DesignSectionActive() &&
         isQuestionnaireCanvasLayoutActive() &&
-        isProfileQuestionnaireZoomActive()
+        (isQuestionnaireFocusZoomActive() ||
+          isGridColorQuestionnaireLayoutActive())
       ) {
         layoutStage();
       }
@@ -21314,6 +21744,11 @@
       return;
     }
 
+    if (isPage2DesignPreQuestionnaireStart()) {
+      resetPage2DesignCanvasLayout(wrap);
+      return;
+    }
+
     var rect = getStageLayoutRect(wrap);
     if (!rect) return;
     svg.style.display = "block";
@@ -21321,14 +21756,19 @@
     var totalW = CANVAS_W + 2 * f;
     var totalH = CANVAS_H + 2 * f;
     var profileZoom = isProfileQuestionnaireZoomActive();
+    var bodyAutonomyZoom = isBodyAutonomyQuestionnaireZoomActive();
     var questionnaireLayout = isQuestionnaireCanvasLayoutActive();
 
     if (questionnaireLayout) {
       if (profileZoom) {
-        var qCache = ensurePage2QuestionnaireCanvasLayoutCache(wrap, f);
+        var qCache = ensurePage2QuestionnaireCanvasLayoutCache(
+          wrap,
+          f,
+          "profile-bottom"
+        );
         if (qCache) {
           applyQuestionnaireCanvasClipExtend(wrap, qCache);
-          setProfileLabelZoomClass(wrap, qCache.extendUp > 0);
+          setQuestionnaireFocusZoomClass(wrap, true);
           var qScale = qCache.profileScale;
           svg.style.width = totalW * qScale + "px";
           svg.style.height = totalH * qScale + "px";
@@ -21340,8 +21780,38 @@
         return;
       }
 
+      if (bodyAutonomyZoom) {
+        var baCache = ensurePage2QuestionnaireCanvasLayoutCache(
+          wrap,
+          f,
+          "body-autonomy-top"
+        );
+        if (baCache) {
+          applyQuestionnaireCanvasClipExtend(wrap, baCache);
+          setQuestionnaireFocusZoomClass(wrap, true);
+          var baScale = baCache.profileScale;
+          svg.style.width = totalW * baScale + "px";
+          svg.style.height = totalH * baScale + "px";
+          void svg.offsetHeight;
+          applyQuestionnaireBodyAutonomyCanvasHorizontalPosition(
+            svg,
+            wrap,
+            baScale,
+            f
+          );
+          applyQuestionnaireCanvasTopAnchor(svg, wrap, baScale, f);
+          return;
+        }
+        return;
+      }
+
+      if (isGridColorQuestionnaireLayoutActive()) {
+        layoutQuestionnaireGridColorCanvas(wrap, svg, rect, f, totalW, totalH);
+        return;
+      }
+
       applyQuestionnaireCanvasClipExtend(wrap, null);
-      setProfileLabelZoomClass(wrap, false);
+      setQuestionnaireFocusZoomClass(wrap, false);
       var availW = Math.max(60, rect.width - VIEW_MARGIN * 2);
       var availH = Math.max(60, rect.height - VIEW_MARGIN * 2);
       var fullScale = Math.min(availW / totalW, availH / totalH);
@@ -21359,18 +21829,26 @@
     } else {
       resetPage2QuestionnaireCanvasLayoutCache();
       applyQuestionnaireCanvasClipExtend(wrap, null);
-      setProfileLabelZoomClass(wrap, false);
+      setQuestionnaireFocusZoomClass(wrap, false);
     }
 
     if (profileZoom) {
       var slot = getPage2CanvasSlot(wrap);
       if (slot && slot.slotWidth > 0) {
         var focusRect = getProfileLabelFocusRect();
-        var scale = slot.slotWidth / focusRect.width;
+        var scale = getProfileLabelFocusScale(
+          slot.slotWidth,
+          f,
+          focusRect.width
+        );
         svg.style.width = totalW * scale + "px";
         svg.style.height = totalH * scale + "px";
         applyQuestionnaireProfileCanvasHorizontalPosition(svg, wrap, scale, f);
-        var fallbackCache = ensurePage2QuestionnaireCanvasLayoutCache(wrap, f);
+        var fallbackCache = ensurePage2QuestionnaireCanvasLayoutCache(
+          wrap,
+          f,
+          "profile-bottom"
+        );
         if (fallbackCache) {
           applyQuestionnaireCanvasBottomAnchor(svg, wrap, totalH, scale, fallbackCache, f);
         }
@@ -22522,16 +23000,19 @@
       borderFrameDivisionsSlider.min = "1";
       borderFrameDivisionsSlider.max = "3";
       borderFrameDivisionsSlider.value = "2";
+      var lastBorderFrameDivisionsStep =
+        getBorderFrameDivisionsStep();
       borderFrameDivisionsSlider.addEventListener("input", function () {
         markFrameSectionEngaged();
         var frameDivisionsOut = document.getElementById(
           "border-frame-divisions-out"
         );
+        var step = getBorderFrameDivisionsStep();
         if (frameDivisionsOut) {
-          frameDivisionsOut.textContent = borderFrameDivisionsLabel(
-            getBorderFrameDivisionsStep()
-          );
+          frameDivisionsOut.textContent = borderFrameDivisionsLabel(step);
         }
+        if (step === lastBorderFrameDivisionsStep) return;
+        lastBorderFrameDivisionsStep = step;
         cachedBorderSideSegmentRatios = null;
         refreshBorderFrameAndLabelBars();
       });
@@ -22564,6 +23045,7 @@
         )
       );
       syncBorderSideWhiteFillOutput();
+      var lastBorderSideWhiteFillValue = getBorderSideWhiteFillSliderValue();
       borderSideWhiteFillSlider.addEventListener("input", function () {
         markFrameSectionEngaged();
         var snapped = snapBorderSideWhiteFillSliderValue(
@@ -22573,6 +23055,8 @@
           borderSideWhiteFillSlider.value = String(snapped);
         }
         syncBorderSideWhiteFillOutput();
+        if (snapped === lastBorderSideWhiteFillValue) return;
+        lastBorderSideWhiteFillValue = snapped;
         updateBorderDivisionLines();
         updateBorderDivisionOverlay();
       });
@@ -22846,9 +23330,6 @@
       frameOverlayToggle.addEventListener("click", toggleFrameInsetOverlay);
     }
 
-    var exportBtn = document.getElementById("export-svg-btn");
-    if (exportBtn) exportBtn.addEventListener("click", onExportSvg);
-
     var hopeViewBtn = document.getElementById("hope-mode-view-btn");
     if (hopeViewBtn) hopeViewBtn.addEventListener("click", function () {
       setHopeInteractionMode("view");
@@ -22904,10 +23385,9 @@
       } else {
         await window.SheetPalettes.loadSheetPalettes();
       }
-      var restoredPalette =
-        window.SheetPalettes.getRememberedActivePalette &&
-        window.SheetPalettes.getRememberedActivePalette();
-      window.SheetPalettes.setActivePalette(restoredPalette || "palette1");
+      window.SheetPalettes.setActivePalette(
+        window.SheetPalettes.getDefaultSheetPaletteKey()
+      );
       initSheetPaletteControls();
     }
 
@@ -22943,6 +23423,7 @@
         updateHopeInteractionModeUi();
       },
       getFeelingsSliderBounds: getFeelingsSliderBoundsForCombo,
+      applyFeelingsFromQuestionnaire: applyFeelingsFromQuestionnaire,
       finalizeApplySilent: function () {
         syncBorderSideWhiteFillOutput();
         syncJunctionEmotionSliderRangesForGridType();
@@ -22967,6 +23448,7 @@
         syncBorderSideWhiteFillOutput();
         syncJunctionEmotionSliderRangesForGridType();
         syncAngerPainGuiltSliderRangesForGridType();
+        resetFeelingsLayoutSignatures();
         applyFeelingsControlState({ forceReshuffle: false });
         refreshLocationCoordinates();
         refreshLabelBarContent();

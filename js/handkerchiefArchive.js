@@ -26,12 +26,11 @@
   }
 
   function getEntryTitle() {
-    var answers =
-      window.Questionnaire && window.Questionnaire.getAnswers
-        ? window.Questionnaire.getAnswers()
-        : {};
-    var title = String(answers.name || "").trim();
-    return title || "Untitled";
+    if (window.Questionnaire && window.Questionnaire.getNameLabelText) {
+      var label = String(window.Questionnaire.getNameLabelText() || "").trim();
+      if (label) return label;
+    }
+    return "Untitled";
   }
 
   function ensureDesignReadyForCapture() {
@@ -194,7 +193,23 @@
     renderArchiveGrid();
   }
 
+  function revealDesignArchive() {
+    var designArchive = document.getElementById("design-archive");
+    var sectionDesign = document.getElementById("section-design");
+    if (designArchive) {
+      designArchive.hidden = false;
+    }
+    if (sectionDesign) {
+      sectionDesign.classList.add("section-design--archive-visible");
+    }
+    renderArchiveGrid();
+  }
+
   function init() {
+    var designArchive = document.getElementById("design-archive");
+    if (designArchive && designArchive.hidden) {
+      return;
+    }
     renderArchiveGrid();
   }
 
@@ -208,6 +223,7 @@
     saveCurrentDesign: saveCurrentDesign,
     deleteEntry: deleteEntry,
     renderArchiveGrid: renderArchiveGrid,
+    revealDesignArchive: revealDesignArchive,
     getEntries: readEntries,
   };
 })();

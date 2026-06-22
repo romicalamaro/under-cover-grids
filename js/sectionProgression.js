@@ -167,6 +167,32 @@
     return isProfileRubrickComplete(partId);
   }
 
+  function isQuestionnaireActive() {
+    var q =
+      typeof window.Questionnaire !== "undefined" ? window.Questionnaire : null;
+    if (!q || !q.isStarted || !q.isStarted()) return false;
+    if (!q.getCurrentStepId) return false;
+    var stepId = q.getCurrentStepId();
+    return !!(stepId && stepId !== "__feelings_complete__");
+  }
+
+  function shouldShowProfileLabelSymbol(partId) {
+    if (partId === "decorative") {
+      return true;
+    }
+    if (isQuestionnaireActive()) {
+      return true;
+    }
+    return isProfileRubrickComplete(partId);
+  }
+
+  function shouldShowProfileLabelText(partId) {
+    if (partId === "decorative") {
+      return true;
+    }
+    return isProfileRubrickComplete(partId);
+  }
+
   window.SectionProgression = {
     isProfileRubrickComplete: isProfileRubrickComplete,
     isProfileSectionComplete: isProfileSectionComplete,
@@ -183,6 +209,9 @@
     onProfileProgressChange: onProfileProgressChange,
     markLabelBarTagTouched: markLabelBarTagTouched,
     shouldShowProfileLabelPart: shouldShowProfileLabelPart,
+    isQuestionnaireActive: isQuestionnaireActive,
+    shouldShowProfileLabelSymbol: shouldShowProfileLabelSymbol,
+    shouldShowProfileLabelText: shouldShowProfileLabelText,
     notifyProgressChange: notifyProgressChange,
     notifySectionProgressChange: notifySectionProgressChange,
   };

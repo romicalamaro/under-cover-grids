@@ -72,7 +72,7 @@ body {
   margin: 0;
   height: 100%;
   font-family: system-ui, -apple-system, sans-serif;
-  background: #f5f5f5;
+  background: #fff;
   color: #222;
 }
 
@@ -83,10 +83,14 @@ body {
 
 .app-shell {
   display: flex;
-  flex-direction: row;
+  flex-direction: column;
   flex: 1;
   min-height: 0;
   height: 100%;
+}
+
+#design-controls-bridge {
+  display: none !important;
 }
 
 .main {
@@ -794,6 +798,15 @@ button.sidebar__grid-btn {
   gap: 0.35rem;
 }
 
+.sidebar__grid-density--long-label .sidebar__grid-density-label {
+  white-space: normal;
+}
+
+.sidebar__grid-density--long-label .sidebar__grid-density-range-label {
+  white-space: normal;
+  max-width: 48%;
+}
+
 .sidebar__grid-density-slider-wrap {
   display: flex;
   flex-direction: column;
@@ -1131,7 +1144,7 @@ button.sidebar__grid-btn {
     left 0.55s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-#page2 #section-design .stage-wrap.is-profile-label-zoom {
+#page2 #section-design .stage-wrap.is-questionnaire-focus-zoom {
   overflow: hidden;
 }
 
@@ -1141,13 +1154,89 @@ button.sidebar__grid-btn {
   }
 }
 
-#page2 #section-design .sidebar {
+/* ── Design section start gate (before questionnaire) ── */
+
+.design-start {
   position: absolute;
-  top: 0;
-  bottom: 0;
+  top: var(
+    --page2-header-band-height,
+    calc(4 * var(--page2-space-20, 1.25rem))
+  );
   right: 0;
-  z-index: 4;
+  bottom: 0;
+  left: 0;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.design-start__inner {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  column-gap: var(--page2-gutter, 1.25rem);
+  box-sizing: border-box;
+  height: 100%;
+  min-height: 100%;
+  padding-inline: var(--page2-margin, 3.125rem);
+  align-items: center;
+}
+
+.design-start__row {
+  grid-column: 2 / span 4;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem 1.25rem;
   pointer-events: auto;
+}
+
+.design-start__tagline {
+  margin: 0;
+  font-family: "PP Radio Grotesk", sans-serif;
+  font-weight: 200;
+  font-size: calc((var(--page2-space-20, 1.25rem) - 4px) * 1.2);
+  line-height: 1.15;
+  color: var(--color-brown);
+}
+
+.design-start__btn {
+  flex-shrink: 0;
+  padding: 0.45rem 1.1rem;
+  font-family: "PP Monument Condensed", sans-serif;
+  font-size: calc((var(--page2-space-20, 1.25rem) - 4px) * 0.85);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-brown);
+  background: transparent;
+  border: 1px solid var(--color-brown);
+  border-radius: 4px;
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.design-start__btn:hover:not(:disabled) {
+  color: #fff;
+  background: var(--color-brown);
+}
+
+.design-start__btn:focus-visible {
+  outline: 2px solid var(--color-brown);
+  outline-offset: 2px;
+}
+
+#section-design.section-design--questionnaire-started > .design-start {
+  display: none;
+}
+
+#section-design.section-design--questionnaire-started > .questionnaire-panel {
+  display: block;
+}
+
+#section-design:not(.section-design--questionnaire-started) > .questionnaire-panel {
+  display: none !important;
 }
 
 /* ── Profile questionnaire overlay (design section, grid columns 2–5) ── */
@@ -1195,6 +1284,7 @@ button.sidebar__grid-btn {
 }
 
 .questionnaire-panel__progress-dot {
+  position: relative;
   width: 13px;
   height: 13px;
   border-radius: 50%;
@@ -1211,6 +1301,24 @@ button.sidebar__grid-btn {
   background: var(--color-brown);
 }
 
+.questionnaire-panel__progress-dot.is-current {
+  background: var(--color-brown);
+}
+
+.questionnaire-panel__progress-dot.is-current::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 21px;
+  height: 21px;
+  border: 2px solid var(--color-brown);
+  border-radius: 50%;
+  box-sizing: border-box;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
 .questionnaire-panel__progress-dot.is-clickable {
   cursor: pointer;
 }
@@ -1223,6 +1331,84 @@ button.sidebar__grid-btn {
 
 .questionnaire-panel__progress-dot:disabled {
   cursor: default;
+}
+
+/* Family section answers — circles match questionnaire section progress dots (13px) */
+.family-dot-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem 0.85rem;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+.sidebar__family-dot-options {
+  margin-top: 0.35rem;
+}
+
+.questionnaire-family-dot-options {
+  margin-top: 0.5rem;
+}
+
+.family-dot-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  flex: 1 1 4.25rem;
+  min-width: 4.25rem;
+  max-width: 7.5rem;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: center;
+  color: inherit;
+  font: inherit;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.family-dot-option__circle {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  box-sizing: border-box;
+  border: 1px solid var(--color-brown);
+  background: transparent;
+  flex-shrink: 0;
+  display: block;
+}
+
+.family-dot-option.is-selected .family-dot-option__circle {
+  background: var(--color-brown);
+}
+
+.family-dot-option:hover .family-dot-option__circle,
+.family-dot-option:focus-visible .family-dot-option__circle {
+  outline: 2px solid var(--color-brown);
+  outline-offset: 3px;
+}
+
+.family-dot-option:focus-visible {
+  outline: none;
+}
+
+.family-dot-option__label {
+  font-size: 0.625rem;
+  line-height: 1.25;
+  hyphens: auto;
+  color: inherit;
+}
+
+.questionnaire-family-dot-options .family-dot-option__label {
+  font-family: "PP Radio Grotesk", sans-serif;
+  font-weight: 200;
+  font-size: calc(
+    (var(--page2-space-20, 1.25rem) - 4px) * 0.55 *
+      var(--questionnaire-text-scale, 1)
+  );
 }
 
 .questionnaire-panel__content {
@@ -1651,21 +1837,97 @@ button.sidebar__grid-btn {
 .questionnaire-profile-madlibs.is-typewriting
   .questionnaire-madlibs-blank:not(.is-typewriter-revealed),
 .questionnaire-profile-madlibs.is-typewriting
-  .questionnaire-madlibs-dropdown:not(.is-typewriter-revealed) {
+  .questionnaire-madlibs-dropdown:not(.is-typewriter-revealed),
+.questionnaire-profile-madlibs.is-typewriting
+  .questionnaire-madlibs-field:not(.is-typewriter-revealed) {
   visibility: hidden;
   pointer-events: none;
-}
-
-.questionnaire-typewriter-chunk--blank {
-  display: inline-block;
-  vertical-align: baseline;
-  border-bottom: 1.5px solid var(--color-brown);
-  letter-spacing: 0.05em;
 }
 
 .questionnaire-typewriter-chunk.is-active::after {
   content: "|";
   animation: questionnaire-typewriter-caret 0.85s step-end infinite;
+}
+
+.questionnaire-profile-madlibs.is-typewriting
+  .is-typewriter-drawing-underline
+  .questionnaire-madlibs-field__icon,
+.questionnaire-profile-madlibs.is-typewriting
+  .is-typewriter-drawing-underline
+  .questionnaire-madlibs-blank
+  > :not(.questionnaire-madlibs-blank-sizer),
+.questionnaire-profile-madlibs.is-typewriting
+  .is-typewriter-drawing-underline.questionnaire-madlibs-blank
+  > :not(.questionnaire-madlibs-blank-sizer) {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.questionnaire-profile-madlibs.is-typewriting
+  .is-typewriter-drawing-underline
+  .questionnaire-madlibs-blank,
+.questionnaire-profile-madlibs.is-typewriting
+  .is-typewriter-drawing-underline.questionnaire-madlibs-blank {
+  visibility: visible;
+  pointer-events: none;
+  border-bottom-color: transparent;
+  background-image: none;
+  position: relative;
+}
+
+.questionnaire-profile-madlibs.is-typewriting
+  .is-typewriter-drawing-underline.questionnaire-madlibs-dropdown {
+  background-image: none;
+}
+
+.questionnaire-profile-madlibs.is-typewriting
+  .is-typewriter-drawing-underline
+  .questionnaire-madlibs-blank::after,
+.questionnaire-profile-madlibs.is-typewriting
+  .is-typewriter-drawing-underline.questionnaire-madlibs-blank::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--madlibs-underline-thickness, 3px);
+  background: var(--color-brown);
+  transform: scaleX(var(--typewriter-underline-progress, 0));
+  transform-origin: left center;
+  pointer-events: none;
+}
+
+.questionnaire-profile-madlibs.is-typewriting
+  .is-typewriter-drawing-underline.is-active:not(
+    .questionnaire-madlibs-blank
+  )::after {
+  content: "|";
+  position: static;
+  display: inline;
+  height: auto;
+  background: none;
+  transform: none;
+  animation: questionnaire-typewriter-caret 0.85s step-end infinite;
+}
+
+.questionnaire-profile-madlibs.is-typewriting
+  .is-typewriter-drawing-underline.is-active.questionnaire-madlibs-blank::before {
+  content: "|";
+  animation: questionnaire-typewriter-caret 0.85s step-end infinite;
+}
+
+.questionnaire-profile-madlibs.is-typewriting
+  .questionnaire-madlibs-field.is-typewriter-revealed:not(
+    .is-typewriter-drawing-underline
+  )
+  .questionnaire-madlibs-blank,
+.questionnaire-profile-madlibs.is-typewriting
+  .questionnaire-madlibs-field.is-typewriter-revealed:not(
+    .is-typewriter-drawing-underline
+  )
+  .questionnaire-madlibs-dropdown {
+  visibility: visible;
+  pointer-events: auto;
 }
 
 @keyframes questionnaire-typewriter-caret {
@@ -1675,7 +1937,13 @@ button.sidebar__grid-btn {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .questionnaire-typewriter-chunk.is-active::after {
+  .questionnaire-typewriter-chunk.is-active::after,
+  .questionnaire-profile-madlibs.is-typewriting
+    .is-typewriter-drawing-underline.is-active:not(
+      .questionnaire-madlibs-blank
+    )::after,
+  .questionnaire-profile-madlibs.is-typewriting
+    .is-typewriter-drawing-underline.is-active.questionnaire-madlibs-blank::before {
     display: none;
   }
 }
@@ -1694,6 +1962,8 @@ button.sidebar__grid-btn {
 
 .questionnaire-profile-madlibs {
   margin: 0;
+  --madlibs-underline-gap: 3px;
+  --madlibs-underline-thickness: 3px;
   font-family: "PP Radio Grotesk", sans-serif;
   font-size: calc(
     (var(--page2-space-20, 1.25rem) - 4px) * 1.35 *
@@ -1706,6 +1976,80 @@ button.sidebar__grid-btn {
   color: var(--color-brown);
 }
 
+.questionnaire-profile-madlibs input.questionnaire-madlibs-blank,
+.questionnaire-profile-madlibs .questionnaire-madlibs-dropdown__label:not(.is-placeholder),
+.questionnaire-profile-madlibs .questionnaire-madlibs-name-mode__input {
+  font-family: "DIN Condensed", sans-serif;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.questionnaire-profile-madlibs input.questionnaire-madlibs-blank::placeholder,
+.questionnaire-profile-madlibs .questionnaire-madlibs-name-mode__input::placeholder {
+  font-family: inherit;
+  font-weight: inherit;
+  text-transform: none;
+  color: color-mix(in srgb, var(--color-brown) 45%, transparent);
+}
+
+.questionnaire-profile-madlibs .questionnaire-madlibs-blank--english::placeholder {
+  text-transform: none;
+}
+
+.questionnaire-profile-madlibs .questionnaire-madlibs-blank:not(.questionnaire-madlibs-dropdown),
+.questionnaire-profile-madlibs .questionnaire-madlibs-dropdown__trigger,
+.questionnaire-profile-madlibs .questionnaire-madlibs-name-mode__surface {
+  line-height: 1;
+  padding-bottom: calc(
+    var(--madlibs-underline-gap) + var(--madlibs-underline-thickness)
+  );
+}
+
+.questionnaire-profile-madlibs .questionnaire-madlibs-dropdown__trigger,
+.questionnaire-profile-madlibs .questionnaire-madlibs-name-mode__surface {
+  position: relative;
+  align-items: flex-end;
+}
+
+.questionnaire-profile-madlibs
+  .questionnaire-madlibs-dropdown:not(.questionnaire-madlibs-name-mode)
+  .questionnaire-madlibs-dropdown__trigger::after,
+.questionnaire-profile-madlibs .questionnaire-madlibs-name-mode__surface::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--madlibs-underline-thickness);
+  background: var(--madlibs-underline-color, var(--color-brown));
+  pointer-events: none;
+}
+
+.questionnaire-profile-madlibs.is-typewriting
+  .is-typewriter-drawing-underline
+  .questionnaire-madlibs-dropdown__trigger::after,
+.questionnaire-profile-madlibs.is-typewriting
+  .is-typewriter-drawing-underline
+  .questionnaire-madlibs-name-mode__surface::after {
+  display: none;
+}
+
+.questionnaire-profile-madlibs .questionnaire-madlibs-name-mode__input,
+.questionnaire-profile-madlibs .questionnaire-madlibs-name-mode__caret-btn {
+  line-height: 1;
+  padding-bottom: 0;
+}
+
+.questionnaire-profile-madlibs .questionnaire-madlibs-dropdown__caret {
+  margin-top: 0;
+  margin-bottom: 0.06em;
+  align-self: flex-end;
+}
+
+.questionnaire-profile-madlibs .questionnaire-madlibs-dropdown__option {
+  text-transform: uppercase;
+}
+
 .questionnaire-madlibs-line {
   margin: 0 0 0.85rem;
   display: block;
@@ -1715,28 +2059,71 @@ button.sidebar__grid-btn {
   margin-bottom: 0;
 }
 
-.questionnaire-madlibs-blank {
+.questionnaire-madlibs-field {
+  display: inline;
+  white-space: nowrap;
+}
+
+.questionnaire-madlibs-field__icon {
+  display: inline-block;
+  height: 1.15em;
+  width: auto;
+  vertical-align: -0.12em;
+  margin-inline: 0 0.2em;
+  color: inherit;
+  flex-shrink: 0;
+}
+
+.questionnaire-madlibs-field__icon svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.questionnaire-madlibs-field__icon svg,
+.questionnaire-madlibs-field__icon svg * {
+  fill: currentColor;
+}
+
+.questionnaire-profile-madlibs .questionnaire-madlibs-blank:not(.questionnaire-madlibs-dropdown) {
+  padding: 0 0.15em
+    calc(var(--madlibs-underline-gap) + var(--madlibs-underline-thickness));
+}
+
+.questionnaire-madlibs-blank:not(.questionnaire-madlibs-dropdown) {
+  --madlibs-underline-color: var(--color-brown);
   display: inline-block;
   vertical-align: baseline;
   box-sizing: border-box;
   margin: 0 0.1em;
-  padding: 0 0.15em 0.12em;
+  padding: 0 0.15em
+    calc(var(--madlibs-underline-gap, 3px) + var(--madlibs-underline-thickness, 1.5px));
   font-family: inherit;
   font-size: inherit;
   font-weight: inherit;
-  line-height: inherit;
+  line-height: 1;
   letter-spacing: inherit;
   text-transform: inherit;
   color: inherit;
-  background: transparent;
+  background-color: transparent;
+  background-image: linear-gradient(
+    var(--madlibs-underline-color),
+    var(--madlibs-underline-color)
+  );
+  background-size: 100% var(--madlibs-underline-thickness, 1.5px);
+  background-position: left bottom;
+  background-repeat: no-repeat;
   border: none;
-  border-bottom: 1.5px solid var(--color-brown);
   border-radius: 0;
   outline: none;
   width: auto;
   min-width: 2ch;
   max-width: 100%;
   field-sizing: content;
+}
+
+.questionnaire-madlibs-dropdown.questionnaire-madlibs-blank {
+  background-image: none;
 }
 
 .questionnaire-madlibs-blank--short {
@@ -1766,20 +2153,38 @@ button.sidebar__grid-btn {
   text-transform: none;
 }
 
-.questionnaire-madlibs-blank:focus {
-  border-bottom-color: color-mix(in srgb, var(--color-brown) 55%, black);
-  border-bottom-width: 2px;
-  padding-bottom: calc(0.12em - 0.5px);
+.questionnaire-madlibs-blank:not(.questionnaire-madlibs-dropdown):focus {
+  --madlibs-underline-color: color-mix(in srgb, var(--color-brown) 55%, black);
 }
 
 .questionnaire-madlibs-dropdown {
+  --madlibs-underline-color: var(--color-brown);
   position: relative;
   display: inline-block;
   width: fit-content;
   max-width: 100%;
+  margin: 0 0.1em;
   padding: 0;
   cursor: pointer;
   vertical-align: baseline;
+  border: none;
+}
+
+.questionnaire-madlibs-dropdown::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--madlibs-underline-thickness, 1.5px);
+  background: var(--madlibs-underline-color);
+  pointer-events: none;
+  display: none;
+}
+
+.questionnaire-profile-madlibs.is-typewriting
+  .is-typewriter-drawing-underline.questionnaire-madlibs-dropdown::after {
+  display: block;
 }
 
 .questionnaire-madlibs-dropdown:has(
@@ -1788,9 +2193,7 @@ button.sidebar__grid-btn {
 .questionnaire-madlibs-dropdown:has(
     .questionnaire-madlibs-dropdown__menu:not([hidden])
   ) {
-  border-bottom-color: color-mix(in srgb, var(--color-brown) 55%, black);
-  border-bottom-width: 2px;
-  padding-bottom: calc(0.12em - 0.5px);
+  --madlibs-underline-color: color-mix(in srgb, var(--color-brown) 55%, black);
 }
 
 .questionnaire-profile-madlibs .questionnaire-madlibs-dropdown__trigger {
@@ -1805,19 +2208,42 @@ button.sidebar__grid-btn {
   white-space: nowrap;
 }
 
+/* Profile answers: underline stays brown (no darkening on focus/open). */
+.questionnaire-profile-madlibs
+  .questionnaire-madlibs-blank:not(.questionnaire-madlibs-dropdown):focus {
+  --madlibs-underline-color: var(--color-brown);
+}
+
+.questionnaire-profile-madlibs .questionnaire-madlibs-dropdown:has(
+    .questionnaire-madlibs-dropdown__trigger:focus-visible
+  ),
+.questionnaire-profile-madlibs .questionnaire-madlibs-dropdown:has(
+    .questionnaire-madlibs-dropdown__menu:not([hidden])
+  ),
+.questionnaire-profile-madlibs .questionnaire-madlibs-dropdown:has(
+    .questionnaire-madlibs-name-mode__input:focus-visible
+  ),
+.questionnaire-profile-madlibs .questionnaire-madlibs-dropdown:has(
+    .questionnaire-madlibs-name-mode__caret-btn:focus-visible
+  ) {
+  --madlibs-underline-color: var(--color-brown);
+}
+
 .questionnaire-madlibs-dropdown__trigger {
   display: inline-flex;
-  align-items: baseline;
+  align-items: flex-end;
   justify-content: space-between;
   gap: 0.35em;
   width: 100%;
   box-sizing: border-box;
   margin: 0;
-  padding: 0 1.1em 0.12em 0.15em;
+  padding: 0 1.1em
+      calc(var(--madlibs-underline-gap, 3px) + var(--madlibs-underline-thickness, 1.5px))
+    0.15em;
   font-family: inherit;
   font-size: inherit;
   font-weight: inherit;
-  line-height: inherit;
+  line-height: 1;
   letter-spacing: inherit;
   text-transform: inherit;
   text-align: left;
@@ -1849,7 +2275,9 @@ button.sidebar__grid-btn {
   flex: 0 0 auto;
   width: 0.35em;
   height: 0.35em;
-  margin-top: 0.15em;
+  margin-top: 0;
+  margin-bottom: 0.06em;
+  align-self: flex-end;
   border-right: 1.5px solid var(--color-brown);
   border-bottom: 1.5px solid var(--color-brown);
   transform: rotate(45deg);
@@ -1904,12 +2332,78 @@ button.sidebar__grid-btn {
   color: #fff;
 }
 
-.questionnaire-madlibs-name-text {
-  margin-left: 0.2em;
+.questionnaire-madlibs-name-mode__surface {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 0.1em;
+  width: 100%;
+  box-sizing: border-box;
 }
 
-.questionnaire-madlibs-name-text[hidden] {
-  display: none;
+.questionnaire-madlibs-name-mode.is-anonymous-mode .questionnaire-madlibs-name-mode__input {
+  cursor: pointer;
+}
+
+.questionnaire-madlibs-name-mode.is-name-editing .questionnaire-madlibs-name-mode__input {
+  cursor: text;
+}
+
+.questionnaire-madlibs-name-mode__input {
+  flex: 1 0 auto;
+  min-width: 3ch;
+  margin: 0;
+  padding: 0 0 0 0.15em;
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  outline: none;
+  width: auto;
+  max-width: 100%;
+  field-sizing: content;
+}
+
+.questionnaire-madlibs-name-mode__input:read-only {
+  caret-color: transparent;
+}
+
+.questionnaire-madlibs-name-mode__input::placeholder {
+  color: color-mix(in srgb, var(--color-brown) 45%, transparent);
+}
+
+.questionnaire-madlibs-name-mode__caret-btn {
+  display: inline-flex;
+  align-items: baseline;
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 0 0.35em 0 0;
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  cursor: pointer;
+  outline: none;
+}
+
+.questionnaire-madlibs-name-mode__caret-btn:focus-visible {
+  outline: none;
+}
+
+.questionnaire-madlibs-dropdown:has(
+    .questionnaire-madlibs-name-mode__input:focus-visible
+  ),
+.questionnaire-madlibs-dropdown:has(
+    .questionnaire-madlibs-name-mode__caret-btn:focus-visible
+  ) {
+  --madlibs-underline-color: color-mix(in srgb, var(--color-brown) 55%, black);
 }
 
 .questionnaire-continue {
@@ -1985,6 +2479,61 @@ button.sidebar__grid-btn {
   max-width: 72rem;
   margin: 0 auto;
   padding: 2rem 1.5rem 3rem;
+}
+
+.design-archive {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  overflow-y: auto;
+  pointer-events: auto;
+  background: transparent;
+}
+
+.design-archive[hidden] {
+  display: none !important;
+}
+
+#section-design.section-design--archive-visible > .questionnaire-panel,
+#section-design.section-design--archive-visible > .app-shell {
+  display: none !important;
+}
+
+.design-archive__inner {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 2rem var(--page2-margin, 3.125rem) 3rem;
+  min-height: 100%;
+  box-sizing: border-box;
+}
+
+.design-archive .archive-grid {
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+}
+
+.signals-section {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 3rem;
+}
+
+.signals-section__title {
+  margin: 0 0 1.25rem;
+  font-family: "DIN Condensed", sans-serif;
+  font-size: calc((var(--page2-space-20, 1.25rem) - 4px) * 1.4);
+  font-weight: 700;
+  color: #222;
+  text-transform: none;
+}
+
+.signals-section__intro {
+  margin: 0;
+  font-family: "DIN Condensed", sans-serif;
+  font-size: calc((var(--page2-space-20, 1.25rem) - 4px) * 0.9);
+  font-weight: 700;
+  color: #888;
 }
 
 .archive-section__title {
@@ -2167,7 +2716,8 @@ button.sidebar__grid-btn {
   border-left: var(--slider-arrow-width) solid var(--slider-brown);
 }
 
-.questionnaire-slider-track.is-at-max .questionnaire-slider-handle__arrow--right {
+.questionnaire-slider-track.is-at-min .questionnaire-slider-handle,
+.questionnaire-slider-track.is-at-max .questionnaire-slider-handle {
   display: none;
 }
 
@@ -2406,6 +2956,134 @@ button.sidebar__grid-btn {
   width: 100%;
 }
 
+.questionnaire-feelings-grid {
+  display: grid;
+  grid-template-columns: minmax(5.5rem, 1.15fr) repeat(5, minmax(2.75rem, 1fr));
+  gap: 0.35rem 0.25rem;
+  width: 100%;
+  min-width: 0;
+}
+
+.questionnaire-feelings-grid__row {
+  display: contents;
+}
+
+.questionnaire-feelings-grid__row--header {
+  display: contents;
+}
+
+.questionnaire-feelings-grid__label-cell {
+  font-family: "PP Radio Grotesk", sans-serif;
+  font-size: calc(
+    (var(--page2-space-20, 1.25rem) - 4px) * 0.8 *
+      var(--questionnaire-text-scale, 1)
+  );
+  font-weight: 400;
+  line-height: 1.25;
+  color: var(--color-brown);
+  padding: 0.35rem 0.25rem 0.35rem 0;
+  align-self: center;
+}
+
+.questionnaire-feelings-grid__label-cell--header {
+  padding-bottom: 0.15rem;
+}
+
+.questionnaire-feelings-grid__scale-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0 0.1rem 0.35rem;
+  text-align: center;
+  min-width: 0;
+}
+
+.questionnaire-feelings-grid__scale-number {
+  font-family: "PP Radio Grotesk", sans-serif;
+  font-size: calc(
+    (var(--page2-space-20, 1.25rem) - 4px) * 0.75 *
+      var(--questionnaire-text-scale, 1)
+  );
+  font-weight: 400;
+  line-height: 1.1;
+  color: var(--color-brown);
+}
+
+.questionnaire-feelings-grid__scale-label {
+  font-family: "PP Radio Grotesk", sans-serif;
+  font-size: calc(
+    (var(--page2-space-20, 1.25rem) - 4px) * 0.55 *
+      var(--questionnaire-text-scale, 1)
+  );
+  font-weight: 400;
+  line-height: 1.15;
+  color: #666;
+  hyphens: auto;
+}
+
+.questionnaire-feelings-grid__cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.2rem 0;
+}
+
+.questionnaire-feelings-grid__radio {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 1.125rem;
+  height: 1.125rem;
+  margin: 0;
+  border: 1.5px solid #c8c8c8;
+  border-radius: 50%;
+  background: #fff;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.questionnaire-feelings-grid__radio:checked {
+  border-color: var(--color-brown);
+  background: var(--color-brown);
+  box-shadow: inset 0 0 0 2px #fff;
+}
+
+.questionnaire-feelings-grid__radio:focus-visible {
+  outline: 2px solid var(--color-brown);
+  outline-offset: 2px;
+}
+
+.questionnaire-feelings-hope-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 100%;
+  margin-top: 0.5rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+@media (max-width: 640px) {
+  .questionnaire-feelings-grid {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 0.25rem;
+    min-width: min(100%, 22rem);
+  }
+}
+
+.questionnaire-feelings-intro {
+  margin: 0 0 0.75rem;
+  font-family: "PP Radio Grotesk", sans-serif;
+  font-size: calc(
+    (var(--page2-space-20, 1.25rem) - 4px) * 0.95 *
+      var(--questionnaire-text-scale, 1)
+  );
+  font-weight: 400;
+  line-height: 1.2;
+  color: var(--color-brown);
+}
+
 .questionnaire-step--grid-all,
 .questionnaire-step--family-all {
   max-height: calc(
@@ -2471,9 +3149,45 @@ button.sidebar__grid-btn {
   .questionnaire-slider-output,
   .questionnaire-feelings-emotion-heading,
   .questionnaire-feelings-sublabel,
+  .questionnaire-feelings-intro,
+  .questionnaire-feelings-grid__label-cell,
+  .questionnaire-feelings-grid__scale-number,
+  .questionnaire-feelings-grid__scale-label,
   .questionnaire-section-question-heading
 ) {
   font-family: "PP Radio Grotesk", sans-serif;
   font-weight: 200;
 }
 
+/* Questionnaire answers only — DIN Condensed */
+.questionnaire-panel__content :is(
+  .questionnaire-input,
+  .questionnaire-option,
+  .questionnaire-slider-output,
+  .questionnaire-profile-madlibs input.questionnaire-madlibs-blank,
+  .questionnaire-profile-madlibs .questionnaire-madlibs-dropdown__label,
+  .questionnaire-profile-madlibs .questionnaire-madlibs-name-mode__input,
+  .questionnaire-madlibs-dropdown__option,
+  .questionnaire-family-dot-options .family-dot-option__label
+) {
+  font-family: "DIN Condensed", sans-serif;
+  font-weight: 700;
+}
+
+.questionnaire-panel__content
+  .questionnaire-profile-madlibs
+  input.questionnaire-madlibs-blank::placeholder,
+.questionnaire-panel__content
+  .questionnaire-profile-madlibs
+  .questionnaire-madlibs-name-mode__input::placeholder,
+.questionnaire-panel__content
+  .questionnaire-profile-madlibs
+  .questionnaire-madlibs-dropdown__label.is-placeholder {
+  font-family: inherit;
+  font-weight: inherit;
+}
+
+.questionnaire-panel__content .questionnaire-input::placeholder {
+  font-family: "PP Radio Grotesk", sans-serif;
+  font-weight: 200;
+}

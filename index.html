@@ -29,13 +29,35 @@
           <div class="page2-col"></div>
         </div>
 
+        <div
+          class="page2-header-margin page2-header-margin--left"
+          aria-hidden="true"
+        >
+          <div class="page2-header-margin__cell"></div>
+          <div class="page2-header-margin__cell"></div>
+          <div class="page2-header-margin__cell"></div>
+        </div>
+        <div
+          class="page2-header-margin page2-header-margin--right"
+          aria-hidden="true"
+        >
+          <div class="page2-header-margin__cell"></div>
+          <div class="page2-header-margin__cell"></div>
+          <div class="page2-header-margin__cell"></div>
+        </div>
+
         <header class="page2-header" aria-label="Header grid">
-          <div
-            class="page2-header-col page2-header-col--left-edge"
-            data-col="0"
-          >
+          <div class="page2-header-col" data-col="0">
             <div class="page2-header-cell"></div>
-            <div class="page2-header-cell"></div>
+            <div class="page2-header-cell">
+              <span class="page2-col-title">
+                <span class="page2-col-title__en">section</span
+                ><span class="page2-col-title__sep">/ </span
+                ><span class="page2-col-title__fa" lang="fa" dir="rtl"
+                  >بخش</span
+                >
+              </span>
+            </div>
             <div class="page2-header-cell"></div>
           </div>
           <div class="page2-header-col" data-col="1">
@@ -93,28 +115,27 @@
           <div class="page2-header-col" data-col="5">
             <div class="page2-header-cell">
               <span class="page2-col-title">
-                <span class="page2-col-title__en">archive</span
+                <span class="page2-col-title__en">signals</span
                 ><span class="page2-col-title__sep">/ </span
                 ><span class="page2-col-title__fa" lang="fa" dir="rtl"
-                  >آרشیو</span
+                  >سیگنال‌ها</span
                 >
               </span>
             </div>
             <div class="page2-header-cell"></div>
             <div class="page2-header-cell"></div>
           </div>
-          <div
-            class="page2-header-col page2-header-col--right-edge"
-            data-col="6"
-          >
+          <div class="page2-header-col" data-col="6">
             <div class="page2-header-cell"></div>
-            <div
-              class="page2-header-cell page2-header-cell--design-panel-trigger"
-              role="button"
-              tabindex="0"
-              aria-pressed="false"
-              aria-label="Show or hide design section sidebar panel"
-            ></div>
+            <div class="page2-header-cell">
+              <span class="page2-col-title">
+                <span class="page2-col-title__en">section</span
+                ><span class="page2-col-title__sep">/ </span
+                ><span class="page2-col-title__fa" lang="fa" dir="rtl"
+                  >بخش</span
+                >
+              </span>
+            </div>
             <div class="page2-header-cell"></div>
           </div>
         </header>
@@ -138,6 +159,16 @@
         </div>
 
         <main class="page2-sections" aria-label="Site sections">
+          <section
+            class="page2-section"
+            id="section-new-left"
+            data-section-col="0"
+            aria-label="section left"
+          >
+            <div class="page2-edge-section">
+              <p class="page2-edge-section__intro"></p>
+            </div>
+          </section>
           <section
             class="page2-section"
             id="section-home"
@@ -209,10 +240,25 @@
             data-section-col="3"
             aria-label="design"
           >
+            <div class="design-start" id="design-start">
+              <div class="design-start__inner">
+                <div class="design-start__row">
+                  <p class="design-start__tagline">design your own</p>
+                  <button
+                    type="button"
+                    class="design-start__btn"
+                    id="design-start-btn"
+                  >
+                    Start
+                  </button>
+                </div>
+              </div>
+            </div>
             <div
               class="questionnaire-panel"
               id="questionnaire-panel"
               aria-label="Profile questionnaire"
+              hidden
             >
               <div class="questionnaire-panel__grid">
                 <nav
@@ -247,867 +293,115 @@
                 </div>
               </div>
             </div>
+            <div class="design-archive" id="design-archive" hidden>
+              <div class="archive-section design-archive__inner">
+                <h2 class="archive-section__title">Your handkerchiefs</h2>
+                <p class="archive-section__empty" id="archive-empty" hidden>
+                  No saved handkerchiefs yet.
+                </p>
+                <div
+                  class="archive-grid"
+                  id="handkerchief-archive-grid"
+                  role="list"
+                ></div>
+              </div>
+            </div>
 <div class="app-shell">
-      <aside class="sidebar" aria-label="Design controls">
-        <div class="sidebar__scroll">
-          <section class="sidebar__section sidebar__section--combinations">
-            <h2 class="sidebar__title">Combinations</h2>
-            <p class="sidebar__hint">
-              <a href="combinations-table.html" target="_blank" rel="noopener"
-                >טבלת קומבינציות — עריכת פרמטרים</a
-              >
-            </p>
-            <p class="sidebar__hint sidebar__hint--combo-note">
-              סוג גריד ופלטת צבעים נשארים מהפאנל — לא נכללים בקומבינציה.
-            </p>
-            <div
-              class="sidebar__combo-switcher"
-              role="group"
-              aria-label="Handkerchief combination"
-            >
-              <button
-                type="button"
-                class="sidebar__combo-btn is-active"
-                data-handkerchief-combo="1"
-                aria-pressed="true"
-              >
-                1
-              </button>
-              <button
-                type="button"
-                class="sidebar__combo-btn"
-                data-handkerchief-combo="2"
-                aria-pressed="false"
-              >
-                2
-              </button>
-              <button
-                type="button"
-                class="sidebar__combo-btn"
-                data-handkerchief-combo="3"
-                aria-pressed="false"
-              >
-                3
-              </button>
-              <button
-                type="button"
-                class="sidebar__combo-btn"
-                data-handkerchief-combo="4"
-                aria-pressed="false"
-              >
-                4
-              </button>
-              <button
-                type="button"
-                class="sidebar__combo-btn"
-                data-handkerchief-combo="5"
-                aria-pressed="false"
-              >
-                5
-              </button>
-              <button
-                type="button"
-                class="sidebar__combo-btn"
-                data-handkerchief-combo="6"
-                aria-pressed="false"
-              >
-                6
-              </button>
-              <button
-                type="button"
-                class="sidebar__combo-btn"
-                data-handkerchief-combo="7"
-                aria-pressed="false"
-              >
-                7
-              </button>
-              <button
-                type="button"
-                class="sidebar__combo-btn"
-                data-handkerchief-combo="8"
-                aria-pressed="false"
-              >
-                8
-              </button>
-              <span
-                id="handkerchief-combo-active-label"
-                class="sidebar__palette-active-label"
-                aria-live="polite"
-                >Combo 1</span
-              >
-            </div>
-          </section>
+            <div id="design-controls-bridge" hidden aria-hidden="true">
+        <button type="button" data-handkerchief-combo="1" aria-pressed="true"></button>
+        <button type="button" data-handkerchief-combo="2" aria-pressed="false"></button>
+        <button type="button" data-handkerchief-combo="3" aria-pressed="false"></button>
+        <button type="button" data-handkerchief-combo="4" aria-pressed="false"></button>
+        <button type="button" data-handkerchief-combo="5" aria-pressed="false"></button>
+        <button type="button" data-handkerchief-combo="6" aria-pressed="false"></button>
+        <button type="button" data-handkerchief-combo="7" aria-pressed="false"></button>
+        <button type="button" data-handkerchief-combo="8" aria-pressed="false"></button>
+        <span id="handkerchief-combo-active-label">Combo 1</span>
 
-          <section class="sidebar__section sidebar__section--identity">
-            <h2 class="sidebar__title">Profile</h2>
-            <div class="sidebar__identity-fields">
-              <div class="sidebar__identity-field">
-                <span class="sidebar__identity-heading">Did you ever live in Iran?</span>
-                <div class="sidebar__identity-slot" id="identity-living-slot">
-                  <div
-                    class="sidebar__toggle sidebar__identity-living-toggle"
-                    role="group"
-                    aria-label="Did you ever live in Iran? Yes or no"
-                  >
-                    <button
-                      type="button"
-                      id="living-in-btn"
-                      class="sidebar__toggle-btn"
-                      aria-pressed="false"
-                    >
-                      Yes
-                    </button>
-                    <button
-                      type="button"
-                      id="living-outside-btn"
-                      class="sidebar__toggle-btn"
-                      aria-pressed="false"
-                    >
-                      No
-                    </button>
-                  </div>
-                </div>
-              </div>
-              <div
-                class="sidebar__identity-field"
-                id="identity-living-duration-field"
-                hidden
-              >
-                <span
-                  class="sidebar__identity-heading sidebar__identity-heading--wrap"
-                  >How much of your life did you live in Iran?</span
-                >
-                <div
-                  class="sidebar__identity-slot"
-                  id="identity-living-duration-slot"
-                >
-                  <div
-                    class="sidebar__toggle sidebar__identity-living-duration-toggle"
-                    role="radiogroup"
-                    aria-label="How much of your life did you live in Iran?"
-                  >
-                    <button
-                      type="button"
-                      id="identity-living-duration-small-btn"
-                      class="sidebar__toggle-btn"
-                      data-living-duration="smallPart"
-                      aria-pressed="false"
-                    >
-                      Small part of my life
-                    </button>
-                    <button
-                      type="button"
-                      id="identity-living-duration-part-btn"
-                      class="sidebar__toggle-btn"
-                      data-living-duration="partOfLife"
-                      aria-pressed="false"
-                    >
-                      Yes, part of my life
-                    </button>
-                    <button
-                      type="button"
-                      id="identity-living-duration-most-btn"
-                      class="sidebar__toggle-btn"
-                      data-living-duration="mostAll"
-                      aria-pressed="false"
-                    >
-                      Yes, most / all of my life
-                    </button>
-                  </div>
-                </div>
-              </div>
-              <div
-                class="sidebar__identity-field"
-                id="identity-leaving-year-field"
-                hidden
-              >
-                <span class="sidebar__identity-heading">Year of leaving</span>
-                <div class="sidebar__identity-slot" id="identity-leaving-year-slot">
-                  <input
-                    id="identity-leaving-year-input"
-                    class="sidebar__identity-input"
-                    type="text"
-                    inputmode="numeric"
-                    pattern="[0-9]*"
-                    maxlength="4"
-                    autocomplete="off"
-                    spellcheck="false"
-                    aria-label="Year of leaving"
-                    placeholder="Year you left Iran"
-                  />
-                </div>
-              </div>
-              <div class="sidebar__identity-field">
-                <span class="sidebar__identity-heading">From</span>
-                <div class="sidebar__identity-slot" id="identity-from-slot">
-                  <input
-                    id="identity-from-input"
-                    class="sidebar__identity-input sidebar__identity-input--english"
-                    type="text"
-                    lang="en"
-                    autocomplete="off"
-                    spellcheck="false"
-                    aria-label="From"
-                    placeholder="Where you are originally from"
-                  />
-                </div>
-              </div>
-              <div class="sidebar__identity-field">
-                <span class="sidebar__identity-heading">Now in</span>
-                <div class="sidebar__identity-slot" id="identity-now-in-slot">
-                  <input
-                    id="identity-now-in-input"
-                    class="sidebar__identity-input sidebar__identity-input--english"
-                    type="text"
-                    lang="en"
-                    autocomplete="off"
-                    spellcheck="false"
-                    aria-label="Now in"
-                    placeholder="Where you live now"
-                  />
-                </div>
-              </div>
-              <div class="sidebar__identity-field">
-                <span class="sidebar__identity-heading">Name</span>
-                <div class="sidebar__identity-slot" id="identity-name-slot">
-                  <input
-                    id="identity-name-input"
-                    class="sidebar__identity-input sidebar__identity-input--english"
-                    type="text"
-                    lang="en"
-                    autocomplete="off"
-                    spellcheck="false"
-                    aria-label="Name"
-                    placeholder="Full name"
-                  />
-                  <div
-                    class="sidebar__toggle sidebar__identity-name-mode-toggle"
-                    role="group"
-                    aria-label="How name appears on the label"
-                  >
-                    <button
-                      type="button"
-                      id="identity-name-anonymous-btn"
-                      class="sidebar__toggle-btn"
-                      aria-pressed="false"
-                    >
-                      Anonymous
-                    </button>
-                    <button
-                      type="button"
-                      id="identity-name-initials-btn"
-                      class="sidebar__toggle-btn"
-                      aria-pressed="false"
-                    >
-                      Initials
-                    </button>
-                    <button
-                      type="button"
-                      id="identity-name-name-btn"
-                      class="sidebar__toggle-btn"
-                      aria-pressed="false"
-                    >
-                      Name
-                    </button>
-                  </div>
-                </div>
-              </div>
-              <div class="sidebar__identity-field">
-                <span class="sidebar__identity-heading">Age</span>
-                <div class="sidebar__identity-slot" id="identity-age-slot">
-                  <input
-                    id="identity-age-input"
-                    class="sidebar__identity-input"
-                    type="text"
-                    inputmode="numeric"
-                    pattern="[0-9]*"
-                    maxlength="2"
-                    autocomplete="off"
-                    aria-label="Age"
-                  />
-                </div>
-              </div>
-              <div class="sidebar__identity-field">
-                <span
-                  class="sidebar__identity-heading sidebar__identity-heading--wrap"
-                  >where do you feel most &quot;at home&quot; today?</span
-                >
-                <div class="sidebar__identity-slot" id="identity-home-at-slot">
-                  <div
-                    class="sidebar__toggle sidebar__identity-home-toggle"
-                    role="radiogroup"
-                    aria-label='where do you feel most "at home" today?'
-                  >
-                    <button
-                      type="button"
-                      id="identity-home-at-in-iran-btn"
-                      class="sidebar__toggle-btn"
-                      data-home-at="inIran"
-                      aria-pressed="false"
-                    >
-                      In Iran
-                    </button>
-                    <button
-                      type="button"
-                      id="identity-home-at-where-i-live-btn"
-                      class="sidebar__toggle-btn"
-                      data-home-at="whereILive"
-                      aria-pressed="false"
-                    >
-                      Outside Iran / where I live now
-                    </button>
-                    <button
-                      type="button"
-                      id="identity-home-at-nowhere-btn"
-                      class="sidebar__toggle-btn"
-                      data-home-at="nowhere"
-                      aria-pressed="false"
-                    >
-                      Nowhere / in between
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div class="sidebar__sheet-palette-row sidebar__label-tag-row">
-              <span class="sidebar__grid-density-label">Label side marks</span>
-              <div
-                class="sidebar__palette-shuffle-group"
-                role="group"
-                aria-label="Label side mark selector"
-              >
-                <button
-                  type="button"
-                  id="label-bar-tag-toggle-btn"
-                  class="sidebar__palette-btn sidebar__palette-btn--label"
-                  aria-label="Cycle label side marks from tag folder"
-                  title="Cycle label side marks"
-                >
-                  Side marks
-                </button>
-                <span
-                  id="label-bar-tag-active-label"
-                  class="sidebar__palette-active-label"
-                  aria-live="polite"
-                  >Lion</span
-                >
-              </div>
-            </div>
-          </section>
-
-          <section class="sidebar__section sidebar__section--grid-choose">
-            <h2 class="sidebar__title">Grid</h2>
-            <div
-              class="sidebar__grid-choose-btns"
-              role="group"
-              aria-label="Grid type"
-            >
-              <button
-                type="button"
-                id="grid-choose-octagon-btn"
-                class="sidebar__grid-btn"
-                aria-pressed="false"
-              >
-                Octagons
-              </button>
-              <button
-                type="button"
-                id="grid-choose-star-btn"
-                class="sidebar__grid-btn"
-                aria-pressed="false"
-              >
-                Stars
-              </button>
-              <button
-                type="button"
-                id="grid-choose-circles-btn"
-                class="sidebar__grid-btn"
-                aria-pressed="false"
-              >
-                Circles
-              </button>
-              <button
-                type="button"
-                id="grid-choose-diamonds-btn"
-                class="sidebar__grid-btn"
-                aria-pressed="false"
-              >
-                Diamonds
-              </button>
-            </div>
-            <div class="sidebar__grid-choose-sliders">
-              <div class="sidebar__grid-density sidebar__grid-density--long-label">
-                <span class="sidebar__grid-density-label"
-                  >How much do I feel part of the Iranian community?</span
-                >
-                <div class="sidebar__grid-density-slider-wrap">
-                  <div
-                    class="sidebar__grid-density-range-labels"
-                    aria-hidden="true"
-                  >
-                    <span class="sidebar__grid-density-range-label"
-                      >Not part at all</span
-                    >
-                    <span class="sidebar__grid-density-range-label"
-                      >Very much part</span
-                    >
-                  </div>
-                  <div class="sidebar__grid-density-control sidebar__item-control">
-                    <input
-                      id="octagons-n"
-                      type="range"
-                      min="1"
-                      max="10"
-                      value="5"
-                      step="1"
-                      aria-label="How much do I feel part of the Iranian community? Not part at all to very much part."
-                    />
-                    <output id="octagons-n-out" for="octagons-n">5</output>
-                  </div>
-                </div>
-              </div>
-              <div class="sidebar__grid-density sidebar__grid-density--long-label">
-                <span class="sidebar__grid-density-label"
-                  >How much is my Iranian identity at the center of my life?</span
-                >
-                <div class="sidebar__grid-density-control sidebar__item-control">
-                  <input
-                    id="inner-scale"
-                    type="range"
-                    min="1"
-                    max="10"
-                    value="10"
-                    step="1"
-                    aria-label="How much is my Iranian identity at the center of my life?"
-                  />
-                  <output id="inner-scale-out" for="inner-scale">10</output>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <section class="sidebar__section sidebar__section--color-divisions">
-            <h2 class="sidebar__title">Colors</h2>
-            <p class="sidebar__hint">
-              <a href="palette-colors-preview.html" target="_blank" rel="noopener"
-                >תצוגת טבלת צבעים (תאים צבועים)</a
-              >
-              <span
-                id="sheet-palette-live-status"
-                class="sidebar__sheet-live-status"
-                aria-live="polite"
-                >עדכון חי מהגיליון</span
-              >
-            </p>
-            <div class="sidebar__sheet-palette-row">
-              <span class="sidebar__grid-density-label">Palette</span>
-              <div
-                id="sheet-palette-buttons"
-                class="sidebar__sheet-palette-buttons"
-                role="group"
-                aria-label="Palette controls"
-              >
-                <div class="sidebar__palette-shuffle-group">
-                  <button
-                    type="button"
-                    id="sheet-palette-random-btn"
-                    class="sidebar__palette-btn sidebar__palette-btn--label"
-                    aria-label="החלף בין פלטות 1 עד 12"
-                    title="החלף בין פלטות 1 עד 12"
-                  >
-                    Palette 1–12
-                  </button>
-                  <span
-                    id="sheet-palette-active-label"
-                    class="sidebar__palette-active-label"
-                    aria-live="polite"
-                    >Palette 1</span
-                  >
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <section class="sidebar__section sidebar__section--body-autonomy">
-            <h2 class="sidebar__title">Family and friends in Iran</h2>
-            <div class="sidebar__grid-density">
-              <span class="sidebar__grid-density-label">Frame divisions</span>
-              <div class="sidebar__grid-density-slider-wrap">
-                <div
-                  class="sidebar__grid-density-range-labels"
-                  aria-hidden="true"
-                >
-                  <span class="sidebar__grid-density-range-label">Minimum</span>
-                  <span class="sidebar__grid-density-range-label">Maximum</span>
-                </div>
-                <div class="sidebar__body-autonomy-control sidebar__item-control">
-                  <input
-                    id="border-frame-divisions"
-                    type="range"
-                    min="1"
-                    max="3"
-                    value="2"
-                    step="1"
-                    aria-label="Frame divisions. Minimum to maximum."
-                  />
-                  <output id="border-frame-divisions-out" for="border-frame-divisions"
-                    >Medium</output
-                  >
-                </div>
-              </div>
-            </div>
-            <div class="sidebar__grid-density">
-              <span class="sidebar__grid-density-label">Color fade</span>
-              <div class="sidebar__grid-density-slider-wrap">
-                <div
-                  class="sidebar__grid-density-range-labels"
-                  aria-hidden="true"
-                >
-                  <span class="sidebar__grid-density-range-label"
-                    >Full color</span
-                  >
-                  <span class="sidebar__grid-density-range-label"
-                    >50% white</span
-                  >
-                </div>
-                <div class="sidebar__body-autonomy-control sidebar__item-control">
-                  <input
-                    id="border-side-white-fill"
-                    type="range"
-                    min="0"
-                    max="100"
-                    value="0"
-                    step="25"
-                    aria-label="Family and friends in Iran color fade. Full color to 50 percent white."
-                  />
-                  <output id="border-side-white-fill-out" for="border-side-white-fill"
-                    >0%</output
-                  >
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <section class="sidebar__section sidebar__section--body-autonomy-wear">
-            <h2 class="sidebar__title">Body autonomy</h2>
-            <div class="sidebar__wear-autonomy">
-              <span class="sidebar__grid-density-label sidebar__wear-autonomy-question"
-                >How much were you able to control what you wear?</span
-              >
-              <div class="sidebar__wear-autonomy-sliders">
-                <div class="sidebar__fan-tuning-group">
-                  <span class="sidebar__grid-density-label">Both fans</span>
-                  <div class="sidebar__fan-tuning-row">
-                    <span class="sidebar__fan-tuning-label">Leaves</span>
-                    <div class="sidebar__grid-density-control sidebar__wear-control-range">
-                      <input
-                        id="fan-leaves"
-                        type="range"
-                        min="0"
-                        max="10"
-                        value="0"
-                        step="1"
-                        aria-label="Fan leaves. Step 0 fully open, step 9 four ribs, step 10 closed."
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <section class="sidebar__section sidebar__section--feelings">
-            <h2 class="sidebar__title">Feelings</h2>
-            <div class="sidebar__feelings-emotions">
-              <div class="sidebar__feelings-emotion">
-                <div class="sidebar__feelings-emotion-header">
-                  <span class="sidebar__feelings-heading">Fear</span>
-                </div>
-                <div class="sidebar__feelings-slot" id="feelings-anger-slot">
-                  <div class="sidebar__feelings-control sidebar__item-control">
-                    <input
-                      id="anger-vertical-length"
-                      type="range"
-                      min="1"
-                      max="10"
-                      value="1"
-                      step="1"
-                      aria-label="Vertical line length"
-                    />
-                    <output id="anger-vertical-length-out" for="anger-vertical-length"
-                      >1</output
-                    >
-                  </div>
-                  <div class="sidebar__grid-density">
-                    <span class="sidebar__grid-density-label">Anxiety / Tension</span>
-                    <div class="sidebar__feelings-control sidebar__item-control">
-                      <input
-                        id="anxiety-vertical-stroke"
-                        type="range"
-                        min="1"
-                        max="10"
-                        value="1"
-                        step="1"
-                        aria-label="Anxiety / Tension — vertical line thickness"
-                      />
-                      <output id="anxiety-vertical-stroke-out" for="anxiety-vertical-stroke"
-                        >1</output
-                      >
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div class="sidebar__feelings-emotion">
-                <div class="sidebar__feelings-emotion-header">
-                  <span class="sidebar__feelings-heading">Anger</span>
-                </div>
-                <div class="sidebar__feelings-slot" id="feelings-fear-slot">
-                  <div class="sidebar__feelings-control sidebar__item-control">
-                    <input
-                      id="anger-triangle-density"
-                      type="range"
-                      min="1"
-                      max="10"
-                      value="1"
-                      step="1"
-                      aria-label="Anger triangle density"
-                    />
-                    <output id="anger-triangle-density-out" for="anger-triangle-density"
-                      >1</output
-                    >
-                  </div>
-                </div>
-              </div>
-              <div class="sidebar__feelings-emotion">
-                <div class="sidebar__feelings-emotion-header">
-                  <span class="sidebar__feelings-heading">Hope</span>
-                </div>
-                <div class="sidebar__feelings-slot" id="feelings-hope-slot">
-                  <div
-                    class="sidebar__hope-mode-toggle sidebar__toggle"
-                    role="group"
-                    aria-label="Hope interaction mode"
-                  >
-                    <button
-                      type="button"
-                      id="hope-mode-view-btn"
-                      class="sidebar__toggle-btn is-active"
-                      aria-pressed="true"
-                    >
-                      View
-                    </button>
-                    <button
-                      type="button"
-                      id="hope-mode-merge-btn"
-                      class="sidebar__toggle-btn"
-                      aria-pressed="false"
-                    >
-                      Merge
-                    </button>
-                  </div>
-                  <button
-                    type="button"
-                    id="hope-reset-grid-btn"
-                    class="sidebar__btn"
-                    disabled
-                  >
-                    Reset grid
-                  </button>
-                </div>
-              </div>
-              <div class="sidebar__feelings-emotion">
-                <div class="sidebar__feelings-emotion-header">
-                  <span class="sidebar__feelings-heading">Sadness</span>
-                </div>
-                <div class="sidebar__feelings-slot" id="feelings-sadness-slot">
-                  <div class="sidebar__feelings-control sidebar__item-control">
-                    <input
-                      id="circle-density"
-                      type="range"
-                      min="1"
-                      max="10"
-                      value="1"
-                      step="1"
-                      aria-label="Circle density"
-                    />
-                    <output id="circle-density-out" for="circle-density"
-                      >1</output
-                    >
-                  </div>
-                </div>
-              </div>
-              <div class="sidebar__feelings-emotion">
-                <div class="sidebar__feelings-emotion-header">
-                  <span class="sidebar__feelings-heading">Longing</span>
-                </div>
-                <div class="sidebar__feelings-slot" id="feelings-longing-slot">
-                  <div class="sidebar__feelings-control sidebar__item-control">
-                    <input
-                      id="longing-circle-density"
-                      type="range"
-                      min="1"
-                      max="10"
-                      value="1"
-                      step="1"
-                      aria-label="Longing circle density"
-                    />
-                    <output id="longing-circle-density-out" for="longing-circle-density"
-                      >1</output
-                    >
-                  </div>
-                </div>
-              </div>
-              <div class="sidebar__feelings-emotion">
-                <div class="sidebar__feelings-emotion-header">
-                  <span class="sidebar__feelings-heading">Grief</span>
-                </div>
-                <div class="sidebar__feelings-slot" id="feelings-grief-slot">
-                  <div class="sidebar__feelings-control sidebar__item-control">
-                    <input
-                      id="grief-circle-density"
-                      type="range"
-                      min="1"
-                      max="10"
-                      value="1"
-                      step="1"
-                      aria-label="Grief circle density"
-                    />
-                    <output id="grief-circle-density-out" for="grief-circle-density"
-                      >1</output
-                    >
-                  </div>
-                </div>
-              </div>
-              <div class="sidebar__feelings-emotion">
-                <div class="sidebar__feelings-emotion-header">
-                  <span class="sidebar__feelings-heading">Strength / Power</span>
-                </div>
-                <div class="sidebar__feelings-slot" id="feelings-strength-slot">
-                  <div class="sidebar__feelings-control sidebar__item-control">
-                    <input
-                      id="strength-density"
-                      type="range"
-                      min="1"
-                      max="10"
-                      value="1"
-                      step="1"
-                      aria-label="Strength / Power circle-in-square density"
-                    />
-                    <output id="strength-density-out" for="strength-density"
-                      >1</output
-                    >
-                  </div>
-                </div>
-              </div>
-              <div class="sidebar__feelings-emotion">
-                <div class="sidebar__feelings-emotion-header">
-                  <span class="sidebar__feelings-heading">Pride</span>
-                </div>
-                <div class="sidebar__feelings-slot" id="feelings-pain-slot">
-                  <div class="sidebar__feelings-control sidebar__item-control">
-                    <input
-                      id="auto-merge-intensity"
-                      type="range"
-                      min="1"
-                      max="10"
-                      value="1"
-                      step="1"
-                      aria-label="Pride merged area amount and size"
-                    />
-                    <output id="auto-merge-intensity-out" for="auto-merge-intensity"
-                      >1</output
-                    >
-                  </div>
-                </div>
-              </div>
-              <div class="sidebar__feelings-emotion">
-                <div class="sidebar__feelings-emotion-header">
-                  <span class="sidebar__feelings-heading">Pain</span>
-                </div>
-                <div class="sidebar__feelings-slot" id="feelings-pride-slot">
-                  <div class="sidebar__feelings-control sidebar__item-control">
-                    <input
-                      id="pride-fill-percent"
-                      type="range"
-                      min="1"
-                      max="10"
-                      value="1"
-                      step="1"
-                      aria-label="Pain diamond fill amount"
-                    />
-                    <output id="pride-fill-percent-out" for="pride-fill-percent"
-                      >1</output
-                    >
-                  </div>
-                </div>
-              </div>
-              <div class="sidebar__feelings-emotion">
-                <div class="sidebar__feelings-emotion-header">
-                  <span class="sidebar__feelings-heading">Guilt / Shame</span>
-                </div>
-                <div class="sidebar__feelings-slot" id="feelings-guiltShame-slot">
-                  <div class="sidebar__feelings-control sidebar__item-control">
-                    <input
-                      id="guilt-shame-fill-percent"
-                      type="range"
-                      min="1"
-                      max="10"
-                      value="1"
-                      step="1"
-                      aria-label="Guilt / Shame hollow diamond fill amount"
-                    />
-                    <output
-                      id="guilt-shame-fill-percent-out"
-                      for="guilt-shame-fill-percent"
-                      >1</output
-                    >
-                  </div>
-                </div>
-              </div>
-              <div class="sidebar__feelings-emotion">
-                <div class="sidebar__feelings-emotion-header">
-                  <span class="sidebar__feelings-heading">Helplessness</span>
-                </div>
-                <div class="sidebar__feelings-slot" id="feelings-helplessness-slot">
-                  <div class="sidebar__feelings-control sidebar__item-control">
-                    <input
-                      id="helplessness-percent"
-                      type="range"
-                      min="1"
-                      max="10"
-                      value="1"
-                      step="1"
-                      aria-label="Helplessness junction X mark density"
-                    />
-                    <output id="helplessness-percent-out" for="helplessness-percent"
-                      >1</output
-                    >
-                  </div>
-                </div>
-              </div>
-            </div>
-            <button
-              type="button"
-              id="randomize-circles-btn"
-              class="sidebar__btn sidebar__feelings-randomize-btn"
-            >
-              Randomize
-            </button>
-          </section>
-
-          <section class="sidebar__section sidebar__section--colors-export">
-            <h2 class="sidebar__title">Export</h2>
-            <button type="button" id="export-svg-btn" class="sidebar__btn">
-              Export SVG
-            </button>
-          </section>
-
-          <p class="sidebar__hint" id="tile-info" aria-live="polite"></p>
-          <p class="sidebar__hint sidebar__hint--mode" id="hope-merge-hint" hidden>
-            Drag across lines to merge
-          </p>
+        <button type="button" id="living-in-btn" aria-pressed="false"></button>
+        <button type="button" id="living-outside-btn" aria-pressed="false"></button>
+        <div id="identity-living-duration-field" hidden>
+          <button type="button" id="identity-living-duration-small-btn" data-living-duration="smallPart" aria-pressed="false"></button>
+          <button type="button" id="identity-living-duration-part-btn" data-living-duration="partOfLife" aria-pressed="false"></button>
+          <button type="button" id="identity-living-duration-most-btn" data-living-duration="mostAll" aria-pressed="false"></button>
         </div>
-      </aside>
+        <div id="identity-leaving-year-field" hidden>
+          <input id="identity-leaving-year-input" type="text" />
+        </div>
+        <input id="identity-from-input" type="text" />
+        <input id="identity-now-in-input" type="text" />
+        <input id="identity-name-input" type="text" />
+        <button type="button" id="identity-name-anonymous-btn" aria-pressed="false"></button>
+        <button type="button" id="identity-name-initials-btn" aria-pressed="false"></button>
+        <button type="button" id="identity-name-name-btn" aria-pressed="false"></button>
+        <input id="identity-age-input" type="text" />
+        <button type="button" id="identity-home-at-in-iran-btn" data-home-at="inIran" aria-pressed="false"></button>
+        <button type="button" id="identity-home-at-where-i-live-btn" data-home-at="whereILive" aria-pressed="false"></button>
+        <button type="button" id="identity-home-at-nowhere-btn" data-home-at="nowhere" aria-pressed="false"></button>
+        <button type="button" id="label-bar-tag-toggle-btn"></button>
+        <span id="label-bar-tag-active-label">Lion</span>
+
+        <button type="button" id="grid-choose-octagon-btn" aria-pressed="false"></button>
+        <button type="button" id="grid-choose-star-btn" aria-pressed="false"></button>
+        <button type="button" id="grid-choose-circles-btn" aria-pressed="false"></button>
+        <button type="button" id="grid-choose-diamonds-btn" aria-pressed="false"></button>
+        <input id="octagons-n" type="range" min="1" max="10" value="5" step="1" />
+        <output id="octagons-n-out" for="octagons-n">5</output>
+        <input id="inner-scale" type="range" min="1" max="10" value="10" step="1" />
+        <output id="inner-scale-out" for="inner-scale">10</output>
+
+        <span id="sheet-palette-live-status"></span>
+        <div id="sheet-palette-buttons">
+          <button type="button" id="sheet-palette-random-btn"></button>
+          <span id="sheet-palette-active-label">Palette 1</span>
+        </div>
+
+        <button type="button" data-close-family-in-iran="largePart" aria-pressed="false"></button>
+        <button type="button" data-close-family-in-iran="someMembers" aria-pressed="false"></button>
+        <button type="button" data-close-family-in-iran="almostAllOutside" aria-pressed="false"></button>
+        <button type="button" data-iran-loss-type="lovedOne" aria-pressed="false"></button>
+        <button type="button" data-iran-loss-type="place" aria-pressed="false"></button>
+        <button type="button" data-iran-loss-type="languageCulture" aria-pressed="false"></button>
+        <button type="button" data-iran-loss-type="freedomOfMovement" aria-pressed="false"></button>
+        <button type="button" data-iran-loss-type="familyFriendsConnection" aria-pressed="false"></button>
+        <input id="border-frame-divisions" type="range" min="1" max="3" value="2" step="1" tabindex="-1" />
+        <output id="border-frame-divisions-out" for="border-frame-divisions">Medium</output>
+        <input id="border-side-white-fill" type="range" min="0" max="100" value="0" step="25" tabindex="-1" />
+        <output id="border-side-white-fill-out" for="border-side-white-fill">0%</output>
+
+        <input id="fan-leaves" type="range" min="0" max="10" value="0" step="1" />
+
+        <input id="anger-vertical-length" type="range" min="1" max="5" value="1" step="1" />
+        <output id="anger-vertical-length-out" for="anger-vertical-length">1</output>
+        <input id="anxiety-vertical-stroke" type="range" min="1" max="5" value="1" step="1" />
+        <output id="anxiety-vertical-stroke-out" for="anxiety-vertical-stroke">1</output>
+        <input id="anger-triangle-density" type="range" min="1" max="5" value="1" step="1" />
+        <output id="anger-triangle-density-out" for="anger-triangle-density">1</output>
+        <button type="button" id="hope-mode-view-btn" aria-pressed="true"></button>
+        <button type="button" id="hope-mode-merge-btn" aria-pressed="false"></button>
+        <button type="button" id="hope-reset-grid-btn" disabled></button>
+        <input id="circle-density" type="range" min="1" max="5" value="1" step="1" />
+        <output id="circle-density-out" for="circle-density">1</output>
+        <input id="longing-circle-density" type="range" min="1" max="5" value="1" step="1" />
+        <output id="longing-circle-density-out" for="longing-circle-density">1</output>
+        <input id="grief-circle-density" type="range" min="1" max="5" value="1" step="1" />
+        <output id="grief-circle-density-out" for="grief-circle-density">1</output>
+        <input id="strength-density" type="range" min="1" max="5" value="1" step="1" />
+        <output id="strength-density-out" for="strength-density">1</output>
+        <input id="auto-merge-intensity" type="range" min="1" max="5" value="1" step="1" />
+        <output id="auto-merge-intensity-out" for="auto-merge-intensity">1</output>
+        <input id="pride-fill-percent" type="range" min="1" max="5" value="1" step="1" />
+        <output id="pride-fill-percent-out" for="pride-fill-percent">1</output>
+        <input id="guilt-shame-fill-percent" type="range" min="1" max="5" value="1" step="1" />
+        <output id="guilt-shame-fill-percent-out" for="guilt-shame-fill-percent">1</output>
+        <input id="helplessness-percent" type="range" min="1" max="5" value="1" step="1" />
+        <output id="helplessness-percent-out" for="helplessness-percent">1</output>
+        <button type="button" id="randomize-circles-btn"></button>
+
+        <p id="tile-info" aria-live="polite"></p>
+        <p id="hope-merge-hint" hidden>Drag across lines to merge</p>
+      </div>
+
       <div class="main">
         <div class="stage-wrap" id="stage-wrap">
           <!-- SVG injected by js/app.js -->
@@ -1120,23 +414,330 @@
             id="section-shop"
             data-section-col="4"
             aria-label="shop"
-          ></section>
+          >
+            <div class="shop-section">
+              <div class="shop-section__grid">
+                <div class="shop-section__item shop-card">
+                  <article class="shop-album" aria-label="Product gallery">
+                    <div class="shop-album__viewport">
+                      <div class="shop-album__track">
+                        <div class="shop-album__slide" aria-hidden="false"></div>
+                      </div>
+                    </div>
+                    <button type="button" class="shop-album__nav shop-album__nav--prev" aria-label="Previous image">
+                      <span class="shop-album__arrow shop-album__arrow--left" aria-hidden="true"></span>
+                    </button>
+                    <button type="button" class="shop-album__nav shop-album__nav--next" aria-label="Next image">
+                      <span class="shop-album__arrow shop-album__arrow--right" aria-hidden="true"></span>
+                    </button>
+                  </article>
+                  <div class="shop-card__meta">
+                    <p class="shop-card__name">name 1</p>
+                    <div class="shop-card__swatches" aria-label="Color options">
+                      <span class="shop-card__swatch" style="--swatch-color: #8B7355"></span>
+                      <span class="shop-card__swatch" style="--swatch-color: #E85D04"></span>
+                      <span class="shop-card__swatch" style="--swatch-color: #1A1A1A"></span>
+                      <span class="shop-card__swatch" style="--swatch-color: #2D4A3E"></span>
+                      <span class="shop-card__swatch" style="--swatch-color: #3D4F5C"></span>
+                    </div>
+                  </div>
+                </div>
+                <div class="shop-section__item shop-card">
+                  <article class="shop-album" aria-label="Product gallery">
+                    <div class="shop-album__viewport">
+                      <div class="shop-album__track">
+                        <div class="shop-album__slide" aria-hidden="false"></div>
+                      </div>
+                    </div>
+                    <button type="button" class="shop-album__nav shop-album__nav--prev" aria-label="Previous image">
+                      <span class="shop-album__arrow shop-album__arrow--left" aria-hidden="true"></span>
+                    </button>
+                    <button type="button" class="shop-album__nav shop-album__nav--next" aria-label="Next image">
+                      <span class="shop-album__arrow shop-album__arrow--right" aria-hidden="true"></span>
+                    </button>
+                  </article>
+                  <div class="shop-card__meta">
+                    <p class="shop-card__name">name 2</p>
+                    <div class="shop-card__swatches" aria-label="Color options">
+                      <span class="shop-card__swatch" style="--swatch-color: #8B7355"></span>
+                      <span class="shop-card__swatch" style="--swatch-color: #E85D04"></span>
+                      <span class="shop-card__swatch" style="--swatch-color: #1A1A1A"></span>
+                      <span class="shop-card__swatch" style="--swatch-color: #2D4A3E"></span>
+                      <span class="shop-card__swatch" style="--swatch-color: #3D4F5C"></span>
+                    </div>
+                  </div>
+                </div>
+                <div class="shop-section__item shop-card">
+                  <article class="shop-album" aria-label="Product gallery">
+                    <div class="shop-album__viewport">
+                      <div class="shop-album__track">
+                        <div class="shop-album__slide" aria-hidden="false"></div>
+                      </div>
+                    </div>
+                    <button type="button" class="shop-album__nav shop-album__nav--prev" aria-label="Previous image">
+                      <span class="shop-album__arrow shop-album__arrow--left" aria-hidden="true"></span>
+                    </button>
+                    <button type="button" class="shop-album__nav shop-album__nav--next" aria-label="Next image">
+                      <span class="shop-album__arrow shop-album__arrow--right" aria-hidden="true"></span>
+                    </button>
+                  </article>
+                  <div class="shop-card__meta">
+                    <p class="shop-card__name">name 3</p>
+                    <div class="shop-card__swatches" aria-label="Color options">
+                      <span class="shop-card__swatch" style="--swatch-color: #8B7355"></span>
+                      <span class="shop-card__swatch" style="--swatch-color: #E85D04"></span>
+                      <span class="shop-card__swatch" style="--swatch-color: #1A1A1A"></span>
+                      <span class="shop-card__swatch" style="--swatch-color: #2D4A3E"></span>
+                      <span class="shop-card__swatch" style="--swatch-color: #3D4F5C"></span>
+                    </div>
+                  </div>
+                </div>
+                <div class="shop-section__item shop-card">
+                  <article class="shop-album" aria-label="Product gallery">
+                    <div class="shop-album__viewport">
+                      <div class="shop-album__track">
+                        <div class="shop-album__slide" aria-hidden="false"></div>
+                      </div>
+                    </div>
+                    <button type="button" class="shop-album__nav shop-album__nav--prev" aria-label="Previous image">
+                      <span class="shop-album__arrow shop-album__arrow--left" aria-hidden="true"></span>
+                    </button>
+                    <button type="button" class="shop-album__nav shop-album__nav--next" aria-label="Next image">
+                      <span class="shop-album__arrow shop-album__arrow--right" aria-hidden="true"></span>
+                    </button>
+                  </article>
+                  <div class="shop-card__meta">
+                    <p class="shop-card__name">name 4</p>
+                    <div class="shop-card__swatches" aria-label="Color options">
+                      <span class="shop-card__swatch" style="--swatch-color: #8B7355"></span>
+                      <span class="shop-card__swatch" style="--swatch-color: #E85D04"></span>
+                      <span class="shop-card__swatch" style="--swatch-color: #1A1A1A"></span>
+                      <span class="shop-card__swatch" style="--swatch-color: #2D4A3E"></span>
+                      <span class="shop-card__swatch" style="--swatch-color: #3D4F5C"></span>
+                    </div>
+                  </div>
+                </div>
+                <div class="shop-section__item shop-card">
+                  <article class="shop-album" aria-label="Product gallery">
+                    <div class="shop-album__viewport">
+                      <div class="shop-album__track">
+                        <div class="shop-album__slide" aria-hidden="false"></div>
+                      </div>
+                    </div>
+                    <button type="button" class="shop-album__nav shop-album__nav--prev" aria-label="Previous image">
+                      <span class="shop-album__arrow shop-album__arrow--left" aria-hidden="true"></span>
+                    </button>
+                    <button type="button" class="shop-album__nav shop-album__nav--next" aria-label="Next image">
+                      <span class="shop-album__arrow shop-album__arrow--right" aria-hidden="true"></span>
+                    </button>
+                  </article>
+                  <div class="shop-card__meta">
+                    <p class="shop-card__name">name 5</p>
+                    <div class="shop-card__swatches" aria-label="Color options">
+                      <span class="shop-card__swatch" style="--swatch-color: #8B7355"></span>
+                      <span class="shop-card__swatch" style="--swatch-color: #E85D04"></span>
+                      <span class="shop-card__swatch" style="--swatch-color: #1A1A1A"></span>
+                      <span class="shop-card__swatch" style="--swatch-color: #2D4A3E"></span>
+                      <span class="shop-card__swatch" style="--swatch-color: #3D4F5C"></span>
+                    </div>
+                  </div>
+                </div>
+                <div class="shop-section__item shop-card">
+                  <article class="shop-album" aria-label="Product gallery">
+                    <div class="shop-album__viewport">
+                      <div class="shop-album__track">
+                        <div class="shop-album__slide" aria-hidden="false"></div>
+                      </div>
+                    </div>
+                    <button type="button" class="shop-album__nav shop-album__nav--prev" aria-label="Previous image">
+                      <span class="shop-album__arrow shop-album__arrow--left" aria-hidden="true"></span>
+                    </button>
+                    <button type="button" class="shop-album__nav shop-album__nav--next" aria-label="Next image">
+                      <span class="shop-album__arrow shop-album__arrow--right" aria-hidden="true"></span>
+                    </button>
+                  </article>
+                  <div class="shop-card__meta">
+                    <p class="shop-card__name">name 6</p>
+                    <div class="shop-card__swatches" aria-label="Color options">
+                      <span class="shop-card__swatch" style="--swatch-color: #8B7355"></span>
+                      <span class="shop-card__swatch" style="--swatch-color: #E85D04"></span>
+                      <span class="shop-card__swatch" style="--swatch-color: #1A1A1A"></span>
+                      <span class="shop-card__swatch" style="--swatch-color: #2D4A3E"></span>
+                      <span class="shop-card__swatch" style="--swatch-color: #3D4F5C"></span>
+                    </div>
+                  </div>
+                </div>
+                <div class="shop-section__item shop-card">
+                  <article class="shop-album" aria-label="Product gallery">
+                    <div class="shop-album__viewport">
+                      <div class="shop-album__track">
+                        <div class="shop-album__slide" aria-hidden="false"></div>
+                      </div>
+                    </div>
+                    <button type="button" class="shop-album__nav shop-album__nav--prev" aria-label="Previous image">
+                      <span class="shop-album__arrow shop-album__arrow--left" aria-hidden="true"></span>
+                    </button>
+                    <button type="button" class="shop-album__nav shop-album__nav--next" aria-label="Next image">
+                      <span class="shop-album__arrow shop-album__arrow--right" aria-hidden="true"></span>
+                    </button>
+                  </article>
+                  <div class="shop-card__meta">
+                    <p class="shop-card__name">name 7</p>
+                    <div class="shop-card__swatches" aria-label="Color options">
+                      <span class="shop-card__swatch" style="--swatch-color: #8B7355"></span>
+                      <span class="shop-card__swatch" style="--swatch-color: #E85D04"></span>
+                      <span class="shop-card__swatch" style="--swatch-color: #1A1A1A"></span>
+                      <span class="shop-card__swatch" style="--swatch-color: #2D4A3E"></span>
+                      <span class="shop-card__swatch" style="--swatch-color: #3D4F5C"></span>
+                    </div>
+                  </div>
+                </div>
+                <div class="shop-section__item shop-card">
+                  <article class="shop-album" aria-label="Product gallery">
+                    <div class="shop-album__viewport">
+                      <div class="shop-album__track">
+                        <div class="shop-album__slide" aria-hidden="false"></div>
+                      </div>
+                    </div>
+                    <button type="button" class="shop-album__nav shop-album__nav--prev" aria-label="Previous image">
+                      <span class="shop-album__arrow shop-album__arrow--left" aria-hidden="true"></span>
+                    </button>
+                    <button type="button" class="shop-album__nav shop-album__nav--next" aria-label="Next image">
+                      <span class="shop-album__arrow shop-album__arrow--right" aria-hidden="true"></span>
+                    </button>
+                  </article>
+                  <div class="shop-card__meta">
+                    <p class="shop-card__name">name 8</p>
+                    <div class="shop-card__swatches" aria-label="Color options">
+                      <span class="shop-card__swatch" style="--swatch-color: #8B7355"></span>
+                      <span class="shop-card__swatch" style="--swatch-color: #E85D04"></span>
+                      <span class="shop-card__swatch" style="--swatch-color: #1A1A1A"></span>
+                      <span class="shop-card__swatch" style="--swatch-color: #2D4A3E"></span>
+                      <span class="shop-card__swatch" style="--swatch-color: #3D4F5C"></span>
+                    </div>
+                  </div>
+                </div>
+                <div class="shop-section__item shop-card">
+                  <article class="shop-album" aria-label="Product gallery">
+                    <div class="shop-album__viewport">
+                      <div class="shop-album__track">
+                        <div class="shop-album__slide" aria-hidden="false"></div>
+                      </div>
+                    </div>
+                    <button type="button" class="shop-album__nav shop-album__nav--prev" aria-label="Previous image">
+                      <span class="shop-album__arrow shop-album__arrow--left" aria-hidden="true"></span>
+                    </button>
+                    <button type="button" class="shop-album__nav shop-album__nav--next" aria-label="Next image">
+                      <span class="shop-album__arrow shop-album__arrow--right" aria-hidden="true"></span>
+                    </button>
+                  </article>
+                  <div class="shop-card__meta">
+                    <p class="shop-card__name">name 9</p>
+                    <div class="shop-card__swatches" aria-label="Color options">
+                      <span class="shop-card__swatch" style="--swatch-color: #8B7355"></span>
+                      <span class="shop-card__swatch" style="--swatch-color: #E85D04"></span>
+                      <span class="shop-card__swatch" style="--swatch-color: #1A1A1A"></span>
+                      <span class="shop-card__swatch" style="--swatch-color: #2D4A3E"></span>
+                      <span class="shop-card__swatch" style="--swatch-color: #3D4F5C"></span>
+                    </div>
+                  </div>
+                </div>
+                <div class="shop-section__item shop-card">
+                  <article class="shop-album" aria-label="Product gallery">
+                    <div class="shop-album__viewport">
+                      <div class="shop-album__track">
+                        <div class="shop-album__slide" aria-hidden="false"></div>
+                      </div>
+                    </div>
+                    <button type="button" class="shop-album__nav shop-album__nav--prev" aria-label="Previous image">
+                      <span class="shop-album__arrow shop-album__arrow--left" aria-hidden="true"></span>
+                    </button>
+                    <button type="button" class="shop-album__nav shop-album__nav--next" aria-label="Next image">
+                      <span class="shop-album__arrow shop-album__arrow--right" aria-hidden="true"></span>
+                    </button>
+                  </article>
+                  <div class="shop-card__meta">
+                    <p class="shop-card__name">name 10</p>
+                    <div class="shop-card__swatches" aria-label="Color options">
+                      <span class="shop-card__swatch" style="--swatch-color: #8B7355"></span>
+                      <span class="shop-card__swatch" style="--swatch-color: #E85D04"></span>
+                      <span class="shop-card__swatch" style="--swatch-color: #1A1A1A"></span>
+                      <span class="shop-card__swatch" style="--swatch-color: #2D4A3E"></span>
+                      <span class="shop-card__swatch" style="--swatch-color: #3D4F5C"></span>
+                    </div>
+                  </div>
+                </div>
+                <div class="shop-section__item shop-card">
+                  <article class="shop-album" aria-label="Product gallery">
+                    <div class="shop-album__viewport">
+                      <div class="shop-album__track">
+                        <div class="shop-album__slide" aria-hidden="false"></div>
+                      </div>
+                    </div>
+                    <button type="button" class="shop-album__nav shop-album__nav--prev" aria-label="Previous image">
+                      <span class="shop-album__arrow shop-album__arrow--left" aria-hidden="true"></span>
+                    </button>
+                    <button type="button" class="shop-album__nav shop-album__nav--next" aria-label="Next image">
+                      <span class="shop-album__arrow shop-album__arrow--right" aria-hidden="true"></span>
+                    </button>
+                  </article>
+                  <div class="shop-card__meta">
+                    <p class="shop-card__name">name 11</p>
+                    <div class="shop-card__swatches" aria-label="Color options">
+                      <span class="shop-card__swatch" style="--swatch-color: #8B7355"></span>
+                      <span class="shop-card__swatch" style="--swatch-color: #E85D04"></span>
+                      <span class="shop-card__swatch" style="--swatch-color: #1A1A1A"></span>
+                      <span class="shop-card__swatch" style="--swatch-color: #2D4A3E"></span>
+                      <span class="shop-card__swatch" style="--swatch-color: #3D4F5C"></span>
+                    </div>
+                  </div>
+                </div>
+                <div class="shop-section__item shop-card">
+                  <article class="shop-album" aria-label="Product gallery">
+                    <div class="shop-album__viewport">
+                      <div class="shop-album__track">
+                        <div class="shop-album__slide" aria-hidden="false"></div>
+                      </div>
+                    </div>
+                    <button type="button" class="shop-album__nav shop-album__nav--prev" aria-label="Previous image">
+                      <span class="shop-album__arrow shop-album__arrow--left" aria-hidden="true"></span>
+                    </button>
+                    <button type="button" class="shop-album__nav shop-album__nav--next" aria-label="Next image">
+                      <span class="shop-album__arrow shop-album__arrow--right" aria-hidden="true"></span>
+                    </button>
+                  </article>
+                  <div class="shop-card__meta">
+                    <p class="shop-card__name">name 12</p>
+                    <div class="shop-card__swatches" aria-label="Color options">
+                      <span class="shop-card__swatch" style="--swatch-color: #8B7355"></span>
+                      <span class="shop-card__swatch" style="--swatch-color: #E85D04"></span>
+                      <span class="shop-card__swatch" style="--swatch-color: #1A1A1A"></span>
+                      <span class="shop-card__swatch" style="--swatch-color: #2D4A3E"></span>
+                      <span class="shop-card__swatch" style="--swatch-color: #3D4F5C"></span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
           <section
             class="page2-section"
-            id="section-archive"
+            id="section-signals"
             data-section-col="5"
-            aria-label="archive"
+            aria-label="signals"
           >
-            <div class="archive-section">
-              <h2 class="archive-section__title">Handkerchief archive</h2>
-              <p class="archive-section__empty" id="archive-empty" hidden>
-                No saved handkerchiefs yet.
-              </p>
-              <div
-                class="archive-grid"
-                id="handkerchief-archive-grid"
-                role="list"
-              ></div>
+            <div class="signals-section">
+              <p class="signals-section__intro"></p>
+            </div>
+          </section>
+          <section
+            class="page2-section"
+            id="section-new-right"
+            data-section-col="6"
+            aria-label="section right"
+          >
+            <div class="page2-edge-section">
+              <p class="page2-edge-section__intro"></p>
             </div>
           </section>
         </main>
@@ -1144,10 +745,6 @@
     </div>
 
     <style id="page2-isolated-styles">
-      #page2:not(.page2--design-panel-visible) #section-design .sidebar {
-        display: none;
-      }
-
       /*
         Page 2 responsive tokens — design reference: 1728 × 1117 px (16″ desktop).
         Give new values in px from Figma; conversion pattern at that width:
@@ -1169,8 +766,8 @@
             var(--page2-header-row-height-bottom)
         );
         --page2-header-cell-fill: #685450;
-        --page2-bg: #d9d9d9;
-        --page2-section-count: 5;
+        --page2-bg: #fff;
+        --page2-section-count: 7;
 
         display: block;
         position: fixed;
@@ -1236,7 +833,7 @@
       #page2 #section-home {
         position: relative;
         overflow: hidden;
-        background-color: #d9d9d9;
+        background-color: #fff;
         cursor: default;
       }
 
@@ -1294,6 +891,166 @@
         color: var(--color-brown);
       }
 
+      #page2 #section-shop {
+        height: auto;
+        min-height: 100vh;
+        background-color: var(--page2-bg);
+        box-sizing: border-box;
+        cursor: default;
+      }
+
+      #page2 #section-shop .shop-section {
+        box-sizing: border-box;
+        padding-top: calc(var(--page2-header-band-height) + 50px);
+        padding-inline: var(--page2-margin);
+        padding-bottom: var(--page2-margin);
+      }
+
+      #page2 #section-shop .shop-section__grid {
+        display: grid;
+        grid-template-columns: repeat(12, 1fr);
+        column-gap: var(--page2-gutter);
+        row-gap: calc(var(--page2-gutter) * 2);
+        box-sizing: border-box;
+      }
+
+      #page2 #section-shop .shop-section__item,
+      #page2 #section-shop .shop-card {
+        grid-column: span 3;
+        box-sizing: border-box;
+      }
+
+      #page2 #section-shop .shop-album {
+        position: relative;
+        width: 100%;
+        aspect-ratio: 4 / 5;
+        margin: 0;
+        padding: 0;
+        background: transparent;
+        border: 1px solid rgba(80, 70, 60, 0.35);
+        overflow: hidden;
+        box-sizing: border-box;
+      }
+
+      #page2 #section-shop .shop-card__meta {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
+        margin-top: 0.5rem;
+      }
+
+      #page2 #section-shop .shop-card__name {
+        margin: 0;
+        font-family: "DIN Condensed", sans-serif;
+        font-size: calc((var(--page2-space-20, 1.25rem) - 4px) * 0.85);
+        font-weight: 700;
+        line-height: 1.1;
+        color: #000;
+        text-align: left;
+      }
+
+      #page2 #section-shop .shop-card__swatches {
+        display: flex;
+        flex-shrink: 0;
+        align-items: center;
+        gap: 0.35rem;
+      }
+
+      #page2 #section-shop .shop-card__swatch {
+        display: block;
+        width: 0.875rem;
+        height: 0.875rem;
+        border: 1px solid rgba(0, 0, 0, 0.12);
+        border-radius: 50%;
+        background: var(--swatch-color, #ccc);
+        box-sizing: border-box;
+      }
+
+      #page2 #section-shop .shop-album__viewport {
+        height: 100%;
+        overflow: hidden;
+      }
+
+      #page2 #section-shop .shop-album__track {
+        display: flex;
+        height: 100%;
+        transition: transform 0.3s ease;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        #page2 #section-shop .shop-album__track {
+          transition: none;
+        }
+      }
+
+      #page2 #section-shop .shop-album__slide {
+        flex: 0 0 100%;
+        height: 100%;
+        min-width: 0;
+      }
+
+      #page2 #section-shop .shop-album__slide img {
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+
+      #page2 #section-shop .shop-album__nav {
+        position: absolute;
+        top: 50%;
+        z-index: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 1.5rem;
+        height: 1.5rem;
+        margin: 0;
+        padding: 0;
+        border: none;
+        background: transparent;
+        transform: translateY(-50%);
+        cursor: pointer;
+      }
+
+      #page2 #section-shop .shop-album__nav--prev {
+        left: 0.25rem;
+      }
+
+      #page2 #section-shop .shop-album__nav--next {
+        right: 0.25rem;
+      }
+
+      #page2 #section-shop .shop-album__nav:disabled {
+        opacity: 0.25;
+        cursor: default;
+      }
+
+      #page2 #section-shop .shop-album__nav:focus-visible {
+        outline: 2px solid var(--color-brown, #685450);
+        outline-offset: 2px;
+      }
+
+      #page2 #section-shop .shop-album__arrow {
+        display: block;
+        width: 0.5rem;
+        height: 0.5rem;
+        box-sizing: border-box;
+      }
+
+      #page2 #section-shop .shop-album__arrow--left {
+        border-left: 2px solid #000;
+        border-bottom: 2px solid #000;
+        transform: rotate(45deg);
+      }
+
+      #page2 #section-shop .shop-album__arrow--right {
+        border-right: 2px solid #000;
+        border-top: 2px solid #000;
+        transform: rotate(45deg);
+      }
+
       #page2 #section-design {
         position: relative;
         overflow: hidden;
@@ -1304,17 +1061,19 @@
       }
 
       #page2 #section-design > .app-shell {
-        flex-direction: row-reverse;
+        flex-direction: column;
       }
 
-      #page2 #section-design .sidebar {
-        border-right: none;
-        border-left: 1px solid #ddd;
+      #page2 #section-design > .app-shell > .main {
+        flex: 1;
+        width: 100%;
       }
 
       /* Hide design UI when another site section is active (prevents canvas bleed on home). */
       #page2:not(.page2--design-active) #section-design > .app-shell,
-      #page2:not(.page2--design-active) #section-design > .questionnaire-panel {
+      #page2:not(.page2--design-active) #section-design > .design-start,
+      #page2:not(.page2--design-active) #section-design > .questionnaire-panel,
+      #page2:not(.page2--design-active) #section-design > .design-archive {
         display: none !important;
       }
 
@@ -1420,6 +1179,103 @@
         background: rgba(100, 120, 160, 0.04);
       }
 
+      #page2 #section-new-left,
+      #page2 #section-new-right {
+        position: relative;
+        background-color: var(--page2-bg);
+      }
+
+      #page2 .page2-edge-section {
+        box-sizing: border-box;
+        height: 100%;
+        padding-top: var(--page2-header-band-height);
+        padding-inline: var(--page2-margin);
+      }
+
+      #page2 .page2-edge-section__intro {
+        margin: 0;
+        font-family: "DIN Condensed", sans-serif;
+        font-size: calc((var(--page2-space-20) - 4px) * 0.9);
+        font-weight: 700;
+        color: #888;
+      }
+
+      #page2 .page2-header-margin {
+        position: fixed;
+        top: var(--page2-space-20);
+        width: var(--page2-margin);
+        z-index: 3;
+        pointer-events: auto;
+        display: grid;
+        grid-template-rows:
+          var(--page2-header-row-height) var(--page2-header-row-height)
+          var(--page2-header-row-height-bottom);
+        align-content: start;
+      }
+
+      #page2 .page2-header-margin--left {
+        left: 0;
+      }
+
+      #page2 .page2-header-margin--right {
+        right: 0;
+      }
+
+      #page2 .page2-header-margin__cell {
+        box-shadow: none;
+        transition: background 0.2s ease, box-shadow 0.2s ease;
+      }
+
+      #page2 .page2-header-margin__cell:nth-child(1) {
+        height: var(--page2-header-row-height);
+        background: #fff;
+      }
+
+      #page2 .page2-header-margin__cell:nth-child(2) {
+        height: var(--page2-header-row-height);
+        background: transparent;
+        cursor: pointer;
+      }
+
+      #page2 .page2-header-margin__cell:nth-child(3) {
+        height: var(--page2-header-row-height-bottom);
+        background: #fff;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        #page2 .page2-header-margin__cell {
+          transition: none;
+        }
+      }
+
+      #page2.page2--grid-lines-visible
+        .page2-header-margin__cell:nth-child(1),
+      #page2.page2--grid-lines-visible
+        .page2-header-margin__cell:nth-child(3) {
+        background: rgba(80, 70, 60, 0.08);
+        box-shadow: inset 0 0 0 1px rgba(80, 70, 60, 0.28);
+      }
+
+      #page2.page2--grid-lines-visible
+        .page2-header-margin__cell:nth-child(2) {
+        background: transparent;
+        box-shadow: inset 0 0 0 1px rgba(80, 70, 60, 0.28);
+      }
+
+      #page2.page2--header-invert
+        .page2-header-margin__cell:nth-child(1),
+      #page2.page2--header-invert
+        .page2-header-margin__cell:nth-child(3) {
+        background: #fff;
+        box-shadow: none;
+      }
+
+      #page2.page2--header-invert
+        .page2-header-margin__cell:nth-child(2) {
+        background: transparent;
+        box-shadow: none;
+      }
+
       #page2 .page2-header {
         display: grid;
         column-gap: 0;
@@ -1493,30 +1349,14 @@
         box-shadow: inset 0 0 0 1px rgba(80, 70, 60, 0.28);
       }
 
-      /* Edge columns: middle cell only (top/bottom stay default) */
-      #page2 .page2-header-col--left-edge .page2-header-cell:nth-child(2),
-      #page2 .page2-header-col--right-edge .page2-header-cell:nth-child(2) {
-        background: var(--page2-header-cell-fill);
-        box-shadow: none;
-        cursor: pointer;
-      }
-
-      #page2.page2--design-panel-visible
-        .page2-header-col--right-edge
-        .page2-header-cell--design-panel-trigger {
-        box-shadow: inset 0 0 0 2px rgba(100, 120, 160, 0.55);
-      }
-
-      /* Remaining columns keep the original 6-column checkerboard */
+      /* Checkerboard pattern for 7 section columns */
       #page2 .page2-header-col:nth-child(even) .page2-header-cell:nth-child(1),
       #page2 .page2-header-col:nth-child(even) .page2-header-cell:nth-child(3) {
         background: var(--page2-header-cell-fill);
         box-shadow: none;
       }
 
-      #page2
-        .page2-header-col:nth-child(odd):not(:first-child)
-        .page2-header-cell:nth-child(2) {
+      #page2 .page2-header-col:nth-child(odd) .page2-header-cell:nth-child(2) {
         background: var(--page2-header-cell-fill);
         box-shadow: none;
       }
@@ -1565,16 +1405,6 @@
 
       /* Home section: invert checkerboard — filled cells → white */
       #page2.page2--header-invert
-        .page2-header-col--left-edge
-        .page2-header-cell:nth-child(2),
-      #page2.page2--header-invert
-        .page2-header-col--right-edge
-        .page2-header-cell:nth-child(2) {
-        background: #fff;
-        box-shadow: none;
-      }
-
-      #page2.page2--header-invert
         .page2-header-col:nth-child(even)
         .page2-header-cell:nth-child(1),
       #page2.page2--header-invert
@@ -1585,7 +1415,7 @@
       }
 
       #page2.page2--header-invert
-        .page2-header-col:nth-child(odd):not(:first-child)
+        .page2-header-col:nth-child(odd)
         .page2-header-cell:nth-child(2) {
         background: #fff;
         box-shadow: none;
@@ -1649,40 +1479,13 @@
         var gridLinesTrigger =
           page2 &&
           page2.querySelector(
-            ".page2-header-col--left-edge .page2-header-cell:nth-child(2)"
+            ".page2-header-margin--left .page2-header-margin__cell:nth-child(2)"
           );
-        var designPanelTrigger =
-          page2 &&
-          page2.querySelector(".page2-header-cell--design-panel-trigger");
         var gridLinesVisible = false;
-        var designPanelVisible = false;
 
         function applyGridLinesView() {
           if (!page2) return;
           page2.classList.toggle("page2--grid-lines-visible", gridLinesVisible);
-        }
-
-        function applyDesignPanelView() {
-          page2.classList.toggle(
-            "page2--design-panel-visible",
-            designPanelVisible
-          );
-          if (designPanelTrigger) {
-            designPanelTrigger.setAttribute(
-              "aria-pressed",
-              designPanelVisible ? "true" : "false"
-            );
-          }
-          if (designPanelVisible) {
-            window.requestAnimationFrame(function () {
-              window.dispatchEvent(new Event("resize"));
-            });
-          }
-        }
-
-        function toggleDesignPanel() {
-          designPanelVisible = !designPanelVisible;
-          applyDesignPanelView();
         }
 
         if (gridLinesTrigger) {
@@ -1696,23 +1499,12 @@
           });
         }
 
-        if (designPanelTrigger) {
-          designPanelTrigger.addEventListener("click", toggleDesignPanel);
-          designPanelTrigger.addEventListener("keydown", function (event) {
-            if (event.key === "Enter" || event.key === " ") {
-              event.preventDefault();
-              toggleDesignPanel();
-            }
-          });
-        }
-
         page2.addEventListener("page2:hide", function () {
           gridLinesVisible = false;
           applyGridLinesView();
         });
 
         applyGridLinesView();
-        applyDesignPanelView();
       })();
     </script>
 
@@ -1753,14 +1545,19 @@
         var scrollBootstrapComplete = false;
 
         function openHomeSection(animate) {
-          page2.scrollTop = 0;
           applyExpandedColumn(DEFAULT_OPEN_INDEX, animate === false ? false : undefined);
+          if (homeSection) {
+            page2.scrollTop +=
+              homeSection.getBoundingClientRect().top -
+              page2.getBoundingClientRect().top;
+          } else {
+            page2.scrollTop = 0;
+          }
           updateLogoPosition();
         }
 
         function spansForExpandedColumn(index) {
           return Array.prototype.map.call(headerCols, function (_, i) {
-            if (isLockedColumn(i)) return edgeSpanForColumn(i);
             return i === index ? MAX_SPAN : MIN_SPAN;
           });
         }
@@ -1863,16 +1660,12 @@
           var metrics = getGridMetrics();
           if (!metrics) return null;
           return spans.map(function (span, index) {
-            var edgePx = edgeTrackPx(index, metrics);
-            return edgePx !== null
-              ? edgePx
-              : spanToPixels(span, index === spans.length - 1, metrics);
+            return spanToPixels(span, index === spans.length - 1, metrics);
           });
         }
 
         function applyHeaderHoverOffset(widths, hoveredCol, openCol) {
           if (hoveredCol < 0 || hoveredCol === openCol) return widths;
-          if (isLockedColumn(hoveredCol) || isLockedColumn(openCol)) return widths;
           if (widths[openCol] - HEADER_HOVER_EXPAND_PX < getMinOpenColumnWidthPx()) {
             return widths;
           }
@@ -1880,24 +1673,6 @@
           next[hoveredCol] += HEADER_HOVER_EXPAND_PX;
           next[openCol] -= HEADER_HOVER_EXPAND_PX;
           return next;
-        }
-
-        function isLockedColumn(index) {
-          return index === 0 || index === lastColIndex;
-        }
-
-        function edgeSpanForColumn(index) {
-          return MIN_SPAN;
-        }
-
-        function edgeTrackPx(index, metrics) {
-          if (index === 0) {
-            return spanToPixels(MIN_SPAN, false, metrics);
-          }
-          if (index === lastColIndex) {
-            return spanToPixels(MIN_SPAN, true, metrics);
-          }
-          return null;
         }
 
         function isPage2Visible() {
@@ -2038,7 +1813,7 @@
                   entry.target.getAttribute("data-section-col"),
                   10
                 );
-                if (isNaN(colIndex) || isLockedColumn(colIndex)) return;
+                if (isNaN(colIndex)) return;
                 if (scrollActiveIndex === colIndex) return;
                 ensureLayoutReady();
                 applyExpandedColumn(colIndex);
@@ -2068,7 +1843,6 @@
         }
 
         headerCols.forEach(function (col, index) {
-          if (isLockedColumn(index)) return;
           if (!col.querySelector(".page2-col-title")) return;
           col.addEventListener("click", function () {
             if (!isPage2Visible()) return;
@@ -2099,7 +1873,7 @@
             if (!col) return;
             var index = getHeaderColIndex(col);
             if (index < 0) return;
-            if (index === scrollActiveIndex || isLockedColumn(index)) return;
+            if (index === scrollActiveIndex) return;
             ensureLayoutReady();
             hoveredHeaderColIndex = index;
             updateHeaderHoverClasses();
@@ -2117,12 +1891,13 @@
           if (!isPage2Visible()) return;
           if (header.contains(event.target)) return;
           if (event.target.closest("#section-design")) return;
+          if (event.target.closest("#section-shop")) return;
 
           var gridColIndex = gridColIndexAtClientX(event.clientX);
           if (gridColIndex < 0) return;
 
           var headerColIndex = headerColForGridCol(gridColIndex);
-          if (headerColIndex === null || isLockedColumn(headerColIndex)) return;
+          if (headerColIndex === null) return;
 
           scrollToSection(sectionForColumn(headerColIndex));
         });
@@ -2249,7 +2024,7 @@
                 section.getAttribute("data-section-col"),
                 10
               );
-              if (isNaN(colIndex) || isLockedColumn(colIndex)) return;
+              if (isNaN(colIndex)) return;
               if (scrollActiveIndex !== colIndex) {
                 ensureLayoutReady();
                 applyExpandedColumn(colIndex);
@@ -2356,6 +2131,7 @@
       })();
     </script>
 
+    <script defer src="js/shopAlbums.js"></script>
     <script defer src="js/constants.js"></script>
     <script defer src="js/embeddedPaletteCsv.js?v=20260608-palette12"></script>
     <script defer src="js/sheetPalettes.js?v=20260608-palette12"></script>
@@ -2369,11 +2145,12 @@
     <script defer src="js/gridUnitIcons.js"></script>
     <script defer src="js/identityControls.js?v=20260611-questionnaire-sync"></script>
     <script defer src="js/sectionProgression.js?v=20260611-canvas-grid"></script>
-    <script defer src="js/questionnaire.js?v=20260619-madlibs-dropdown"></script>
+    <script defer src="js/questionnaire.js?v=20260620-design-start"></script>
     <script defer src="js/locationCoordinates.js"></script>
     <script defer src="js/embeddedCombinationsCsv.js"></script>
     <script defer src="js/handkerchiefCombinations.js"></script>
     <script defer src="js/app.js?v=20260618-fan-drag"></script>
+    <script defer src="js/familyControls.js?v=20260620-family-section"></script>
     <script defer src="js/handkerchiefArchive.js"></script>
   </body>
 </html>
