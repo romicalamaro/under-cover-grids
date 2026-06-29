@@ -110,14 +110,68 @@
     return Circles.buildSplitGridSegments(xs, ys);
   }
 
-  function buildOctagonIconData(T, innerScale) {
-    var Topkapi = global.TopkapiGeometry;
-    if (Topkapi && Topkapi.buildUnitCellSegments) {
-      return {
-        segments: Topkapi.buildUnitCellSegments(T, resolveInnerScale(innerScale)),
-      };
+  var CUT =
+    typeof CUT_RATIO !== "undefined" ? CUT_RATIO : 1 / (2 + Math.SQRT2);
+
+  /**
+   * Single centered octagon unit, drawn like the actual octagon grid tile:
+   * octagon → inner square → inner diamond, plus the diagonal corner lines and
+   * the vertical/horizontal lines that link the octagon edges to the square.
+   * Built in a box of side `size` whose top-left is (x0, y0).
+   */
+  function buildOctagonUnitSegments(x0, y0, size) {
+    var cut = size * CUT;
+    var half = size / 2;
+    var inner = size - cut; // far edge of the inner square (cut .. size-cut)
+    var segs = [];
+
+    function push(ax, ay, bx, by) {
+      segs.push({ x1: x0 + ax, y1: y0 + ay, x2: x0 + bx, y2: y0 + by });
     }
-    return { segments: [] };
+
+    // Octagon outline (8 edges)
+    push(cut, 0, inner, 0);
+    push(inner, 0, size, cut);
+    push(size, cut, size, inner);
+    push(size, inner, inner, size);
+    push(inner, size, cut, size);
+    push(cut, size, 0, inner);
+    push(0, inner, 0, cut);
+    push(0, cut, cut, 0);
+
+    // Inner upright square
+    push(cut, cut, inner, cut);
+    push(inner, cut, inner, inner);
+    push(inner, inner, cut, inner);
+    push(cut, inner, cut, cut);
+
+    // Diagonal corner lines: square corner → midpoint of the octagon's cut edge
+    push(cut, cut, cut / 2, cut / 2);
+    push(inner, cut, size - cut / 2, cut / 2);
+    push(inner, inner, size - cut / 2, size - cut / 2);
+    push(cut, inner, cut / 2, size - cut / 2);
+
+    // Inner diamond (vertices on the square's edge midpoints)
+    push(half, cut, inner, half);
+    push(inner, half, half, inner);
+    push(half, inner, cut, half);
+    push(cut, half, half, cut);
+
+    // Vertical / horizontal lines: octagon edge midpoint → square edge
+    push(half, 0, half, cut);
+    push(half, inner, half, size);
+    push(0, half, cut, half);
+    push(inner, half, size, half);
+
+    return segs;
+  }
+
+  /**
+   * Octagon chooser icon: shows the grid's full unit (octagon + square +
+   * diamond + connector lines), centered with breathing room inside the frame.
+   */
+  function buildOctagonIconData(T) {
+    return { segments: buildOctagonUnitSegments(0, 0, T) };
   }
 
   function buildStarIconData(T, innerScale) {
@@ -195,7 +249,7 @@
     var scale = resolveInnerScale(innerScale);
 
     if (gridType === "octagon") {
-      data = buildOctagonIconData(T, scale);
+      data = buildOctagonIconData(T);
       appendSegments(geom, data.segments);
     } else if (gridType === "star") {
       data = buildStarIconData(T, scale);
@@ -246,6 +300,7 @@
     svg.setAttribute("focusable", "false");
 
     var frame = elSvg("rect");
+    frame.setAttribute("class", "grid-unit-icon__frame");
     frame.setAttribute("x", "0");
     frame.setAttribute("y", "0");
     frame.setAttribute("width", String(UNIT_SIZE));

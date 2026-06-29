@@ -1307,6 +1307,60 @@ button.sidebar__grid-btn {
   font-weight: 400;
 }
 
+/* Bottom-pinned "scroll" hint, snapped to the site's 12-column grid */
+.design-intro__panel--headscarf .design-intro__scroll-hint {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: var(--page2-space-30);
+  z-index: 4;
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  column-gap: var(--page2-gutter);
+  padding-inline: var(--page2-margin-inline);
+  box-sizing: border-box;
+  pointer-events: none;
+}
+
+/* Group text + arrow, shrunk to the text width and started at the 5th column
+   from the right, so the centered arrow lands under the middle of the sentence. */
+.design-intro__scroll-group {
+  grid-column: 8 / -1;
+  justify-self: start;
+  width: fit-content;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.design-intro__scroll-text {
+  margin: 0;
+  text-align: left;
+  font-family: "Suisse Intl", sans-serif;
+  font-weight: 200;
+  /* Half of --design-intro-text-size (defined on .design-intro__text), inlined
+     here because that token does not cascade onto this sibling element. */
+  font-size: calc(
+    (var(--page2-space-20, 1.25rem) - var(--page2-space-4)) * 1.2 * 1.5 * 0.5
+  );
+  line-height: 1.15;
+  color: var(--page2-bg, #fff);
+}
+
+/* Small white arrow, centered under the middle of the sentence */
+.design-intro__scroll-arrow {
+  display: inline-flex;
+  margin-top: var(--page2-space-4);
+  color: var(--page2-bg, #fff);
+  pointer-events: none;
+}
+
+.design-intro__scroll-arrow svg {
+  width: var(--page2-space-20, 1.25rem);
+  height: auto;
+}
+
 /* Keep design canvas from painting over the intro gate */
 #section-design:not(.section-design--questionnaire-started) > .app-shell {
   visibility: hidden;
@@ -1809,8 +1863,9 @@ button.sidebar__grid-btn {
   min-height: var(--questionnaire-card-header-height);
   height: var(--questionnaire-card-header-height);
   padding-block: var(--page2-space-4, 0.25rem);
-  padding-inline: calc((100% / 6) + var(--page2-gutter, 1.25rem))
-    var(--page2-gutter, 1.25rem);
+  /* Left padding = 0 so the number + title sit flush against the left edge of
+     the leftmost grid column (was indented by one column + gutter). */
+  padding-inline: 0 var(--page2-gutter, 1.25rem);
   border: none;
   background: transparent;
   color: inherit;
@@ -1853,8 +1908,10 @@ button.sidebar__grid-btn {
   flex: 1;
   min-width: 0;
   font-family: "PP Monument Condensed", sans-serif;
+  /* Section/folder title size: enlarged to 1.3, then reduced 30% -> 0.91
+     (base multiplier was 0.65). Controls PROFILE, GRID, etc. heading size. */
   font-size: calc(
-    (var(--page2-space-20, 1.25rem) - var(--page2-space-4)) * 0.65 *
+    (var(--page2-space-20, 1.25rem) - var(--page2-space-4)) * 0.91 *
       var(--questionnaire-text-scale, 1)
   );
   font-weight: 700;
@@ -1869,7 +1926,9 @@ button.sidebar__grid-btn {
 }
 
 .questionnaire-card__body {
-  padding-inline: calc((100% / 6) + var(--page2-gutter, 1.25rem));
+  /* Flush-left: questions + answers align to the leftmost column edge (matching
+     the section header). Right side keeps a gutter so text clears the canvas. */
+  padding-inline: 0 var(--page2-gutter, 1.25rem);
   padding-block: 0 var(--page2-space-20, 1.25rem);
   min-height: 0;
 }
@@ -2004,19 +2063,61 @@ button.sidebar__grid-btn {
 
 .questionnaire-options--grid-type {
   flex-wrap: nowrap;
-  gap: 0.5rem;
+  /* Icons take 70% of the row (4 × 17.5%); space-between turns the remaining
+     30% into equal gaps, so they still span the full width. */
+  gap: 0;
+  justify-content: space-between;
+}
+
+/* More specific than ".questionnaire-options--row .questionnaire-option" so the
+   fixed 17.5% width wins over the default flex: 1 1 auto. */
+.questionnaire-options--grid-type .questionnaire-option--grid-icon {
+  flex: 0 0 17.5%;
+  width: 17.5%;
 }
 
 .questionnaire-option--grid-icon {
   flex: 1 1 0;
   aspect-ratio: 1;
-  padding: 0.35rem;
+  padding: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 0;
   white-space: normal;
   hyphens: auto;
+  /* No white box around each grid example: drop the background, border and
+     rounded corners so the pattern reads as a bare icon. The selected state
+     (brown fill) still comes from .questionnaire-option.is-selected below. */
+  background: transparent;
+  border: none;
+  border-radius: 0;
+}
+
+/* Keep the hover free of the white/grey frame too. */
+.questionnaire-option--grid-icon:hover {
+  background: transparent;
+  border-color: transparent;
+}
+
+/* When a grid icon is already selected, hovering must NOT strip its brown
+   background. Otherwise the white lines vanish against the page and only the
+   star's brown center fill is left floating. Re-assert the selected look so all
+   four grid examples behave the same on hover. */
+.questionnaire-option--grid-icon.is-selected:hover {
+  background: var(--color-brown);
+  border-color: var(--color-brown);
+}
+
+/* On hover, thicken just the outer square frame of each grid example to 2× its
+   normal width (base stroke is 1.25 → 2.5). The CSS stroke-width here overrides
+   the inline SVG attribute set in gridUnitIcons.js. */
+.questionnaire-option--grid-icon .grid-unit-icon__frame {
+  transition: stroke-width 0.15s ease;
+}
+
+.questionnaire-option--grid-icon:hover .grid-unit-icon__frame {
+  stroke-width: 2.5;
 }
 
 .questionnaire-option--grid-icon svg {
@@ -2024,6 +2125,9 @@ button.sidebar__grid-btn {
   height: 100%;
   display: block;
   color: var(--color-brown);
+  /* Junction dots sit on the frame edges; allow them to spill past the SVG
+     bounds instead of being clipped in half. */
+  overflow: visible;
 }
 
 .questionnaire-option--grid-icon.is-selected svg {
@@ -3050,7 +3154,12 @@ button.sidebar__grid-btn {
 }
 
 .questionnaire-palette-picker {
-  --palette-dot-size: clamp(3rem, 3.472vw, 4.5rem); /* 60px @ 1728 */
+  /* 60px @ 1728. Scales with the fit-to-screen text scale (base 1.5) so the
+     palette row shrinks along with the rest of a too-tall section. */
+  --palette-dot-size: calc(
+    clamp(3rem, 3.472vw, 4.5rem) *
+      (var(--questionnaire-text-scale, 1.5) / 1.5)
+  );
   --palette-dot-overlap: 0.25;
   --palette-dot-gap-default: calc(
     var(--palette-dot-size) * var(--palette-dot-overlap) * -1
@@ -3168,7 +3277,7 @@ button.sidebar__grid-btn {
   margin: 0;
   font-family: "Suisse Intl", sans-serif;
   font-size: calc(
-    (var(--page2-space-20, 1.25rem) - var(--page2-space-4)) * 0.95 *
+    (var(--page2-space-20, 1.25rem) - var(--page2-space-4)) * 1.2 *
       var(--questionnaire-text-scale, 1)
   );
   font-weight: 400;
@@ -3202,7 +3311,13 @@ button.sidebar__grid-btn {
   display: flex;
   justify-content: center;
   width: 100%;
-  max-width: clamp(20.8rem, 54.6vw, 33.8rem); /* +30% larger spider chart */
+  /* +30% larger spider chart. Multiplied by the fit-to-screen ratio so the
+     chart shrinks together with the question text when a section is too tall
+     to fit the visible panel (base scale = 1.5, see syncQuestionnaireCardHeights). */
+  max-width: calc(
+    clamp(20.8rem, 54.6vw, 33.8rem) *
+      (var(--questionnaire-text-scale, 1.5) / 1.5)
+  );
   margin-inline: auto;
   touch-action: none;
 }
@@ -3312,7 +3427,10 @@ button.sidebar__grid-btn {
 
 @media (max-width: 640px) {
   .questionnaire-feelings-spider {
-    max-width: min(100%, 26rem); /* +30% larger spider chart */
+    /* +30% larger spider chart; also scales with the fit-to-screen text scale. */
+    max-width: calc(
+      min(100%, 26rem) * (var(--questionnaire-text-scale, 1.5) / 1.5)
+    );
   }
 
   .questionnaire-feelings-spider__label {
@@ -3448,7 +3566,7 @@ button.sidebar__grid-btn {
   margin: 0;
   font-family: "Suisse Intl", sans-serif;
   font-size: calc(
-    (var(--page2-space-20, 1.25rem) - var(--page2-space-4)) * 0.95 *
+    (var(--page2-space-20, 1.25rem) - var(--page2-space-4)) * 1.2 *
       var(--questionnaire-text-scale, 1)
   );
   font-weight: 400;

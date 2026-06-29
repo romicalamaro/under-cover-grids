@@ -19,6 +19,11 @@
   var gridTypeChosen = false;
   var frameSectionEngaged = false;
   var fanSectionEngaged = false;
+  // Highest questionnaire section the user has reached. Content unlocks are
+  // gated by this "furthest reached" index (not the live current index) so that
+  // navigating back to an earlier section never re-hides content that was
+  // already revealed.
+  var maxQuestionnaireSectionIndex = -1;
   /** @type {Array<() => void>} */
   var progressListeners = [];
 
@@ -71,7 +76,7 @@
   function isFrameContentUnlocked() {
     if (!isGridContentUnlocked()) return false;
     if (isQuestionnaireActive()) {
-      var sectionIndex = getQuestionnaireActiveSectionIndex();
+      var sectionIndex = getEffectiveQuestionnaireSectionIndex();
       if (sectionIndex >= 0) {
         return sectionIndex >= 2;
       }
@@ -82,7 +87,7 @@
   function isFanContentUnlocked() {
     if (!isFrameContentUnlocked()) return false;
     if (isQuestionnaireActive()) {
-      var sectionIndex = getQuestionnaireActiveSectionIndex();
+      var sectionIndex = getEffectiveQuestionnaireSectionIndex();
       if (sectionIndex >= 0) {
         return sectionIndex >= 3;
       }
@@ -160,6 +165,7 @@
     gridTypeChosen = false;
     frameSectionEngaged = false;
     fanSectionEngaged = false;
+    maxQuestionnaireSectionIndex = -1;
     notifySectionProgressChange();
   }
 
@@ -213,6 +219,20 @@
     if (!q || !q.isStarted || !q.isStarted()) return -1;
     if (typeof q.getActiveSectionIndex !== "function") return -1;
     return q.getActiveSectionIndex();
+  }
+
+  /**
+   * Like getQuestionnaireActiveSectionIndex, but returns the furthest section
+   * the user has reached so far (the running maximum). Going back to an earlier
+   * section keeps the max, so unlocked content stays unlocked.
+   */
+  function getEffectiveQuestionnaireSectionIndex() {
+    var idx = getQuestionnaireActiveSectionIndex();
+    if (idx < 0) return idx;
+    if (idx > maxQuestionnaireSectionIndex) {
+      maxQuestionnaireSectionIndex = idx;
+    }
+    return maxQuestionnaireSectionIndex;
   }
 
   function shouldShowProfileLabelSymbol(partId) {

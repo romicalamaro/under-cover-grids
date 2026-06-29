@@ -1921,6 +1921,16 @@
     ) {
       return false;
     }
+    // Keep the canvas empty until the user actually picks a grid type. Without
+    // this guard the default `gridType` (octagon) would render during the
+    // grid-choosing step before any button has been clicked.
+    var qAnswers =
+      typeof window.Questionnaire.getAnswers === "function"
+        ? window.Questionnaire.getAnswers()
+        : null;
+    if (!qAnswers || !qAnswers.gridType) {
+      return false;
+    }
     return !isGridTypeChosenForProgression();
   }
 
@@ -24703,7 +24713,14 @@
       if (previewId === "pride") {
         layer = wrapper.querySelector("#pride-auto-merge-root") || wrapper;
         nodes = layer.querySelectorAll("polygon, path");
-        if (nodes[0]) markerG.appendChild(nodes[0].cloneNode(true));
+        // Each Pride region renders a black drop-shadow polygon (it carries a
+        // "filter" attribute) followed by the real shape. Skip the shadow so
+        // the sign preview shows the actual mark, not the blurred shadow blob.
+        for (i = 0; i < nodes.length; i++) {
+          if (nodes[i].getAttribute("filter")) continue;
+          markerG.appendChild(nodes[i].cloneNode(true));
+          break;
+        }
         return markerG;
       }
 
@@ -24738,8 +24755,9 @@
       return markerG;
     }
 
-    function fitMarkerGroupToIconViewBox(markerGroup, iconSize) {
+    function fitMarkerGroupToIconViewBox(markerGroup, iconSize, scaleBoost) {
       iconSize = iconSize || 100;
+      scaleBoost = scaleBoost > 0 ? scaleBoost : 1;
       if (!markerGroup || !markerGroup.childNodes.length) return null;
 
       var host = ensureSignsPreviewHostSvg();
@@ -24757,7 +24775,7 @@
 
       var pad = iconSize * 0.14;
       var inner = iconSize - pad * 2;
-      var scale = Math.min(inner / bbox.width, inner / bbox.height);
+      var scale = Math.min(inner / bbox.width, inner / bbox.height) * scaleBoost;
       var cx = bbox.x + bbox.width / 2;
       var cy = bbox.y + bbox.height / 2;
 
@@ -24810,7 +24828,10 @@
       );
       if (!wrapper) return null;
       var marker = extractSingleMarkerGroup(wrapper, previewId);
-      return fitMarkerGroupToIconViewBox(marker);
+      // Pride's single diamond reads a touch small in the catalog grid, so give
+      // it a slight size boost while every other feeling keeps the default fit.
+      var scaleBoost = previewId === "pride" ? 1.18 : 1;
+      return fitMarkerGroupToIconViewBox(marker, undefined, scaleBoost);
     }
 
     function captureLayerPreview(layerSelectors, cropRect, options) {
@@ -24898,6 +24919,17 @@
       width: CANVAS_W * 0.84,
       height: CANVAS_H * 0.45,
     };
+    /**
+     * Single vertical frame side (left border + its inward division ticks),
+     * captured as a tall, narrow strip. The Signs accordion rotates this 90deg
+     * via CSS so it reads as one horizontal frame line. (Family section.)
+     */
+    var SIGN_PREVIEW_FAMILY_LINE_CROP = {
+      x: -CANVAS_W * 0.03,
+      y: CANVAS_H * 0.06,
+      width: CANVAS_W * 0.2,
+      height: CANVAS_H * 0.88,
+    };
     var SIGN_PREVIEW_FAN_CROP = {
       x: CANVAS_W * 0.1,
       y: CANVAS_H * 0.05,
@@ -24922,10 +24954,23 @@
       options = options || {};
       zeroAllFeelingsSlidersForPreview();
       setSliderValue("border-side-white-fill", "0");
-      setSliderValue("border-frame-divisions", "2");
+      var frameDivisionsStep =
+        options && typeof options.borderFrameDivisions !== "undefined"
+          ? Math.min(
+              3,
+              Math.max(1, Math.round(Number(options.borderFrameDivisions)))
+            )
+          : 2;
+      setSliderValue("border-frame-divisions", String(frameDivisionsStep));
       setHopeInteractionMode("view");
       clearMergeState();
       clearAutoMergeState();
+
+      if (previewId === "familyFrameLine") {
+        frameInsetOverlayVisible = true;
+        setSliderValue("border-side-white-fill", "0");
+        return;
+      }
 
       if (previewId.indexOf("family-loss-") === 0) {
         frameInsetOverlayVisible = true;
@@ -25000,7 +25045,10 @@
 
     function getSignPreviewLayerSelectors(previewId, options) {
       options = options || {};
-      if (previewId.indexOf("family-loss-") === 0) {
+      if (
+        previewId === "familyFrameLine" ||
+        previewId.indexOf("family-loss-") === 0
+      ) {
         return ["#layer-border-divisions", "#layer-border-divisions-overlay"];
       }
       if (previewId === "fanLeaves") {
@@ -25030,6 +25078,9 @@
 
     function getSignPreviewCropRect(previewId, options) {
       options = options || {};
+      if (previewId === "familyFrameLine") {
+        return SIGN_PREVIEW_FAMILY_LINE_CROP;
+      }
       if (previewId.indexOf("family-loss-") === 0) {
         return SIGN_PREVIEW_FAMILY_CROP;
       }

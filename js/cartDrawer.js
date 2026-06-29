@@ -8,6 +8,7 @@
   var closeBtn = drawer && drawer.querySelector(".page2-cart-drawer__close");
   var emptyEl = drawer && drawer.querySelector(".page2-cart-drawer__empty");
   var listEl = drawer && drawer.querySelector(".page2-cart-drawer__list");
+  var buyBtn = drawer && drawer.querySelector(".page2-cart-drawer__buy");
   var countEl = trigger && trigger.querySelector(".page2-cart-trigger__count");
 
   if (!page2 || !trigger || !drawer || !scrim || !closeBtn) return;
@@ -78,6 +79,7 @@
       emptyEl.hidden = false;
       listEl.hidden = true;
       listEl.innerHTML = "";
+      if (buyBtn) buyBtn.hidden = true;
       updateCartCount();
       return;
     }
@@ -85,6 +87,7 @@
     emptyEl.hidden = true;
     listEl.hidden = false;
     listEl.innerHTML = "";
+    if (buyBtn) buyBtn.hidden = false;
 
     items.forEach(function (item) {
       var li = document.createElement("li");

@@ -90,7 +90,8 @@
         [
           { t: "text", v: "I lived in Iran " },
           { t: "blank", id: "livingDuration", size: "medium", kind: "select" },
-          { t: "text", v: " until " },
+          { t: "break" },
+          { t: "text", v: "until " },
           { t: "blank", id: "leavingYear", size: "short" },
           { t: "text", v: "." },
         ],

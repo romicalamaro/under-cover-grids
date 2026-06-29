@@ -10,12 +10,28 @@
   var folderButtons = [];
   var accordionItems = [];
 
+  /**
+   * Auto-animation registry: each open Signs section that has a slider gets a
+   * looping timer here, keyed by section id, so we can stop it cleanly when the
+   * section closes (or another opens). On the Signs page the sliders are not
+   * interactive controls anymore — the visuals animate on their own.
+   */
+  var signsAnimationLoops = {};
+
   /** Project browns that disappear on the brown sign-card background */
   var SIGN_BROWN_HEX = {
     "685450": true,
     "8b7355": true,
     "5c4033": true,
   };
+
+  /**
+   * On the Signs page only, the project purple fill (#3c06a7) should read as a
+   * light grey instead — distinct from white. This recolour is scoped to the
+   * sign-icon SVGs here and does NOT touch the shared product palette.
+   */
+  var SIGN_PURPLE_HEX = "3c06a7";
+  var SIGN_PURPLE_REPLACEMENT = "#b0b0b0";
 
   function normalizeHexColor(value) {
     if (!value) return "";
@@ -91,6 +107,55 @@
     }
   }
 
+  function isSignPurpleColor(value) {
+    return normalizeHexColor(value) === SIGN_PURPLE_HEX;
+  }
+
+  function remapPurplePaintAttribute(el, attr) {
+    if (!el || !el.getAttribute) return;
+    if (isSignPurpleColor(el.getAttribute(attr))) {
+      el.setAttribute(attr, SIGN_PURPLE_REPLACEMENT);
+    }
+  }
+
+  function remapPurpleInInlineStyle(el) {
+    if (!el || !el.getAttribute) return;
+    var style = el.getAttribute("style");
+    if (!style || style.toLowerCase().indexOf(SIGN_PURPLE_HEX) < 0) return;
+    el.setAttribute(
+      "style",
+      style.replace(/#3c06a7/gi, SIGN_PURPLE_REPLACEMENT)
+    );
+  }
+
+  function remapPurpleToGrayInSvg(root) {
+    if (!root) return;
+    var nodes = root.querySelectorAll ? root.querySelectorAll("*") : [];
+    var i;
+    var el;
+
+    remapPurplePaintAttribute(root, "fill");
+    remapPurplePaintAttribute(root, "stroke");
+    remapPurpleInInlineStyle(root);
+
+    for (i = 0; i < nodes.length; i++) {
+      el = nodes[i];
+      remapPurplePaintAttribute(el, "fill");
+      remapPurplePaintAttribute(el, "stroke");
+      remapPurpleInInlineStyle(el);
+    }
+
+    var styles = root.querySelectorAll ? root.querySelectorAll("style") : [];
+    for (i = 0; i < styles.length; i++) {
+      var cssText = styles[i].textContent || "";
+      if (!cssText) continue;
+      styles[i].textContent = cssText.replace(
+        /#3c06a7/gi,
+        SIGN_PURPLE_REPLACEMENT
+      );
+    }
+  }
+
   function applyCircleOutlinePreviewStyle(svg, previewId) {
     if (previewId !== "grief" && previewId !== "longing") return;
     var markerG = svg.querySelector(".sign-card__single-marker");
@@ -133,14 +198,61 @@
     }
   }
 
-  function applySignIconColors(iconWrap, previewId) {
-    if (!iconWrap) return;
-    var svg = iconWrap.querySelector("svg");
+  /**
+   * The frame-line border side carries red/pink/cream accent fills from the
+   * design canvas. On the Signs page the sign glyphs are monochrome
+   * (browns -> white, purple -> grey), so we neutralise these accents to white
+   * too, keeping the single family frame line consistent with the other signs.
+   */
+  var SIGN_FRAME_LINE_ACCENT_HEX = {
+    ff3c3c: true,
+    f7cecd: true,
+    fffce9: true,
+  };
+
+  function isFrameLineAccentColor(value) {
+    var hex = normalizeHexColor(value);
+    return !!hex && !!SIGN_FRAME_LINE_ACCENT_HEX[hex];
+  }
+
+  function remapFrameLineAccentPaint(el, attr) {
+    if (!el || !el.getAttribute) return;
+    if (isFrameLineAccentColor(el.getAttribute(attr))) {
+      el.setAttribute(attr, "#fff");
+    }
+  }
+
+  function remapFrameLineAccentsToWhite(root) {
+    if (!root) return;
+    var nodes = root.querySelectorAll ? root.querySelectorAll("*") : [];
+    var i;
+
+    remapFrameLineAccentPaint(root, "fill");
+    remapFrameLineAccentPaint(root, "stroke");
+    for (i = 0; i < nodes.length; i++) {
+      remapFrameLineAccentPaint(nodes[i], "fill");
+      remapFrameLineAccentPaint(nodes[i], "stroke");
+    }
+  }
+
+  function applyFrameLinePreviewStyle(svg, previewId) {
+    if (previewId !== "familyFrameLine" || !svg) return;
+    remapFrameLineAccentsToWhite(svg);
+  }
+
+  function applySignSvgColors(svg, previewId) {
     if (!svg) return;
     remapBrownToWhiteInSvg(svg);
+    remapPurpleToGrayInSvg(svg);
     applyCircleOutlinePreviewStyle(svg, previewId);
     applyPainHelplessnessPreviewStyle(svg, previewId);
     applyFanLeavesPreviewStyle(svg, previewId);
+    applyFrameLinePreviewStyle(svg, previewId);
+  }
+
+  function applySignIconColors(iconWrap, previewId) {
+    if (!iconWrap) return;
+    applySignSvgColors(iconWrap.querySelector("svg"), previewId);
   }
 
   function resolveEmbeddedKey(filename) {
@@ -316,6 +428,9 @@
     if (previewId === "fanLeaves") {
       row.classList.add("page2-home-signs__sign-row--fan");
     }
+    if (previewId === "familyFrameLine") {
+      row.classList.add("page2-home-signs__sign-row--frame-line");
+    }
 
     var iconWrap = document.createElement("div");
     iconWrap.className = "page2-home-signs__sign-icon";
@@ -325,12 +440,15 @@
     if (previewId === "fanLeaves") {
       iconWrap.classList.add("page2-home-signs__sign-icon--fan");
     }
+    if (previewId === "familyFrameLine") {
+      iconWrap.classList.add("page2-home-signs__sign-icon--frame-line");
+    }
     iconWrap.appendChild(createVisualNode(entry));
     applySignIconColors(iconWrap, previewId);
 
     row.appendChild(iconWrap);
 
-    if (previewId !== "fanLeaves") {
+    if (previewId !== "fanLeaves" && previewId !== "familyFrameLine") {
       row.appendChild(
         createBilingualBlock(
           entry.label || "",
@@ -610,6 +728,87 @@
     }
   }
 
+  /**
+   * Family section frame-line divisions slider: 3 discrete steps that map to
+   * the engine's border-frame-divisions levels (1 = Minimum, 2 = Medium,
+   * 3 = Maximum). Controls how many divisions the single horizontal frame
+   * line is split into.
+   */
+  var FAMILY_DIVISIONS_DEFAULT = 2;
+  var FAMILY_DIVISIONS_CONFIG = {
+    ariaLabel:
+      "Number of divisions in the family frame line. Minimum to maximum.",
+    ariaLabelFa: "تعداد بخش‌های خط قاب خانواده. از کمینه تا بیشینه.",
+    min: 1,
+    max: 3,
+    step: 1,
+  };
+
+  function updateFamilyFramePreview(panel, step) {
+    var row = panel.querySelector('[data-preview-id="familyFrameLine"]');
+    if (
+      !row ||
+      !window.UnderCoverSignPreviews ||
+      typeof window.UnderCoverSignPreviews.renderPreview !== "function"
+    ) {
+      return;
+    }
+
+    var iconWrap = row.querySelector(".page2-home-signs__sign-icon");
+    if (!iconWrap) return;
+
+    var previewSvg = window.UnderCoverSignPreviews.renderPreview(
+      "familyFrameLine",
+      { borderFrameDivisions: step }
+    );
+    if (!previewSvg) return;
+
+    iconWrap.innerHTML = "";
+    iconWrap.appendChild(previewSvg);
+    applySignIconColors(iconWrap, "familyFrameLine");
+    row.setAttribute("data-preview-hydrated", "true");
+  }
+
+  function appendFamilyDivisionsSlider(panel) {
+    appendSignsPanelSlider(
+      panel,
+      FAMILY_DIVISIONS_CONFIG,
+      FAMILY_DIVISIONS_DEFAULT,
+      "page2-home-signs-family-divisions",
+      function (step) {
+        updateFamilyFramePreview(panel, step);
+      },
+      {
+        modifierClass: "page2-home-signs__panel-controls--compact",
+        hideHeading: true,
+        hideRangeLabels: true,
+        hideOutput: true,
+      }
+    );
+    if (
+      window.UnderCoverSignPreviews &&
+      window.UnderCoverSignPreviews.isReady &&
+      window.UnderCoverSignPreviews.isReady()
+    ) {
+      updateFamilyFramePreview(panel, FAMILY_DIVISIONS_DEFAULT);
+    }
+  }
+
+  function populateFamilyAccordionPanel(panel) {
+    var entries = entriesBySection.family || [];
+    if (!entries.length) return;
+
+    var listWrap = document.createElement("div");
+    listWrap.className =
+      "page2-home-signs__panel-list page2-home-signs__panel-list--frame-line";
+    listWrap.setAttribute("data-sign-count", "1");
+
+    listWrap.appendChild(createSignListRow(entries[0]));
+    panel.appendChild(listWrap);
+    appendFamilyDivisionsSlider(panel);
+    panel.setAttribute("data-populated", "true");
+  }
+
   function populateBodyAutonomyAccordionPanel(panel) {
     var entries = entriesBySection.bodyAutonomy || [];
     if (!entries.length) return;
@@ -665,6 +864,11 @@
       return;
     }
 
+    if (sectionId === "family") {
+      populateFamilyAccordionPanel(panel);
+      return;
+    }
+
     var entries = entriesBySection[sectionId] || [];
     if (!entries.length) return;
 
@@ -682,10 +886,311 @@
     panel.setAttribute("data-populated", "true");
   }
 
+  /**
+   * Per-section auto-animation settings. Instead of dragging a slider, each
+   * Signs visual animates on its own with a frame-synced (requestAnimationFrame)
+   * loop that sweeps smoothly back and forth between `min` and `max`.
+   *
+   * - grid (kind "grid"): driven CONTINUOUSLY — the inner scale flows through
+   *   every in-between value, so it glides like a dragged slider.
+   * - bodyAutonomy (kind "fan") and family (kind "family"): the drawing engine
+   *   only has whole steps (fan ribs / 3 frames), so we round to the nearest
+   *   step and only redraw when it changes. The MOTION is smooth/eased, but the
+   *   shape still lands on whole states because that is how the art is built.
+   *
+   * `sweepMs` = time for one min->max pass (a full open+close is ~2x that).
+   * `staticValue` = the single frame shown when the user prefers reduced motion.
+   */
+  var SIGNS_AUTO_ANIMATIONS = {
+    grid: {
+      kind: "grid",
+      min: 1,
+      max: 10,
+      sweepMs: 2200,
+      staticValue: 7,
+    },
+    bodyAutonomy: {
+      kind: "fan",
+      min: 1,
+      max: 10,
+      sweepMs: 2600,
+      staticValue: 4,
+    },
+    family: {
+      kind: "family",
+      min: 1,
+      max: 3,
+      sweepMs: 1500,
+      staticValue: 2,
+    },
+  };
+
+  function prefersReducedMotionSigns() {
+    return !!(
+      window.matchMedia &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    );
+  }
+
+  /**
+   * Grid only: feed a CONTINUOUS step value (e.g. 4.37) straight into the grid
+   * icon geometry. innerScaleValueFromStep would round to whole steps, so here
+   * we interpolate the internal inner-scale (INNER_SCALE_MIN..MAX) ourselves to
+   * keep the motion perfectly fluid.
+   */
+  function setGridIconsInnerScaleContinuous(panel, stepFloat) {
+    var icons = panel.querySelectorAll(
+      ".page2-home-signs__sign-icon[data-grid-type]"
+    );
+    if (
+      !icons.length ||
+      !window.GridUnitIcons ||
+      !window.GridUnitIcons.updateIconInnerScale
+    ) {
+      return;
+    }
+    var steps =
+      typeof INNER_SCALE_STEPS !== "undefined" ? INNER_SCALE_STEPS : 10;
+    var minScale =
+      typeof INNER_SCALE_MIN !== "undefined" ? INNER_SCALE_MIN : 0.3;
+    var maxScale =
+      typeof INNER_SCALE_MAX !== "undefined" ? INNER_SCALE_MAX : 1;
+    var t = steps > 1 ? (stepFloat - 1) / (steps - 1) : 1;
+    if (t < 0) t = 0;
+    if (t > 1) t = 1;
+    var innerScale = minScale + t * (maxScale - minScale);
+
+    var i;
+    var iconWrap;
+    var gridType;
+    var svg;
+    for (i = 0; i < icons.length; i++) {
+      iconWrap = icons[i];
+      gridType = iconWrap.getAttribute("data-grid-type");
+      if (!gridType) continue;
+      svg = iconWrap.querySelector("svg.grid-unit-icon");
+      if (!svg) continue;
+      window.GridUnitIcons.updateIconInnerScale(svg, gridType, innerScale);
+    }
+  }
+
+  /**
+   * Fan only (Signs page): we cannot touch the engine, which only has 11 whole
+   * open/close positions. So on the Signs page we render ONE fully-open fan and
+   * add our own *continuous* open/close stages with an angular wedge mask
+   * anchored at the fan's hinge.
+   *
+   * The hinge (focal point) sits at the bottom-centre of the cropped fan icon
+   * (x = 50%, y ~= 102% of the box, derived from CANVAS + the Signs crop rect).
+   * The fan's LEFT rib is the fixed edge: a conic-gradient mask anchors its left
+   * boundary at ~ -90deg (pointing left from the hinge) and grows the revealed
+   * span clockwise toward the right. A tiny span keeps only the left rib =
+   * closed; a ~180deg span reveals the whole fan = open. The left base stays
+   * static while the fan unfolds/folds to the right. Masking never distorts the
+   * art and is infinitely smooth.
+   */
+  var FAN_PIVOT_X = "50%";
+  var FAN_PIVOT_Y = "102%";
+  var FAN_LEFT_ANGLE = -90;
+  var FAN_OPEN_SPAN = 180;
+  /**
+   * On the Signs page the fan should NOT collapse all the way to a single rib.
+   * Instead the close phase stops while 3 fan leaves are still open (see the
+   * reference image). The full fan has RADIAL_FAN_RIB_COUNT ribs spread evenly
+   * across FAN_OPEN_SPAN (180deg), which makes (ribCount - 1) leaves between
+   * them. We reveal FAN_CLOSED_LEAVES of those leaves at the most-closed point,
+   * so the closed span = open span * (closed leaves / total leaves).
+   */
+  var FAN_CLOSED_LEAVES = 3;
+  var FAN_TOTAL_LEAVES =
+    (typeof RADIAL_FAN_RIB_COUNT !== "undefined" ? RADIAL_FAN_RIB_COUNT : 25) -
+    1;
+  var FAN_CLOSED_SPAN =
+    FAN_TOTAL_LEAVES > 0
+      ? FAN_OPEN_SPAN * (FAN_CLOSED_LEAVES / FAN_TOTAL_LEAVES)
+      : 12;
+  var FAN_OPEN_BASE_STEP =
+    typeof WEAR_CONTROL_OPENING_STEP_MIN !== "undefined"
+      ? WEAR_CONTROL_OPENING_STEP_MIN
+      : 0;
+
+  function fanWedgeMask(spanDeg) {
+    var span = spanDeg.toFixed(2);
+    return (
+      "conic-gradient(from " +
+      FAN_LEFT_ANGLE +
+      "deg at " +
+      FAN_PIVOT_X +
+      " " +
+      FAN_PIVOT_Y +
+      ", #000 0deg, #000 " +
+      span +
+      "deg, transparent " +
+      span +
+      "deg)"
+    );
+  }
+
+  function applyFanWedge(svg, spanDeg) {
+    var mask = fanWedgeMask(spanDeg);
+    svg.style.webkitMaskImage = mask;
+    svg.style.maskImage = mask;
+  }
+
+  function ensureFanBaseSvg(panel) {
+    if (
+      !window.UnderCoverSignPreviews ||
+      !window.UnderCoverSignPreviews.isReady ||
+      !window.UnderCoverSignPreviews.isReady() ||
+      typeof window.UnderCoverSignPreviews.renderPreview !== "function"
+    ) {
+      return null;
+    }
+
+    var row = panel.querySelector('[data-preview-id="fanLeaves"]');
+    if (!row) return null;
+    var iconWrap = row.querySelector(".page2-home-signs__sign-icon");
+    if (!iconWrap) return null;
+
+    var existing = iconWrap.querySelector("svg[data-fan-base]");
+    if (existing) return existing;
+
+    var svg = window.UnderCoverSignPreviews.renderPreview("fanLeaves", {
+      fanLeavesStep: FAN_OPEN_BASE_STEP,
+      signsFanTightCrop: true,
+      signsFanPreserveClip: true,
+    });
+    if (!svg) return null;
+
+    svg.setAttribute("data-fan-base", "1");
+    iconWrap.innerHTML = "";
+    iconWrap.appendChild(svg);
+    applySignSvgColors(svg, "fanLeaves");
+    row.setAttribute("data-preview-hydrated", "true");
+    return svg;
+  }
+
+  /**
+   * Draw one frame for a section. Grid flows continuously; fan reveals a
+   * continuous angular wedge over a single open frame; family redraws on step
+   * change.
+   */
+  function renderSignsAnimationFrame(panel, cfg, valueFloat, loopState) {
+    if (cfg.kind === "grid") {
+      setGridIconsInnerScaleContinuous(panel, valueFloat);
+      return;
+    }
+
+    if (cfg.kind === "fan") {
+      if (!loopState.fanBase || !loopState.fanBase.isConnected) {
+        loopState.fanBase = ensureFanBaseSvg(panel);
+        if (!loopState.fanBase) return;
+      }
+      var tNorm = (valueFloat - cfg.min) / (cfg.max - cfg.min);
+      if (tNorm < 0) tNorm = 0;
+      if (tNorm > 1) tNorm = 1;
+      // Loop starts at tNorm 0 = closed; tNorm 1 = fully open. Left edge fixed,
+      // right edge sweeps open.
+      var span = FAN_CLOSED_SPAN + tNorm * (FAN_OPEN_SPAN - FAN_CLOSED_SPAN);
+      applyFanWedge(loopState.fanBase, span);
+      return;
+    }
+
+    var step = Math.round(valueFloat);
+    if (loopState.lastStep === step) return;
+    loopState.lastStep = step;
+    updateFamilyFramePreview(panel, step);
+  }
+
+  function stopSignsAnimationLoop(sectionId) {
+    var loop = signsAnimationLoops[sectionId];
+    if (loop && loop.raf) {
+      window.cancelAnimationFrame(loop.raf);
+    }
+    delete signsAnimationLoops[sectionId];
+  }
+
+  function stopAllSignsAnimationLoops() {
+    var key;
+    for (key in signsAnimationLoops) {
+      if (!signsAnimationLoops.hasOwnProperty(key)) continue;
+      if (signsAnimationLoops[key].raf) {
+        window.cancelAnimationFrame(signsAnimationLoops[key].raf);
+      }
+    }
+    signsAnimationLoops = {};
+  }
+
+  /**
+   * Frame-synced ping-pong loop. A sine curve gives a value that eases in and
+   * out at both ends (slow near fully open / fully closed, quicker through the
+   * middle), so the sweep reads as a smooth, breathing open/close rather than a
+   * series of ticks.
+   */
+  function startSignsAnimationLoop(sectionId, cfg, panel) {
+    if (!cfg || !panel) return;
+    stopSignsAnimationLoop(sectionId);
+
+    var min = cfg.min;
+    var max = cfg.max;
+    if (!isFinite(min) || !isFinite(max) || max <= min) return;
+
+    var loopState = { raf: 0, lastStep: null, startTime: null };
+
+    if (prefersReducedMotionSigns()) {
+      var staticValue =
+        cfg.staticValue != null ? cfg.staticValue : (min + max) / 2;
+      if (cfg.kind === "grid") {
+        setGridIconsInnerScaleContinuous(panel, staticValue);
+      } else if (cfg.kind === "fan") {
+        updateFanPreview(panel, Math.round(staticValue));
+      } else if (cfg.kind === "family") {
+        updateFamilyFramePreview(panel, Math.round(staticValue));
+      }
+      return;
+    }
+
+    var sweepMs = cfg.sweepMs || 2200;
+    var periodMs = sweepMs * 2;
+
+    function frame(now) {
+      if (loopState.startTime === null) loopState.startTime = now;
+      var elapsed = now - loopState.startTime;
+      var theta = ((elapsed % periodMs) / periodMs) * 2 * Math.PI;
+      var eased = 0.5 - 0.5 * Math.cos(theta);
+      var value = min + eased * (max - min);
+      renderSignsAnimationFrame(panel, cfg, value, loopState);
+      loopState.raf = window.requestAnimationFrame(frame);
+    }
+
+    loopState.raf = window.requestAnimationFrame(frame);
+    signsAnimationLoops[sectionId] = loopState;
+  }
+
+  function startSignsAnimationForSection(sectionId) {
+    var cfg = SIGNS_AUTO_ANIMATIONS[sectionId];
+    if (!cfg) return;
+    var panel = document.getElementById("page2-home-signs-panel-" + sectionId);
+    if (!panel) return;
+    startSignsAnimationLoop(sectionId, cfg, panel);
+  }
+
+  function pauseSignsAnimations() {
+    stopAllSignsAnimationLoops();
+  }
+
+  function resumeSignsAnimations() {
+    if (activeSectionId) {
+      startSignsAnimationForSection(activeSectionId);
+    }
+  }
+
   function afterAccordionSectionOpened(sectionId) {
     if (!sectionId) return;
     populateAccordionPanel(sectionId);
     hydrateCanvasPreviewsForSection(sectionId);
+    stopAllSignsAnimationLoops();
+    startSignsAnimationForSection(sectionId);
     updateScrollability();
   }
 
@@ -916,6 +1421,7 @@
     if (activeSectionId === sectionId) {
       activeSectionId = null;
       updateAccordionItemState(null);
+      stopAllSignsAnimationLoops();
       updateScrollability();
       return;
     }
@@ -1079,6 +1585,14 @@
     return Number(slider.value);
   }
 
+  function getFamilyDivisionsStepFromPanel(row) {
+    var panel = row.closest(".page2-home-signs__panel");
+    if (!panel) return null;
+    var slider = panel.querySelector("#page2-home-signs-family-divisions");
+    if (!slider) return null;
+    return Number(slider.value);
+  }
+
   function hydrateCanvasPreviewRow(row) {
     var previewId = row.getAttribute("data-preview-id");
     if (!previewId) return;
@@ -1108,6 +1622,11 @@
           signsFanTightCrop: true,
           signsFanPreserveClip: true,
         };
+      }
+    } else if (previewId === "familyFrameLine") {
+      var divStep = getFamilyDivisionsStepFromPanel(row);
+      if (divStep !== null && isFinite(divStep)) {
+        previewOptions = { borderFrameDivisions: divStep };
       }
     }
 
@@ -1156,6 +1675,22 @@
       return;
     }
 
+    if (sectionId === "family") {
+      var framePanel = document.getElementById(
+        "page2-home-signs-panel-family"
+      );
+      if (framePanel && framePanel.getAttribute("data-populated") === "true") {
+        var divSlider = framePanel.querySelector(
+          "#page2-home-signs-family-divisions"
+        );
+        var divStepValue = divSlider
+          ? Number(divSlider.value)
+          : FAMILY_DIVISIONS_DEFAULT;
+        updateFamilyFramePreview(framePanel, divStepValue);
+      }
+      return;
+    }
+
     var rows = getAccordionPreviewRows(sectionId);
     var i;
     for (i = 0; i < rows.length; i++) {
@@ -1188,6 +1723,34 @@
     buildHomeSignsAccordion();
   }
 
+  /**
+   * Keeps the click (pointer) cursor on the signs rows only while the user is
+   * not scrolling. During an active scroll we add "is-scrolling" to the list so
+   * the cursor falls back to the default arrow; ~150ms after scrolling stops we
+   * remove it, so the click cursor reappears once the mouse rests.
+   */
+  var SCROLL_STOP_DELAY_MS = 150;
+
+  function setupScrollCursorHint() {
+    var listEl = document.getElementById("page2-home-signs-list");
+    if (!listEl) return;
+
+    var scroller = document.getElementById("page2") || window;
+    var scrollStopTimer = null;
+
+    function onScroll() {
+      listEl.classList.add("is-scrolling");
+      if (scrollStopTimer) {
+        window.clearTimeout(scrollStopTimer);
+      }
+      scrollStopTimer = window.setTimeout(function () {
+        listEl.classList.remove("is-scrolling");
+      }, SCROLL_STOP_DELAY_MS);
+    }
+
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+  }
+
   function onSignPreviewsReady() {
     var rows = getAccordionPreviewRows("");
     var i;
@@ -1203,6 +1766,14 @@
 
   function init() {
     buildSignsLayout();
+    setupScrollCursorHint();
+    document.addEventListener("visibilitychange", function () {
+      if (document.hidden) {
+        pauseSignsAnimations();
+      } else {
+        resumeSignsAnimations();
+      }
+    });
     window.addEventListener(
       "undercover:sign-previews-ready",
       onSignPreviewsReady

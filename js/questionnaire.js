@@ -532,6 +532,20 @@
     helplessnessPercent: [0, 30],
   };
 
+  /**
+   * Emotion couplings for the feelings spider chart: a source emotion can floor
+   * a target emotion. Anxiety partially "parents" Fear -- once Anxiety reaches
+   * step 2+, Fear can never be below step 2 (there is no anxiety without fear).
+   */
+  var FEELINGS_COUPLINGS = [
+    {
+      sourceStepId: "anxietyVerticalStroke",
+      sourceMinStep: 2,
+      targetStepId: "angerVerticalLength",
+      targetFloorStep: 2,
+    },
+  ];
+
   var GRID_BTN_IDS = {
     octagon: "grid-choose-octagon-btn",
     star: "grid-choose-star-btn",
@@ -1004,6 +1018,9 @@
     syncProfileMadlibsAnswersFromDom();
     if (stepId === "homeAt") {
       updateProfileMadlibsFieldIcon("homeAt");
+    }
+    if (stepId === "livingDuration") {
+      updateProfileMadlibsFieldIcon("livingDuration");
     }
     if (isStepComplete(stepId)) {
       profileStepsReached[stepId] = true;
@@ -2348,6 +2365,46 @@
     return Math.max(0, Math.floor(width));
   }
 
+  // Base (un-shrunk) value of --questionnaire-text-scale; mirrors the CSS
+  // default on .questionnaire-panel. Content is always MEASURED at this scale so
+  // the fit-to-screen calculation is deterministic (single pass, no oscillation).
+  var QUESTIONNAIRE_BASE_TEXT_SCALE = 1.5;
+  // Floor so question text never shrinks into illegibility, even if a section is
+  // huge. If a section still overflows at this floor, inner scroll is allowed
+  // as a last-resort fallback.
+  var QUESTIONNAIRE_MIN_TEXT_SCALE = 0.7;
+
+  // Probe scale used as the second sample point when modelling how a section's
+  // height responds to the text scale. Must differ from the base scale.
+  var QUESTIONNAIRE_PROBE_TEXT_SCALE = 1.0;
+  // Headroom (px) kept below the available height so rounding / sub-pixel slack
+  // never re-introduces a 1-2px inner scrollbar.
+  var QUESTIONNAIRE_FIT_SAFETY_PX = 12;
+
+  // Measure a single card body's natural height at the current panel scale.
+  // The body is moved offscreen so measuring never flashes on screen.
+  function measureQuestionnaireBodyHeight(body, measureWidth) {
+    var wasHidden = body.hidden;
+    body.hidden = false;
+    body.style.position = "absolute";
+    body.style.left = "-10000px";
+    body.style.top = "0";
+    body.style.width = measureWidth + "px";
+    body.style.visibility = "hidden";
+    body.style.pointerEvents = "none";
+
+    var h = Math.ceil(body.scrollHeight);
+
+    body.hidden = wasHidden;
+    body.style.position = "";
+    body.style.left = "";
+    body.style.top = "";
+    body.style.width = "";
+    body.style.visibility = "";
+    body.style.pointerEvents = "";
+    return h;
+  }
+
   function syncQuestionnaireCardHeights() {
     if (!panelEl || !stackEl) return;
 
@@ -2357,61 +2414,114 @@
     var measureWidth = getQuestionnaireCardMeasureWidth();
     if (measureWidth <= 0) return;
 
-    panelEl.classList.add("questionnaire-panel--measuring");
-
-    var maxHeaderPx = 0;
-    var maxBodyPx = 0;
+    var base = QUESTIONNAIRE_BASE_TEXT_SCALE;
+    var probe = QUESTIONNAIRE_PROBE_TEXT_SCALE;
     var i;
 
-    for (i = 0; i < cards.length; i++) {
-      var card = cards[i];
-      var header = card.querySelector(".questionnaire-card__header");
-      var body = card.querySelector(".questionnaire-card__body");
+    panelEl.classList.add("questionnaire-panel--measuring");
 
+    // --- Pass 1: measure headers + each body height at BASE scale. ---
+    panelEl.style.setProperty("--questionnaire-text-scale", String(base));
+
+    var maxHeaderPx = 0;
+    var bodies = [];
+    var hBase = [];
+
+    for (i = 0; i < cards.length; i++) {
+      var header = cards[i].querySelector(".questionnaire-card__header");
       if (header) {
         maxHeaderPx = Math.max(
           maxHeaderPx,
           Math.ceil(header.getBoundingClientRect().height)
         );
       }
-
+      // The spider chart / palette / grid-type used to be excluded from this
+      // measurement. They are now included so a section's TRUE height drives
+      // the fit-to-screen scale below — that is what removes the inner scroll.
+      var body = cards[i].querySelector(".questionnaire-card__body");
       if (!body) continue;
+      bodies.push(body);
+      hBase.push(measureQuestionnaireBodyHeight(body, measureWidth));
+    }
 
-      var wasHidden = body.hidden;
-      body.hidden = false;
-      body.style.position = "absolute";
-      body.style.left = "-10000px";
-      body.style.top = "0";
-      body.style.width = measureWidth + "px";
-      body.style.visibility = "hidden";
-      body.style.pointerEvents = "none";
-
-      var measureHidden = body.querySelectorAll(
-        ".questionnaire-feelings-spider, .questionnaire-palette-picker, .questionnaire-options--grid-type"
-      );
-      var hiddenDisplays = [];
-      var j;
-      for (j = 0; j < measureHidden.length; j++) {
-        hiddenDisplays[j] = measureHidden[j].style.display;
-        measureHidden[j].style.display = "none";
-      }
-
-      maxBodyPx = Math.max(maxBodyPx, Math.ceil(body.scrollHeight));
-
-      for (j = 0; j < measureHidden.length; j++) {
-        measureHidden[j].style.display = hiddenDisplays[j];
-      }
-
-      body.hidden = wasHidden;
-      body.style.position = "";
-      body.style.left = "";
-      body.style.top = "";
-      body.style.width = "";
-      body.style.visibility = "";
-      body.style.pointerEvents = "";
+    // --- Pass 2: measure each body height at the PROBE scale. ---
+    // Two sample points let us model height(scale) = A*scale + B per section,
+    // which correctly accounts for the parts that do NOT scale with the text
+    // (fixed rem gaps/padding) — a plain proportional guess slightly overshoots
+    // and leaves a few stray pixels of inner scroll.
+    panelEl.style.setProperty("--questionnaire-text-scale", String(probe));
+    var hProbe = [];
+    for (i = 0; i < bodies.length; i++) {
+      hProbe.push(measureQuestionnaireBodyHeight(bodies[i], measureWidth));
     }
 
     panelEl.classList.remove("questionnaire-panel--measuring");
+
+    var maxBodyPx = 0;
+    for (i = 0; i < hBase.length; i++) {
+      maxBodyPx = Math.max(maxBodyPx, hBase[i]);
+    }
+
+    // --- Fit-to-screen ---------------------------------------------------
+    // Every card always shows its header; only one card is expanded (shows its
+    // body) at a time. Compute the vertical space left for that expanded body,
+    // then pick ONE global text scale so EVERY section fits with no inner
+    // scroll and no list scroll. A single global scale keeps every question the
+    // same size (visual uniformity across sections).
+    var fitScale = base;
+    var availableBodyPx = 0;
+
+    if (scrollEl && maxHeaderPx > 0 && maxBodyPx > 0) {
+      var scrollStyles = window.getComputedStyle(scrollEl);
+      var scrollPadTop = parseFloat(scrollStyles.paddingTop) || 0;
+      var scrollPadBottom = parseFloat(scrollStyles.paddingBottom) || 0;
+      var stackPadBottom =
+        parseFloat(window.getComputedStyle(stackEl).paddingBottom) || 0;
+
+      availableBodyPx =
+        scrollEl.clientHeight -
+        scrollPadTop -
+        scrollPadBottom -
+        cards.length * maxHeaderPx -
+        stackPadBottom;
+
+      var target = availableBodyPx - QUESTIONNAIRE_FIT_SAFETY_PX;
+
+      if (target > 0) {
+        for (i = 0; i < hBase.length; i++) {
+          // Only sections that overflow at base scale can force a shrink.
+          if (hBase[i] <= target) continue;
+          // height(scale) = A*scale + B  (A = px gained per unit of scale).
+          var A = (hBase[i] - hProbe[i]) / (base - probe);
+          var requiredScale;
+          if (A > 0.0001) {
+            var B = hBase[i] - A * base;
+            requiredScale = (target - B) / A;
+          } else {
+            // Section height barely responds to scale; can't shrink it.
+            requiredScale = base;
+          }
+          if (requiredScale < fitScale) fitScale = requiredScale;
+        }
+      }
+
+      if (fitScale > base) fitScale = base;
+      if (fitScale < QUESTIONNAIRE_MIN_TEXT_SCALE) {
+        fitScale = QUESTIONNAIRE_MIN_TEXT_SCALE;
+      }
+    }
+
+    panelEl.style.setProperty("--questionnaire-text-scale", String(fitScale));
+
+    // Uniform expanded-card height. When we had to shrink, fill the available
+    // space; otherwise use the tallest natural body (cards stay as compact as
+    // their content allows while remaining uniform).
+    var finalBodyPx;
+    if (fitScale < base && availableBodyPx > 0) {
+      finalBodyPx = availableBodyPx;
+    } else {
+      finalBodyPx = maxBodyPx;
+    }
 
     if (maxHeaderPx > 0) {
       panelEl.style.setProperty(
@@ -2419,10 +2529,10 @@
         maxHeaderPx + "px"
       );
     }
-    if (maxBodyPx > 0) {
+    if (finalBodyPx > 0) {
       panelEl.style.setProperty(
         "--questionnaire-card-expanded-height",
-        maxHeaderPx + maxBodyPx + "px"
+        maxHeaderPx + finalBodyPx + "px"
       );
     }
   }
@@ -3156,6 +3266,7 @@
     window.FeelingsSpiderChart.create(wrap, {
       rows: getFeelingsTableRows(),
       scaleLabels: getFeelingsScaleLabels(),
+      couplings: FEELINGS_COUPLINGS,
       getBounds: getQuestionnaireFeelingsBounds,
       getValue: function (stepId) {
         return answers[stepId];
@@ -3358,9 +3469,28 @@
     return defaultFile;
   }
 
+  function getLivingDurationMadlibsIconFile(value) {
+    var map =
+      typeof LABEL_BAR_LIVING_DURATION_SVGS !== "undefined"
+        ? LABEL_BAR_LIVING_DURATION_SVGS
+        : {
+            smallPart: "Did you ever live in Iran?/small part of my life.svg",
+            partOfLife: "Did you ever live in Iran?/part of my life.svg",
+            mostAll: "Did you ever live in Iran?/Yes, most : all of my life.svg",
+          };
+    if (value === "smallPart") return map.smallPart;
+    if (value === "mostAll") return map.mostAll;
+    if (value === "partOfLife") return map.partOfLife;
+    // No duration chosen yet — show the middle "part of my life" sign by default.
+    return map.partOfLife;
+  }
+
   function getProfileMadlibsIconFile(stepId) {
     if (stepId === "homeAt") {
       return getHomeAtMadlibsIconFile(answers.homeAt);
+    }
+    if (stepId === "livingDuration") {
+      return getLivingDurationMadlibsIconFile(answers.livingDuration);
     }
     var map =
       typeof PROFILE_MADLIBS_FIELD_ICONS !== "undefined"
@@ -3496,14 +3626,34 @@
     if (!input || input.readOnly) {
       return String(input ? input.value : "");
     }
-    var normalized = String(input.value || "").toUpperCase();
+    var rawValue = String(input.value || "");
+    // English profile fields (from / now in / name) opt in via lang="en".
+    // For those we drop anything that is not a Latin letter or space so
+    // Hebrew (and other non-Latin characters) can't be typed or pasted in.
+    var englishOnly = input.lang === "en";
+    var normalized = englishOnly
+      ? rawValue.replace(/[^A-Za-z ]/g, "").toUpperCase()
+      : rawValue.toUpperCase();
     if (normalized !== input.value) {
       var start = input.selectionStart;
       var end = input.selectionEnd;
+      // When characters are removed, shift the caret back by however many
+      // disallowed characters sat before it, so typing/backspacing stays natural.
+      var removedBeforeStart = 0;
+      var removedBeforeEnd = 0;
+      if (englishOnly && typeof start === "number" && typeof end === "number") {
+        removedBeforeStart =
+          start - rawValue.slice(0, start).replace(/[^A-Za-z ]/g, "").length;
+        removedBeforeEnd =
+          end - rawValue.slice(0, end).replace(/[^A-Za-z ]/g, "").length;
+      }
       input.value = normalized;
       if (typeof start === "number" && typeof end === "number") {
         try {
-          input.setSelectionRange(start, end);
+          input.setSelectionRange(
+            start - removedBeforeStart,
+            end - removedBeforeEnd
+          );
         } catch (err) {
           /* ignore invalid selection on some input types */
         }
@@ -4383,6 +4533,12 @@
   function appendMadlibsTemplatePart(lineEl, part) {
     if (part.t === "text") {
       lineEl.appendChild(document.createTextNode(part.v));
+      return;
+    }
+    if (part.t === "break") {
+      // Soft line break inside the same madlibs line — keeps the "until <year>"
+      // question grouped on its own visual row without a full paragraph gap.
+      lineEl.appendChild(document.createElement("br"));
       return;
     }
     if (part.t === "nameMode") {

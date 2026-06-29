@@ -111,6 +111,7 @@
     var getValue = options.getValue;
     var setValue = options.setValue;
     var onChange = options.onChange;
+    var couplings = options.couplings || [];
     var count = rows.length;
     var steps = getSteps();
     var outerRadius = OUTER_RADIUS;
@@ -130,6 +131,50 @@
         step: step,
       };
     });
+
+    // Quick lookup so couplings can reference axes by their stepId.
+    var stateByStepId = {};
+    state.forEach(function (axisState) {
+      stateByStepId[axisState.stepId] = axisState;
+    });
+
+    /**
+     * Enforce emotion couplings (raise-only floor).
+     * When a source axis is at/above its threshold step, the target axis is
+     * pushed up to at least its floor step. It never lowers an axis, so an
+     * inactive source leaves its target untouched.
+     */
+    function applyCouplings() {
+      if (!couplings.length) return;
+      couplings.forEach(function (coupling) {
+        var source = stateByStepId[coupling.sourceStepId];
+        var target = stateByStepId[coupling.targetStepId];
+        if (!source || !target) return;
+        if (source.step >= coupling.sourceMinStep) {
+          var floorStep = clampFeelingsStepNumber(coupling.targetFloorStep);
+          if (target.step < floorStep) {
+            target.step = floorStep;
+          }
+        }
+      });
+    }
+
+    /**
+     * Run couplings and write any raised axes back through setValue, without
+     * firing onChange. Used at setup and on refresh to keep stored answers in
+     * sync after a restore.
+     */
+    function persistCoupledChanges() {
+      var prevSteps = state.map(function (s) {
+        return s.step;
+      });
+      applyCouplings();
+      state.forEach(function (s, idx) {
+        if (s.step !== prevSteps[idx] && setValue) {
+          setValue(s.stepId, feelingsValueFromStep(s.step, s.min, s.max));
+        }
+      });
+    }
 
     var svg = createSvgEl("svg", {
       class: "questionnaire-feelings-spider__svg",
@@ -275,15 +320,24 @@
     }
 
     function commitAxisStep(axisState, nextStep, silent) {
-      var clamped = clampFeelingsStepNumber(nextStep);
-      var changed = axisState.step !== clamped;
-      axisState.step = clamped;
-      if (setValue) {
-        setValue(
-          axisState.stepId,
-          feelingsValueFromStep(clamped, axisState.min, axisState.max)
-        );
-      }
+      // Snapshot every axis so couplings can change more than the dragged one,
+      // and so we only write/notify for axes that actually moved.
+      var prevSteps = state.map(function (s) {
+        return s.step;
+      });
+      axisState.step = clampFeelingsStepNumber(nextStep);
+      applyCouplings();
+
+      var changed = false;
+      state.forEach(function (s, idx) {
+        if (s.step !== prevSteps[idx]) {
+          changed = true;
+          if (setValue) {
+            setValue(s.stepId, feelingsValueFromStep(s.step, s.min, s.max));
+          }
+        }
+      });
+
       syncAllVisuals();
       if (changed) {
         if (silent) {
@@ -407,6 +461,9 @@
       });
     });
 
+    // Enforce couplings on the initial (possibly restored) values so the chart
+    // never opens in an impossible state, persisting any bump without notifying.
+    persistCoupledChanges();
     syncAllVisuals();
 
     return {
@@ -427,6 +484,7 @@
             axisState.max
           );
         });
+        persistCoupledChanges();
         syncAllVisuals();
       },
     };

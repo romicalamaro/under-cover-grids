@@ -237,42 +237,11 @@
 
     /* —— Family —— */
     {
-      id: "family-loss-lovedOne",
+      id: "family-frame-line",
       section: "family",
-      label: "Loss of a loved one",
-      labelFa: "از دست دادن عزیز",
-      visual: { type: "canvasPreview", previewId: "family-loss-lovedOne" },
-    },
-    {
-      id: "family-loss-place",
-      section: "family",
-      label: "Loss of place",
-      labelFa: "از دست دادن مکان",
-      visual: { type: "canvasPreview", previewId: "family-loss-place" },
-    },
-    {
-      id: "family-loss-languageCulture",
-      section: "family",
-      label: "Loss of language / culture",
-      labelFa: "از دست دادن زبان / فرهنگ",
-      visual: { type: "canvasPreview", previewId: "family-loss-languageCulture" },
-    },
-    {
-      id: "family-loss-freedomOfMovement",
-      section: "family",
-      label: "Loss of freedom of movement",
-      labelFa: "از دست دادن آزادی حرکت",
-      visual: { type: "canvasPreview", previewId: "family-loss-freedomOfMovement" },
-    },
-    {
-      id: "family-loss-familyFriendsConnection",
-      section: "family",
-      label: "Loss of family / friends connection",
-      labelFa: "از دست دادن ارتباط با خانواده / دوستان",
-      visual: {
-        type: "canvasPreview",
-        previewId: "family-loss-familyFriendsConnection",
-      },
+      label: "",
+      labelFa: "",
+      visual: { type: "canvasPreview", previewId: "familyFrameLine" },
     },
 
     /* —— Body autonomy —— */
