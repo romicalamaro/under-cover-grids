@@ -2817,6 +2817,53 @@ button.sidebar__grid-btn {
   outline-offset: 2px;
 }
 
+/* "Next" button — sits at the bottom-right (column 6 area) of each section,
+   advancing to the next section. Styled to match .questionnaire-archive-btn. */
+.questionnaire-card__next-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--page2-space-20, 1.25rem);
+}
+
+.questionnaire-card__next {
+  padding: clamp(0.35rem, 0.486vw, 0.525rem)
+    clamp(0.875rem, 1.215vw, 1.3125rem); /* match product-order-btn */
+  font-family: "Suisse Intl Light", sans-serif;
+  font-size: clamp(0.7rem, 0.81vw, 0.875rem);
+  font-weight: normal;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #fff;
+  background: var(--color-brown);
+  border: 1px solid var(--color-brown);
+  border-radius: 0;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.questionnaire-card__next:hover {
+  background: #fff;
+  color: var(--color-brown);
+}
+
+.questionnaire-card__next:focus-visible {
+  outline: 2px solid var(--color-brown);
+  outline-offset: 2px;
+}
+
+/* On brown-background cards the filled brown button would disappear, so invert
+   the palette to keep it visible. */
+.questionnaire-card--brown .questionnaire-card__next {
+  color: var(--color-brown);
+  background: var(--page2-bg, #fff);
+  border-color: var(--page2-bg, #fff);
+}
+
+.questionnaire-card--brown .questionnaire-card__next:hover {
+  background: var(--color-brown);
+  color: var(--page2-bg, #fff);
+}
+
 .questionnaire-step--complete .questionnaire-step__heading {
   color: var(--color-brown);
 }

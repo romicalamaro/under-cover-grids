@@ -48,6 +48,7 @@
       yes: "Yes",
       no: "No",
       continue: "Continue",
+      next: "Next",
       shuffleLayout: "Shuffle layout",
       shuffleLayoutAria:
         "Randomize emotion placement on the canvas without changing intensity values",
@@ -325,6 +326,7 @@
       yes: "بله",
       no: "خیر",
       continue: "ادامه",
+      next: "بعدی",
       shuffleLayout: "چیدمان تصادفی",
       shuffleLayoutAria:
         "جای احساسات روی بوم را بدون تغییر شدت، تصادفی کنید",

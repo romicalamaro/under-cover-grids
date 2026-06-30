@@ -2606,6 +2606,26 @@
         body.appendChild(stepEl);
       }
 
+      // "Next" button — appears at the bottom-right of every section except the
+      // last one ("Submit & Order"). It advances to the next section, an
+      // additional way to move forward alongside clicking the section headers.
+      if (i < QUESTIONNAIRE_SECTION_ORDER.length - 1) {
+        var nextFooter = document.createElement("div");
+        nextFooter.className = "questionnaire-card__next-footer";
+
+        var nextBtn = document.createElement("button");
+        nextBtn.type = "button";
+        nextBtn.className = "questionnaire-card__next";
+        nextBtn.textContent = getUiString("next");
+        nextBtn.setAttribute("aria-label", getUiString("next"));
+        nextBtn.addEventListener("click", function () {
+          advance();
+        });
+
+        nextFooter.appendChild(nextBtn);
+        body.appendChild(nextFooter);
+      }
+
       card.appendChild(header);
       card.appendChild(body);
       stackEl.appendChild(card);
