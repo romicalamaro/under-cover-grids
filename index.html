@@ -5570,17 +5570,63 @@
           return window.getComputedStyle(homeSignsEl).position === "fixed";
         }
 
+        /* A wheel event can report its delta in three units (event.deltaMode):
+           0 = pixels (trackpads, and most mice on macOS), 1 = lines, 2 = pages.
+           Mice in some browsers send LINE deltas, where deltaY is a tiny number
+           like 1-3. Forwarding that raw as pixels barely advanced the cover, so
+           the Signs page felt completely stuck with a mouse while a trackpad
+           (pixel deltas) scrolled fine. Convert every delta to pixels first so
+           one mouse notch moves a comparable, usable amount. */
+        var WHEEL_LINE_HEIGHT_PX = 40;
+
+        function wheelDeltaToPixels(event) {
+          if (event.deltaMode === 1) {
+            return event.deltaY * WHEEL_LINE_HEIGHT_PX;
+          }
+          if (event.deltaMode === 2) {
+            return (
+              event.deltaY *
+              (homeOverlay ? homeOverlay.clientHeight : WHEEL_LINE_HEIGHT_PX)
+            );
+          }
+          return event.deltaY;
+        }
+
         function forwardHomeSignsWheel(event) {
           if (!isSignsCoverScrollLocked()) return false;
+
           var maxScroll = homeOverlay.scrollHeight - homeOverlay.clientHeight;
-          var next = Math.min(
-            maxScroll,
-            Math.max(0, homeOverlay.scrollTop + event.deltaY)
-          );
-          if (next === homeOverlay.scrollTop) {
-            event.preventDefault();
-            return true;
+          /* No room to scroll through the cover — never swallow the wheel here,
+             or the user would be frozen on the Signs cover with no way out.
+             Letting the event through lets the browser/state machine continue. */
+          if (maxScroll <= 0) return false;
+
+          var current = homeOverlay.scrollTop;
+          var delta = wheelDeltaToPixels(event);
+          if (!delta) return false;
+
+          var next = Math.min(maxScroll, Math.max(0, current + delta));
+
+          /* Guard against a move that rounds to "no change" while there is still
+             room to scroll (e.g. a fractional scrollTop on a high-DPI/scaled big
+             display, or a very small delta). Force at least a 1px step in the
+             intended direction so the move lands AND a scroll event fires, which
+             is what re-runs the cover-release logic. Without this the page could
+             hard-freeze: preventDefault blocks native scroll, and with no scroll
+             event the lock never releases. */
+          if (next === current) {
+            if (delta > 0 && current < maxScroll) {
+              next = Math.min(maxScroll, Math.ceil(current) + 1);
+            } else if (delta < 0 && current > 0) {
+              next = Math.max(0, Math.floor(current) - 1);
+            }
           }
+
+          /* Genuinely at a boundary in the direction of travel — release control
+             to the browser instead of swallowing the event, so the user can
+             never get stuck. */
+          if (next === current) return false;
+
           homeOverlay.scrollTop = next;
           event.preventDefault();
           return true;
