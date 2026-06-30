@@ -97,24 +97,7 @@
             data-col="0"
           >
             <div class="page2-header-cell"></div>
-            <div class="page2-header-cell">
-              <button
-                type="button"
-                class="page2-lang-toggle"
-                aria-label="Switch language"
-              >
-                <span
-                  class="page2-lang-toggle__option page2-lang-toggle__option--active"
-                  data-lang="en"
-                  >EN</span
-                ><span
-                  class="page2-lang-toggle__option"
-                  data-lang="fa"
-                  lang="fa"
-                  >FA</span
-                >
-              </button>
-            </div>
+            <div class="page2-header-cell"></div>
             <div class="page2-header-cell"></div>
           </div>
           <div class="page2-header-col" data-col="1">
@@ -1669,20 +1652,25 @@
         box-sizing: border-box;
         display: grid;
         grid-template-columns: repeat(12, 1fr);
+        /* Two explicit rows: the small texts keep their natural height (auto),
+           and the big logo gets whatever vertical space is left. minmax(0, 1fr)
+           lets that logo row SHRINK all the way to zero rather than push the
+           footer taller — so the footer height stays locked to exactly one
+           screen below the header on every screen size. */
+        grid-template-rows: auto minmax(0, 1fr);
         column-gap: var(--page2-gutter);
-        /* Minimum gap is 0 so a tall Credits column can extend down toward the
-           logo without forcing the footer to grow past 100vh − header.
-           align-content: space-between still spreads the two rows (texts at top,
-           logo at bottom) whenever there is leftover vertical space. */
         row-gap: 0;
-        /* Top row (small texts) sits near the top; the big logo stays pinned to
-           the bottom. The red fills the gap between them. */
-        align-content: space-between;
         align-items: end;
         padding-top: 0;
         padding-bottom: 0;
         padding-inline: var(--page2-margin-inline);
+        /* Lock the footer to the band between the header's bottom edge and the
+           bottom of the screen. min == max means it is always exactly that tall:
+           its top lands on the header's bottom and it never spills past one
+           screen, no matter the aspect ratio (e.g. a short, wide 2048×1152 dpr2
+           display = 1024×576 in CSS pixels). */
         min-height: var(--page2-footer-min-height);
+        max-height: var(--page2-footer-min-height);
         background-color: var(--page2-header-shop-banner-surface); /* #ec2f1e — same red as the banner under the header */
         /* Paint a 2px red bar flush under the footer so the sub-pixel rounding
            seam at the bottom of the scroll container shows red, not white. */
@@ -1730,11 +1718,13 @@
         grid-template-columns: subgrid;
         align-items: start;
         box-sizing: border-box;
-        /* Nudge all the top texts (Pages / Credits / Contact + Bezalel logo)
-           50px down from the footer's top edge. transform is purely visual: it
-           does NOT add layout height, so the footer keeps its exact size and
-           still stops at the header's bottom edge. */
-        transform: translateY(var(--page2-space-50));
+        /* Start all the top texts (Pages / Credits / Contact + Bezalel logo)
+           50px (proportional via --page2-space-50) below the footer's top edge —
+           i.e. 50px under the header at the 16″ reference, scaling on other
+           screens. padding reserves real layout space (unlike the old transform)
+           so the logo below begins under the texts instead of overlapping them
+           when vertical space is tight. */
+        padding-top: var(--page2-space-50);
       }
 
       /* Pages + Credits + Contact all sit flush left on the same row above the
@@ -1856,7 +1846,10 @@
       #page2 .page2-footer__logo {
         grid-column: 1 / 10;
         grid-row: 2;
-        align-self: end;
+        /* Fill the leftover row (instead of taking the SVG's natural height) so
+           the SVG inside can be height-constrained and shrink to fit. */
+        align-self: stretch;
+        min-height: 0;
         width: 100%;
         margin-bottom: var(--page2-footer-logo-lift);
         line-height: 0;
@@ -1864,8 +1857,13 @@
 
       #page2 .page2-footer__logo svg {
         display: block;
+        /* Scale to fit the available box while keeping the artwork's aspect
+           ratio. The SVG carries preserveAspectRatio="xMinYMax meet" (set in
+           JS), so when the box is short and wide the height limits it and the
+           whole logo shrinks, anchored to the bottom-left, rather than forcing
+           the footer to grow past one screen. */
         width: 100%;
-        height: auto;
+        height: 100%;
         fill: #fff;
       }
 
@@ -4011,58 +4009,6 @@
         outline-offset: 2px;
       }
 
-      /* Language toggle — left-edge header middle cell (mirrors cart position) */
-      #page2 .page2-header-col--left-edge .page2-header-cell:nth-child(2) {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-      }
-
-      #page2 .page2-lang-toggle {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        transform: translateY(1px);
-        width: 100%;
-        height: 100%;
-        margin: 0;
-        padding: 0;
-        border: none;
-        background: transparent;
-        color: #fff;
-        cursor: pointer;
-        direction: ltr;
-        font-family: "Suisse Intl", sans-serif;
-        font-size: var(--page2-header-col-title-font-size);
-        font-weight: 400;
-        line-height: 1.05;
-        text-transform: uppercase;
-      }
-
-      #page2 .page2-lang-toggle__option {
-        color: inherit;
-      }
-
-      /* Only the active language is ever shown — never both at once */
-      #page2 .page2-lang-toggle__option {
-        display: none;
-      }
-
-      #page2 .page2-lang-toggle__option--active {
-        display: inline;
-      }
-
-      /* Home hero: the edge cell turns solid white, so keep the label as solid
-         dark text (the photo-through-letters knockout washed out on light areas) */
-      #page2.page2--header-invert .page2-lang-toggle {
-        color: var(--page2-header-cell-fill);
-      }
-
-      #page2 .page2-lang-toggle:focus-visible {
-        outline: 2px solid currentColor;
-        outline-offset: 2px;
-      }
-
       /* Cart drawer */
       #page2 .page2-cart-scrim {
         position: fixed;
@@ -5209,6 +5155,9 @@
               var clonedLogo = sourceLogoSvg.cloneNode(true);
               clonedLogo.removeAttribute("class");
               clonedLogo.setAttribute("aria-hidden", "true");
+              /* Fit-to-box, keep aspect ratio, anchor bottom-left so the footer
+                 logo shrinks on short/wide screens instead of overflowing. */
+              clonedLogo.setAttribute("preserveAspectRatio", "xMinYMax meet");
               logoTarget.appendChild(clonedLogo);
             }
           }
@@ -5824,36 +5773,6 @@
 
         page2.addEventListener("page2:show", startCarousel);
         page2.addEventListener("page2:hide", stopCarousel);
-      })();
-    </script>
-
-    <script>
-      /* Language toggle — visual only for now.
-         Clicking moves the "active" marker between EN and FA so exactly one
-         language is ever shown. Site content is not translated yet. */
-      (function () {
-        var toggle = document.querySelector(".page2-lang-toggle");
-        if (!toggle) return;
-
-        var options = toggle.querySelectorAll(".page2-lang-toggle__option");
-        if (options.length < 2) return;
-
-        toggle.addEventListener("click", function () {
-          var activeIndex = 0;
-          options.forEach(function (opt, i) {
-            if (opt.classList.contains("page2-lang-toggle__option--active")) {
-              activeIndex = i;
-            }
-          });
-
-          var nextIndex = (activeIndex + 1) % options.length;
-          options.forEach(function (opt, i) {
-            opt.classList.toggle(
-              "page2-lang-toggle__option--active",
-              i === nextIndex
-            );
-          });
-        });
       })();
     </script>
 
