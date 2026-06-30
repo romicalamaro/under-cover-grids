@@ -2197,6 +2197,10 @@
            row the grid auto-places each on its own row and they stack
            vertically — which is why align-items had no visible effect. */
         grid-row: 1;
+        /* Center the number within its grid column instead of hugging its left
+           edge. */
+        justify-self: center;
+        text-align: center;
       }
 
       #page2 #section-home .page2-home-signs__title {
@@ -5627,7 +5631,48 @@
           return window.getComputedStyle(homeSignsEl).position === "fixed";
         }
 
+        // #region agent log
+        function __dbgLog(msg, data) {
+          var panel = document.getElementById("__dbgPanel");
+          if (!panel) {
+            panel = document.createElement("div");
+            panel.id = "__dbgPanel";
+            panel.style.cssText =
+              "position:fixed;top:0;left:0;z-index:2147483647;max-width:48vw;max-height:62vh;overflow:auto;background:rgba(0,0,0,.85);color:#0f0;font:11px/1.35 monospace;padding:6px 8px;white-space:pre-wrap;pointer-events:none;direction:ltr;text-align:left;";
+            (document.body || document.documentElement).appendChild(panel);
+          }
+          var line =
+            new Date().toISOString().slice(11, 23) +
+            " " +
+            msg +
+            " " +
+            (data ? JSON.stringify(data) : "");
+          panel.textContent = line + "\n" + panel.textContent;
+          if (panel.textContent.length > 7000) {
+            panel.textContent = panel.textContent.slice(0, 7000);
+          }
+        }
+        // #endregion
+
         function forwardHomeSignsWheel(event) {
+          // #region agent log
+          var __locked = isSignsCoverScrollLocked();
+          __dbgLog("WHEEL-FN", {
+            dY: Math.round(event.deltaY),
+            mode: event.deltaMode,
+            lock: __locked,
+            top: homeOverlay ? Math.round(homeOverlay.scrollTop) : null,
+            max: homeOverlay
+              ? Math.round(homeOverlay.scrollHeight - homeOverlay.clientHeight)
+              : null,
+            cover: page2.classList.contains("page2--signs-covering"),
+            pass: page2.classList.contains("page2--signs-passed"),
+            done: homeSignsCoverDone,
+            pos: homeSignsEl
+              ? window.getComputedStyle(homeSignsEl).position
+              : null,
+          });
+          // #endregion
           if (!isSignsCoverScrollLocked()) return false;
           var maxScroll = homeOverlay.scrollHeight - homeOverlay.clientHeight;
           var next = Math.min(
@@ -5635,10 +5680,25 @@
             Math.max(0, homeOverlay.scrollTop + event.deltaY)
           );
           if (next === homeOverlay.scrollTop) {
+            // #region agent log
+            __dbgLog("WHEEL-STUCK", {
+              max: Math.round(maxScroll),
+              top: Math.round(homeOverlay.scrollTop),
+              dY: Math.round(event.deltaY),
+              mode: event.deltaMode,
+            });
+            // #endregion
             event.preventDefault();
             return true;
           }
           homeOverlay.scrollTop = next;
+          // #region agent log
+          __dbgLog("WHEEL-MOVE", {
+            to: Math.round(next),
+            dY: Math.round(event.deltaY),
+            mode: event.deltaMode,
+          });
+          // #endregion
           event.preventDefault();
           return true;
         }
@@ -5661,6 +5721,33 @@
             passive: false,
           });
         }
+
+        // #region agent log
+        document.addEventListener(
+          "wheel",
+          function (e) {
+            var t = e.target;
+            var overSigns = !!(homeSignsEl && t && homeSignsEl.contains(t));
+            __dbgLog("DOC-WHEEL", {
+              dY: Math.round(e.deltaY),
+              mode: e.deltaMode,
+              overSigns: overSigns,
+              tgt:
+                t && t.className && t.className.toString
+                  ? t.className.toString().slice(0, 30)
+                  : String(t && t.nodeName),
+              col: scrollActiveIndex,
+              top: homeOverlay ? Math.round(homeOverlay.scrollTop) : null,
+              max: homeOverlay
+                ? Math.round(
+                    homeOverlay.scrollHeight - homeOverlay.clientHeight
+                  )
+                : null,
+            });
+          },
+          { capture: true, passive: true }
+        );
+        // #endregion
 
         page2.addEventListener(
           "scroll",
@@ -5891,5 +5978,128 @@
     <script defer src="js/familyControls.js?v=20260620-family-section"></script>
     <script defer src="js/signsPage.js"></script>
     <script defer src="js/handkerchiefArchive.js"></script>
+
+    <!-- #region agent log (footer sizing debug — remove after verification) -->
+    <script>
+      (function footerDebugInstrumentation() {
+        function dlog(message, data) {
+          fetch(
+            "http://127.0.0.1:7558/ingest/42c020d2-3229-4d37-badc-77169455bae0",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "X-Debug-Session-Id": "e3d0f7",
+              },
+              body: JSON.stringify({
+                sessionId: "e3d0f7",
+                runId: "pre-fix",
+                location: "index.html:footer-debug",
+                message: message,
+                data: data,
+                timestamp: Date.now(),
+              }),
+            }
+          ).catch(function () {});
+        }
+
+        function round(n) {
+          return Math.round(n * 10) / 10;
+        }
+
+        function measure(reason) {
+          var page2 = document.getElementById("page2");
+          if (!page2) {
+            dlog("page2 missing", { reason: reason });
+            return;
+          }
+          var vh = window.innerHeight;
+          var vw = window.innerWidth;
+          var header = page2.querySelector(".page2-header");
+          var headerRect = header ? header.getBoundingClientRect() : null;
+          var headerHeight = headerRect ? headerRect.height : null;
+          var headerBottom = headerRect ? headerRect.bottom : null;
+
+          var cs = getComputedStyle(page2);
+          var bandVar = cs
+            .getPropertyValue("--page2-header-band-height")
+            .trim();
+          var minHVar = cs
+            .getPropertyValue("--page2-footer-min-height")
+            .trim();
+          var space50Var = cs.getPropertyValue("--page2-space-50").trim();
+
+          var footers = page2.querySelectorAll(".page2-footer");
+          var data = {
+            reason: reason,
+            vw: vw,
+            vh: vh,
+            headerHeightPx: headerHeight ? round(headerHeight) : null,
+            availableBelowHeader: headerHeight ? round(vh - headerHeight) : null,
+            bandVar: bandVar,
+            minHVar: minHVar,
+            space50Var: space50Var,
+            footers: [],
+          };
+
+          footers.forEach(function (footer) {
+            var section = footer.closest("[id^='section-']");
+            var visible = footer.offsetParent !== null;
+            var fRect = footer.getBoundingClientRect();
+            var fcs = getComputedStyle(footer);
+            var top = footer.querySelector(".page2-footer__top");
+            var topRect = top ? top.getBoundingClientRect() : null;
+            var logo = footer.querySelector(".page2-footer__logo");
+            var logoRect = logo ? logo.getBoundingClientRect() : null;
+            var footerH = footer.offsetHeight;
+            var avail = headerHeight ? vh - headerHeight : null;
+
+            data.footers.push({
+              section: section ? section.id : "(unknown)",
+              visible: visible,
+              footerOffsetHeight: round(footerH),
+              footerRectHeight: round(fRect.height),
+              computedMinHeight: fcs.minHeight,
+              computedHeight: fcs.height,
+              availableBelowHeader: avail ? round(avail) : null,
+              excessOverAvailable:
+                avail != null ? round(footerH - avail) : null,
+              topTextsTop: topRect ? round(topRect.top) : null,
+              topTextsOffsetFromFooterTop: topRect
+                ? round(topRect.top - fRect.top)
+                : null,
+              logoHeight: logoRect ? round(logoRect.height) : null,
+              logoWidth: logoRect ? round(logoRect.width) : null,
+            });
+          });
+
+          dlog("footer geometry", data);
+        }
+
+        var t = null;
+        function scheduleMeasure(reason) {
+          clearTimeout(t);
+          t = setTimeout(function () {
+            measure(reason);
+          }, 300);
+        }
+
+        if (document.readyState === "complete") {
+          scheduleMeasure("load");
+        } else {
+          window.addEventListener("load", function () {
+            scheduleMeasure("load");
+          });
+        }
+        window.addEventListener("resize", function () {
+          scheduleMeasure("resize");
+        });
+        // Allow a manual trigger from the console if needed.
+        window.__footerDebugMeasure = function () {
+          measure("manual");
+        };
+      })();
+    </script>
+    <!-- #endregion -->
   </body>
 </html>
