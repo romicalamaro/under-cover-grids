@@ -2029,6 +2029,10 @@
         display: grid;
         grid-template-columns: subgrid;
         grid-column: 1 / -1;
+        /* Text (trigger) and sign (panel) now share ONE row so the sign sits at
+           the same height as the texts instead of below them. */
+        grid-template-rows: auto;
+        align-items: center;
         position: relative;
         box-sizing: border-box;
       }
@@ -2047,23 +2051,11 @@
         transition: height 0.2s ease;
       }
 
-      /* Hover hint: thicken the two hairlines that enclose the hovered section.
-         A section's top line is its own ::before; its bottom line is the next
-         item's ::before, or the list's ::after when it is the last section. */
-      #page2 #section-home .page2-home-signs__item:hover::before,
-      #page2
-        #section-home
-        .page2-home-signs__item:hover
-        + .page2-home-signs__item::before,
-      #page2
-        #section-home
-        .page2-home-signs__list:has(.page2-home-signs__item:last-child:hover)::after {
-        height: 3px;
-      }
-
       #page2 #section-home .page2-home-signs__trigger {
         display: grid;
         grid-column: 1 / -1;
+        grid-row: 1;
+        align-self: start;
         grid-template-columns: subgrid;
         column-gap: var(--page2-gutter);
         align-items: start;
@@ -2076,9 +2068,8 @@
         color: inherit;
         font: inherit;
         text-align: left;
-        cursor: pointer;
+        cursor: default;
         -webkit-tap-highlight-color: transparent;
-        transition: padding-bottom 0.25s ease;
       }
 
       /* While the page is actively scrolling we fall back to the normal cursor;
@@ -2089,17 +2080,6 @@
         .page2-home-signs__list.is-scrolling
         .page2-home-signs__trigger {
         cursor: default;
-      }
-
-      /* Hover hint: when the cursor is anywhere over a collapsed section row,
-         grow the row downward ~10px so it looks like it is starting to open. */
-      #page2
-        #section-home
-        .page2-home-signs__item:not(.is-expanded)
-        .page2-home-signs__trigger:hover {
-        padding-bottom: calc(
-          var(--page2-signs-row-padding-block) / 2 + var(--page2-signs-hover-peek)
-        );
       }
 
       #page2 #section-home .page2-home-signs__trigger:focus-visible {
@@ -2123,21 +2103,12 @@
       #page2 #section-home .page2-home-signs__title {
         grid-column: 3 / 8;
         display: flex;
-        flex-direction: row;
-        flex-wrap: wrap;
-        align-items: baseline;
-        gap: var(--page2-signs-title-inline-gap);
+        /* Persian (last DOM child) stacks ABOVE the English title below it. */
+        flex-direction: column-reverse;
+        align-items: flex-start;
+        gap: var(--page2-signs-bilingual-gap);
         justify-self: start;
         width: fit-content;
-      }
-
-      /* Hover hint: shift the number + title from Light (200) to Regular (400)
-         while the section is hovered — heavier than the resting Light weight,
-         but not bold. Persian (Vazirmatn) already rests at 400. */
-      #page2 #section-home .page2-home-signs__item:hover .page2-home-signs__num,
-      #page2 #section-home .page2-home-signs__item:hover .page2-home-signs__title {
-        font-family: "Suisse Intl", sans-serif;
-        font-weight: 400;
       }
 
       #page2 #section-home .page2-home-signs__desc {
@@ -2190,14 +2161,19 @@
         box-sizing: border-box;
         display: grid;
         grid-column: 1 / -1;
+        /* Overlap the trigger row so the sign aligns with the text band.
+           pointer-events: none keeps the (mostly empty) overlay from blocking
+           the text underneath; the signs here are not interactive. */
+        grid-row: 1;
+        pointer-events: none;
         grid-template-columns: subgrid;
         column-gap: var(--page2-gutter);
-        padding-top: var(--page2-space-50); /* 50px @ ref */
-        padding-bottom: var(--page2-signs-row-padding-block);
+        padding-top: 0;
+        padding-bottom: 0;
       }
 
       #page2 #section-home .page2-home-signs__panel-list {
-        grid-column: 2 / 12;
+        grid-column: 1 / 11;
         display: flex;
         flex-direction: row;
         justify-content: space-between;
@@ -2209,6 +2185,36 @@
 
       #page2 #section-home .page2-home-signs__panel-list--fan {
         justify-content: center;
+      }
+
+      /* Cycling sections (profile, feelings): all sign rows are stacked in the
+         same grid cell so they overlap in one centered spot; only the
+         .is-cycle-active row is visible. The container sizes to the tallest sign
+         so the swap never shifts the layout. */
+      #page2 #section-home .page2-home-signs__panel-list--cycle {
+        display: grid;
+        justify-content: center;
+        justify-items: center;
+        align-items: start;
+      }
+
+      #page2
+        #section-home
+        .page2-home-signs__panel-list--cycle
+        .page2-home-signs__sign-row {
+        grid-area: 1 / 1;
+        flex: 0 0 auto;
+        width: auto;
+        opacity: 0;
+        visibility: hidden;
+      }
+
+      #page2
+        #section-home
+        .page2-home-signs__panel-list--cycle
+        .page2-home-signs__sign-row.is-cycle-active {
+        opacity: 1;
+        visibility: visible;
       }
 
       #page2 #section-home .page2-home-signs__sign-row {
@@ -2277,7 +2283,7 @@
           (100vw - 7 * var(--page2-gutter)) / 6
         );
         --frame-line-thickness: clamp(2.5rem, 4.05vw, 4.375rem); /* ~70px @ ref band */
-        grid-column: 6 / 8; /* centered 2 of 12 subgrid columns */
+        grid-column: 5 / 7; /* shifted one column left */
         display: flex;
         flex-direction: row;
         justify-content: center;
@@ -2618,6 +2624,20 @@
 
         #page2 #section-home .page2-home-signs__desc {
           grid-column: 3 / -1;
+        }
+
+        /* Narrow screens have no free middle column, so the sign stacks BELOW
+           the text again (the side-by-side alignment is a wide-layout feature).
+           This undoes the single-row overlap from the base rules above. */
+        #page2 #section-home .page2-home-signs__item {
+          align-items: stretch;
+        }
+
+        #page2 #section-home .page2-home-signs__panel {
+          grid-row: auto;
+          pointer-events: auto;
+          padding-top: var(--page2-space-50);
+          padding-bottom: var(--page2-signs-row-padding-block);
         }
 
         #page2 #section-home .page2-home-topkapi__media,

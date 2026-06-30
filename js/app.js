@@ -11793,6 +11793,15 @@
       } else if (shapes[i].hasAttribute("class")) {
         shapes[i].setAttribute("fill", iconFill);
       }
+      /**
+       * Drop the source SVG's class (e.g. "cls-1"). Its only purpose was the
+       * embedded <style> we just removed; leaving it lets a document-level CSS
+       * rule (from another embedded SVG sharing the same class name) override
+       * our presentation-attribute fill, which made the lion render pure white.
+       */
+      if (shapes[i].hasAttribute("class")) {
+        shapes[i].removeAttribute("class");
+      }
       if (stroke && stroke !== "none" && stroke !== "transparent") {
         shapes[i].setAttribute("stroke", iconFill);
       }

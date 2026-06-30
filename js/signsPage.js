@@ -848,9 +848,44 @@
     panel.setAttribute("data-populated", "true");
   }
 
+  /**
+   * Cycling sections (profile, feelings): build every sign row once, stacked in
+   * the same centered cell (the CSS overlaps them), and mark only the first row
+   * `is-cycle-active` so it is the one shown. startSignsCycleLoop then advances
+   * which row is active over time.
+   */
+  function populateCyclingAccordionPanel(panel, sectionId) {
+    var entries = entriesBySection[sectionId] || [];
+    if (!entries.length) return;
+
+    var listWrap = document.createElement("div");
+    listWrap.className =
+      "page2-home-signs__panel-list page2-home-signs__panel-list--cycle";
+    listWrap.setAttribute("data-sign-count", String(entries.length));
+
+    var fragment = document.createDocumentFragment();
+    var i;
+    var row;
+    for (i = 0; i < entries.length; i++) {
+      row = createSignListRow(entries[i]);
+      if (i === 0) {
+        row.classList.add("is-cycle-active");
+      }
+      fragment.appendChild(row);
+    }
+    listWrap.appendChild(fragment);
+    panel.appendChild(listWrap);
+    panel.setAttribute("data-populated", "true");
+  }
+
   function populateAccordionPanel(sectionId) {
     var panel = document.getElementById("page2-home-signs-panel-" + sectionId);
     if (!panel || panel.getAttribute("data-populated") === "true") {
+      return;
+    }
+
+    if (SIGNS_CYCLE_SECTIONS[sectionId]) {
+      populateCyclingAccordionPanel(panel, sectionId);
       return;
     }
 
@@ -913,7 +948,7 @@
       kind: "fan",
       min: 1,
       max: 10,
-      sweepMs: 2600,
+      sweepMs: 4400,
       staticValue: 4,
     },
     family: {
@@ -923,6 +958,17 @@
       sweepMs: 1500,
       staticValue: 2,
     },
+  };
+
+  /**
+   * Sections whose signs are NOT shown all at once. Instead a single sign is
+   * displayed in one fixed (centered) position and the visible sign swaps to the
+   * next one every `intervalMs`, looping through the whole list. profile and
+   * feelings use this so their many signs read one-at-a-time.
+   */
+  var SIGNS_CYCLE_SECTIONS = {
+    profile: { intervalMs: 1000 },
+    feelings: { intervalMs: 1000 },
   };
 
   function prefersReducedMotionSigns() {
@@ -1167,11 +1213,60 @@
     signsAnimationLoops[sectionId] = loopState;
   }
 
+  /**
+   * Cycle loop: every `intervalMs` move the `is-cycle-active` class to the next
+   * sign row, wrapping back to the first. Frame-synced via requestAnimationFrame
+   * and stored in signsAnimationLoops so the existing pause/resume/stop helpers
+   * (which cancel `loop.raf`) clean it up too. When the user prefers reduced
+   * motion we leave the first sign showing and never loop.
+   */
+  function startSignsCycleLoop(sectionId, cfg, panel) {
+    if (!cfg || !panel) return;
+    stopSignsAnimationLoop(sectionId);
+
+    var rows = panel.querySelectorAll(".page2-home-signs__sign-row");
+    if (!rows.length) return;
+
+    var activeIndex = 0;
+    var i;
+    for (i = 0; i < rows.length; i++) {
+      rows[i].classList.toggle("is-cycle-active", i === 0);
+    }
+
+    if (rows.length < 2 || prefersReducedMotionSigns()) {
+      return;
+    }
+
+    var intervalMs = cfg.intervalMs || 500;
+    var loopState = { raf: 0, startTime: null };
+
+    function frame(now) {
+      if (loopState.startTime === null) loopState.startTime = now;
+      var elapsed = now - loopState.startTime;
+      var nextIndex = Math.floor(elapsed / intervalMs) % rows.length;
+      if (nextIndex !== activeIndex) {
+        rows[activeIndex].classList.remove("is-cycle-active");
+        rows[nextIndex].classList.add("is-cycle-active");
+        activeIndex = nextIndex;
+      }
+      loopState.raf = window.requestAnimationFrame(frame);
+    }
+
+    loopState.raf = window.requestAnimationFrame(frame);
+    signsAnimationLoops[sectionId] = loopState;
+  }
+
   function startSignsAnimationForSection(sectionId) {
-    var cfg = SIGNS_AUTO_ANIMATIONS[sectionId];
-    if (!cfg) return;
     var panel = document.getElementById("page2-home-signs-panel-" + sectionId);
     if (!panel) return;
+
+    if (SIGNS_CYCLE_SECTIONS[sectionId]) {
+      startSignsCycleLoop(sectionId, SIGNS_CYCLE_SECTIONS[sectionId], panel);
+      return;
+    }
+
+    var cfg = SIGNS_AUTO_ANIMATIONS[sectionId];
+    if (!cfg) return;
     startSignsAnimationLoop(sectionId, cfg, panel);
   }
 
@@ -1180,8 +1275,14 @@
   }
 
   function resumeSignsAnimations() {
-    if (activeSectionId) {
-      startSignsAnimationForSection(activeSectionId);
+    var sectionId;
+    for (sectionId in SIGNS_AUTO_ANIMATIONS) {
+      if (!SIGNS_AUTO_ANIMATIONS.hasOwnProperty(sectionId)) continue;
+      startSignsAnimationForSection(sectionId);
+    }
+    for (sectionId in SIGNS_CYCLE_SECTIONS) {
+      if (!SIGNS_CYCLE_SECTIONS.hasOwnProperty(sectionId)) continue;
+      startSignsAnimationForSection(sectionId);
     }
   }
 
@@ -1389,8 +1490,8 @@
     panel.setAttribute("aria-labelledby", trigger.id);
     panel.hidden = true;
 
-    trigger.addEventListener("click", onAccordionTriggerClick);
-    trigger.addEventListener("keydown", onAccordionTriggerKeydown);
+    // Signs page is always-open now: the header is a static label, not a
+    // toggle, so we intentionally do not attach click/keydown listeners.
 
     item.appendChild(trigger);
     item.appendChild(panel);
@@ -1503,6 +1604,38 @@
 
     listEl.appendChild(fragment);
     built = true;
+    openAllSections();
+  }
+
+  /**
+   * Signs page now has no closed state: every section is permanently expanded.
+   * We mark all items open, populate + hydrate their panels, and start each
+   * section's auto-animation loop so all visuals animate at once (the per-loop
+   * stop in startSignsAnimationLoop is scoped to its own section id, so the
+   * loops coexist instead of cancelling each other).
+   */
+  function openAllSections() {
+    var i;
+    var item;
+    var sectionId;
+    var trigger;
+    var panel;
+    for (i = 0; i < accordionItems.length; i++) {
+      item = accordionItems[i];
+      sectionId = item.getAttribute("data-sign-section");
+      item.classList.add("is-expanded");
+      trigger = item.querySelector(".page2-home-signs__trigger");
+      panel = item.querySelector(".page2-home-signs__panel");
+      if (trigger) {
+        trigger.setAttribute("aria-expanded", "true");
+      }
+      if (panel) {
+        panel.hidden = false;
+      }
+      populateAccordionPanel(sectionId);
+      hydrateCanvasPreviewsForSection(sectionId);
+      startSignsAnimationForSection(sectionId);
+    }
     updateScrollability();
   }
 
@@ -1757,11 +1890,8 @@
     for (i = 0; i < rows.length; i++) {
       rows[i].removeAttribute("data-preview-hydrated");
     }
-    if (activeSectionId) {
-      hydrateCanvasPreviewsForSection(activeSectionId);
-    } else {
-      hydrateCanvasPreviews();
-    }
+    // All sections are open, so re-hydrate every preview row at once.
+    hydrateCanvasPreviews();
   }
 
   function init() {
