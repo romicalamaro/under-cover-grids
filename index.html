@@ -2166,16 +2166,6 @@
         -webkit-tap-highlight-color: transparent;
       }
 
-      /* While the page is actively scrolling we fall back to the normal cursor;
-         the click cursor returns only once scrolling stops. The "is-scrolling"
-         class is toggled on the list in js/signsPage.js. */
-      #page2
-        #section-home
-        .page2-home-signs__list.is-scrolling
-        .page2-home-signs__trigger {
-        cursor: default;
-      }
-
       #page2 #section-home .page2-home-signs__trigger:focus-visible {
         outline: 2px solid var(--page2-signs-fg);
         outline-offset: 2px;

@@ -5,9 +5,7 @@
   "use strict";
 
   var built = false;
-  var activeSectionId = null;
   var entriesBySection = {};
-  var folderButtons = [];
   var accordionItems = [];
 
   /**
@@ -372,46 +370,6 @@
     }
 
     return node;
-  }
-
-  function createSignCard(entry, index) {
-    var catalog = window.SignsCatalog;
-    var bgColor =
-      entry.bgColor ||
-      (catalog && catalog.getCardBgColor
-        ? catalog.getCardBgColor()
-        : "#442c28");
-
-    var card = document.createElement("article");
-    card.className = "sign-card";
-    card.setAttribute("data-sign-id", entry.id);
-    card.setAttribute("data-sign-section", entry.section || "");
-    if (entry.visual && entry.visual.previewId) {
-      card.setAttribute("data-preview-id", entry.visual.previewId);
-    }
-
-    var visual = document.createElement("div");
-    visual.className = "sign-card__visual";
-    visual.style.setProperty("--sign-card-bg", bgColor);
-
-    var iconWrap = document.createElement("div");
-    iconWrap.className = "sign-card__icon";
-    iconWrap.appendChild(createVisualNode(entry));
-    applySignIconColors(
-      iconWrap,
-      entry.visual && entry.visual.previewId ? entry.visual.previewId : ""
-    );
-    visual.appendChild(iconWrap);
-
-    var label = createBilingualBlock(
-      entry.label || "",
-      "",
-      "sign-card__label"
-    );
-
-    card.appendChild(visual);
-    card.appendChild(label);
-    return card;
   }
 
   function createSignListRow(entry) {
@@ -1286,15 +1244,6 @@
     }
   }
 
-  function afterAccordionSectionOpened(sectionId) {
-    if (!sectionId) return;
-    populateAccordionPanel(sectionId);
-    hydrateCanvasPreviewsForSection(sectionId);
-    stopAllSignsAnimationLoops();
-    startSignsAnimationForSection(sectionId);
-    updateScrollability();
-  }
-
   function getCatalog() {
     return window.SignsCatalog || null;
   }
@@ -1314,132 +1263,6 @@
         entriesBySection[sectionId] = [];
       }
       entriesBySection[sectionId].push(entry);
-    }
-  }
-
-  function createFolderCard(sectionMeta, index) {
-    var catalog = getCatalog();
-    var bgColor =
-      catalog && catalog.getCardBgColor ? catalog.getCardBgColor() : "#442c28";
-
-    var button = document.createElement("button");
-    button.type = "button";
-    button.className = "sign-folder-card";
-    button.setAttribute("role", "tab");
-    button.id = "signs-folder-" + sectionMeta.id;
-    button.setAttribute("data-sign-section", sectionMeta.id);
-    button.setAttribute("aria-controls", "signs-panel-" + sectionMeta.id);
-    button.setAttribute("aria-selected", "false");
-    button.setAttribute("tabindex", index === 0 ? "0" : "-1");
-
-    var visual = document.createElement("div");
-    visual.className = "sign-folder-card__visual";
-    visual.style.setProperty("--sign-card-bg", bgColor);
-
-    var label = document.createElement("div");
-    label.className = "sign-folder-card__label";
-    label.textContent = sectionMeta.label || sectionMeta.id;
-
-    button.appendChild(visual);
-    button.appendChild(label);
-    return button;
-  }
-
-  function createSectionGroup(sectionMeta) {
-    var group = document.createElement("div");
-    group.className = "signs-section-group";
-    group.setAttribute("data-sign-section", sectionMeta.id);
-    group.setAttribute("role", "tabpanel");
-    group.id = "signs-panel-" + sectionMeta.id;
-    group.setAttribute("aria-labelledby", "signs-folder-" + sectionMeta.id);
-    group.setAttribute("aria-hidden", "true");
-
-    var cardsWrap = document.createElement("div");
-    cardsWrap.className = "signs-section-group__cards";
-    group.appendChild(cardsWrap);
-    return group;
-  }
-
-  function populateSectionCards(sectionId) {
-    var group = document.querySelector(
-      '#signs-grid .signs-section-group[data-sign-section="' +
-        sectionId +
-        '"]'
-    );
-    if (!group) return;
-
-    var cardsWrap = group.querySelector(".signs-section-group__cards");
-    if (!cardsWrap || cardsWrap.getAttribute("data-populated") === "true") {
-      return;
-    }
-
-    var entries = entriesBySection[sectionId] || [];
-    if (!entries.length) return;
-
-    var fragment = document.createDocumentFragment();
-    var i;
-    for (i = 0; i < entries.length; i++) {
-      fragment.appendChild(createSignCard(entries[i], i));
-    }
-    cardsWrap.appendChild(fragment);
-    cardsWrap.setAttribute("data-populated", "true");
-  }
-
-  function updateFolderTabState(sectionId) {
-    var i;
-    var btn;
-    var hasSelection = !!sectionId;
-    for (i = 0; i < folderButtons.length; i++) {
-      btn = folderButtons[i];
-      var isActive = btn.getAttribute("data-sign-section") === sectionId;
-      btn.classList.toggle("is-active", isActive);
-      btn.classList.toggle("is-dimmed", hasSelection && !isActive);
-      btn.setAttribute("aria-selected", isActive ? "true" : "false");
-      btn.setAttribute("tabindex", isActive ? "0" : "-1");
-    }
-  }
-
-  function updateSectionGroupState(sectionId) {
-    var groups = document.querySelectorAll(
-      "#signs-grid .signs-section-group"
-    );
-    var i;
-    var group;
-    var groupId;
-
-    for (i = 0; i < groups.length; i++) {
-      group = groups[i];
-      groupId = group.getAttribute("data-sign-section");
-      var isActive = groupId === sectionId;
-
-      group.classList.toggle("is-expanded", isActive);
-      group.classList.toggle("is-active", isActive);
-      group.setAttribute("aria-hidden", isActive ? "false" : "true");
-    }
-  }
-
-  function scrollToSectionGroup(sectionId) {
-    var group = document.getElementById("signs-panel-" + sectionId);
-    if (!group) return;
-    group.scrollIntoView({ behavior: "smooth", block: "start" });
-  }
-
-  function updateAccordionItemState(sectionId) {
-    var i;
-    var item;
-    for (i = 0; i < accordionItems.length; i++) {
-      item = accordionItems[i];
-      var itemSectionId = item.getAttribute("data-sign-section");
-      var isExpanded = !!sectionId && itemSectionId === sectionId;
-      item.classList.toggle("is-expanded", isExpanded);
-      var trigger = item.querySelector(".page2-home-signs__trigger");
-      var panel = item.querySelector(".page2-home-signs__panel");
-      if (trigger) {
-        trigger.setAttribute("aria-expanded", isExpanded ? "true" : "false");
-      }
-      if (panel) {
-        panel.hidden = !isExpanded;
-      }
     }
   }
 
@@ -1496,76 +1319,6 @@
     item.appendChild(trigger);
     item.appendChild(panel);
     return item;
-  }
-
-  function getAccordionIndex(sectionId) {
-    var i;
-    for (i = 0; i < accordionItems.length; i++) {
-      if (accordionItems[i].getAttribute("data-sign-section") === sectionId) {
-        return i;
-      }
-    }
-    return -1;
-  }
-
-  function focusAccordionAtIndex(index) {
-    if (index < 0 || index >= accordionItems.length) return;
-    var trigger = accordionItems[index].querySelector(
-      ".page2-home-signs__trigger"
-    );
-    if (trigger) trigger.focus();
-  }
-
-  function toggleAccordionSection(sectionId) {
-    if (!sectionId || !entriesBySection[sectionId]) return;
-
-    if (activeSectionId === sectionId) {
-      activeSectionId = null;
-      updateAccordionItemState(null);
-      stopAllSignsAnimationLoops();
-      updateScrollability();
-      return;
-    }
-
-    activeSectionId = sectionId;
-    updateAccordionItemState(sectionId);
-    afterAccordionSectionOpened(sectionId);
-  }
-
-  function onAccordionTriggerClick(event) {
-    event.preventDefault();
-    event.stopPropagation();
-    var trigger = event.currentTarget;
-    var item = trigger.closest(".page2-home-signs__item");
-    if (!item) return;
-    toggleAccordionSection(item.getAttribute("data-sign-section"));
-  }
-
-  function onAccordionTriggerKeydown(event) {
-    var trigger = event.currentTarget;
-    var item = trigger.closest(".page2-home-signs__item");
-    if (!item) return;
-    var sectionId = item.getAttribute("data-sign-section");
-    var index = getAccordionIndex(sectionId);
-
-    if (event.key === "ArrowDown" || event.key === "ArrowRight") {
-      event.preventDefault();
-      focusAccordionAtIndex((index + 1) % accordionItems.length);
-      return;
-    }
-
-    if (event.key === "ArrowUp" || event.key === "ArrowLeft") {
-      event.preventDefault();
-      focusAccordionAtIndex(
-        (index - 1 + accordionItems.length) % accordionItems.length
-      );
-      return;
-    }
-
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      toggleAccordionSection(sectionId);
-    }
   }
 
   function buildHomeSignsAccordion() {
@@ -1637,68 +1390,6 @@
       startSignsAnimationForSection(sectionId);
     }
     updateScrollability();
-  }
-
-  function openSection(sectionId) {
-    if (!sectionId || !entriesBySection[sectionId]) return;
-
-    activeSectionId = sectionId;
-    updateAccordionItemState(sectionId);
-    afterAccordionSectionOpened(sectionId);
-
-    var item = document.getElementById("page2-home-signs-item-" + sectionId);
-    if (item) {
-      window.requestAnimationFrame(function () {
-        item.scrollIntoView({ behavior: "smooth", block: "start" });
-      });
-    }
-  }
-
-  function getFolderIndex(sectionId) {
-    var i;
-    for (i = 0; i < folderButtons.length; i++) {
-      if (folderButtons[i].getAttribute("data-sign-section") === sectionId) {
-        return i;
-      }
-    }
-    return -1;
-  }
-
-  function focusFolderAtIndex(index) {
-    if (index < 0 || index >= folderButtons.length) return;
-    folderButtons[index].focus();
-  }
-
-  function onFolderClick(event) {
-    var button = event.currentTarget;
-    var sectionId = button.getAttribute("data-sign-section");
-    openSection(sectionId);
-  }
-
-  function onFolderKeydown(event) {
-    var button = event.currentTarget;
-    var sectionId = button.getAttribute("data-sign-section");
-    var index = getFolderIndex(sectionId);
-    var nextIndex = index;
-
-    if (event.key === "ArrowRight" || event.key === "ArrowDown") {
-      event.preventDefault();
-      nextIndex = (index + 1) % folderButtons.length;
-      focusFolderAtIndex(nextIndex);
-      return;
-    }
-
-    if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
-      event.preventDefault();
-      nextIndex = (index - 1 + folderButtons.length) % folderButtons.length;
-      focusFolderAtIndex(nextIndex);
-      return;
-    }
-
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      openSection(sectionId);
-    }
   }
 
   function updateScrollability() {
@@ -1856,34 +1547,6 @@
     buildHomeSignsAccordion();
   }
 
-  /**
-   * Keeps the click (pointer) cursor on the signs rows only while the user is
-   * not scrolling. During an active scroll we add "is-scrolling" to the list so
-   * the cursor falls back to the default arrow; ~150ms after scrolling stops we
-   * remove it, so the click cursor reappears once the mouse rests.
-   */
-  var SCROLL_STOP_DELAY_MS = 150;
-
-  function setupScrollCursorHint() {
-    var listEl = document.getElementById("page2-home-signs-list");
-    if (!listEl) return;
-
-    var scroller = document.getElementById("page2") || window;
-    var scrollStopTimer = null;
-
-    function onScroll() {
-      listEl.classList.add("is-scrolling");
-      if (scrollStopTimer) {
-        window.clearTimeout(scrollStopTimer);
-      }
-      scrollStopTimer = window.setTimeout(function () {
-        listEl.classList.remove("is-scrolling");
-      }, SCROLL_STOP_DELAY_MS);
-    }
-
-    scroller.addEventListener("scroll", onScroll, { passive: true });
-  }
-
   function onSignPreviewsReady() {
     var rows = getAccordionPreviewRows("");
     var i;
@@ -1896,7 +1559,6 @@
 
   function init() {
     buildSignsLayout();
-    setupScrollCursorHint();
 
     document.addEventListener("visibilitychange", function () {
       if (document.hidden) {
@@ -1926,8 +1588,6 @@
 
   window.SignsPage = {
     build: buildSignsLayout,
-    openSection: openSection,
-    toggleSection: toggleAccordionSection,
     hydrateCanvasPreviews: hydrateCanvasPreviews,
   };
 })();
