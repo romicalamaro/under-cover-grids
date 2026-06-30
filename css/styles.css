@@ -1566,6 +1566,42 @@ button.sidebar__grid-btn {
   outline-offset: 2px;
 }
 
+/* "start again" button, pinned to the bottom-left of the questionnaire.
+   Styled to match the filled brand buttons (e.g. "add to cart" / product-order-btn).
+   The parent panel disables pointer events, so re-enable them here. */
+.questionnaire-start-again {
+  position: absolute;
+  left: var(--page2-margin-inline, 1.25rem);
+  bottom: var(--page2-space-20, 1.25rem);
+  z-index: 3;
+  margin: 0;
+  padding: clamp(0.35rem, 0.486vw, 0.525rem)
+    clamp(0.875rem, 1.215vw, 1.3125rem); /* match product-order-btn */
+  font-family: "Suisse Intl Light", sans-serif;
+  font-size: clamp(0.7rem, 0.81vw, 0.875rem);
+  font-weight: normal;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #fff;
+  background: var(--color-brown);
+  border: 1px solid var(--color-brown);
+  border-radius: 0;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.questionnaire-start-again:hover,
+.questionnaire-start-again:focus-visible {
+  background: #fff;
+  color: var(--color-brown);
+}
+
+.questionnaire-start-again:focus-visible {
+  outline: 2px solid var(--color-brown);
+  outline-offset: 2px;
+}
+
 #section-design.section-design--intro-slide {
   overflow: hidden;
 }
@@ -1738,6 +1774,13 @@ button.sidebar__grid-btn {
 
 .questionnaire-family-dot-options {
   margin-top: 0.5rem;
+}
+
+/* Family / friends in Iran page (questionnaire): left-align each answer so the
+   radio circle sits at the left edge of its option instead of being centered. */
+.questionnaire-family-dot-options .family-dot-option {
+  align-items: flex-start;
+  text-align: left;
 }
 
 .family-dot-option {
@@ -2744,23 +2787,24 @@ button.sidebar__grid-btn {
 .questionnaire-archive-btn {
   align-self: flex-end;
   margin-top: 0.25rem;
-  padding: 0.45rem 1.1rem;
-  font-family: "PP Monument Condensed", sans-serif;
-  font-size: calc(
-    (var(--page2-space-20, 1.25rem) - var(--page2-space-4)) * 0.75 *
-      var(--questionnaire-text-scale, 1)
-  );
-  font-weight: 700;
+  padding: clamp(0.35rem, 0.486vw, 0.525rem)
+    clamp(0.875rem, 1.215vw, 1.3125rem); /* match product-order-btn */
+  font-family: "Suisse Intl Light", sans-serif;
+  font-size: clamp(0.7rem, 0.81vw, 0.875rem);
+  font-weight: normal;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   color: #fff;
   background: var(--color-brown);
   border: 1px solid var(--color-brown);
-  border-radius: 4px;
+  border-radius: 0;
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: background 0.2s ease, color 0.2s ease;
 }
 
 .questionnaire-archive-btn:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--color-brown) 80%, white);
+  background: #fff;
+  color: var(--color-brown);
 }
 
 .questionnaire-archive-btn:disabled {
@@ -2862,7 +2906,12 @@ button.sidebar__grid-btn {
   display: grid;
   /* 12-column system: each card spans 2 columns => 6 cards per row */
   grid-template-columns: repeat(12, 1fr);
-  gap: 1rem;
+  /* Use the page2 reference grid gutter for the column gaps so a 2-column card
+     lines up exactly with two grid columns. A fixed gap (was 1rem) is narrower
+     than --page2-gutter, which widened each column and pushed each handkerchief
+     past the right grid line. */
+  column-gap: var(--page2-gutter);
+  row-gap: 1rem;
 }
 
 .archive-card {

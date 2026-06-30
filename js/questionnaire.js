@@ -6013,6 +6013,12 @@
         beginQuestionnaire("fa");
       });
     }
+    var startAgainBtn = document.getElementById("questionnaire-start-again");
+    if (startAgainBtn) {
+      startAgainBtn.addEventListener("click", function () {
+        resetQuestionnaireAfterSubmit();
+      });
+    }
     if (
       typeof window.FamilyControls !== "undefined" &&
       window.FamilyControls.setOnFamilyChange

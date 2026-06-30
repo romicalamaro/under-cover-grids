@@ -1897,6 +1897,7 @@
   function init() {
     buildSignsLayout();
     setupScrollCursorHint();
+
     document.addEventListener("visibilitychange", function () {
       if (document.hidden) {
         pauseSignsAnimations();

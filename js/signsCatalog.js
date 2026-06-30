@@ -29,8 +29,8 @@
     },
     {
       id: "family",
-      label: "Family and friends in Iran",
-      labelFa: "خانواده و دوستان در ایران",
+      label: "Family",
+      labelFa: "خانواده",
       description:
         "This layer speaks about the family and friends who remain in Iran, and the loss, distance, or longing she experiences in relation to them. It marks the emotional borders between the life she left and the people who stayed.",
       descriptionFa:
