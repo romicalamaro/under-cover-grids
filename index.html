@@ -385,19 +385,26 @@
                   <figure class="page2-home-topkapi__media">
                     <img
                       class="page2-home-topkapi__img"
-                      src="website/topkapi%20scrolls/1.png"
+                      src="website/topkapi%20scrolls/1.webp"
                       alt="Topkapı Scroll, first detail of interlaced geometric girih patterns"
                       loading="lazy"
                       decoding="async"
                     />
                     <img
                       class="page2-home-topkapi__img"
-                      src="website/topkapi%20scrolls/2.png"
+                      src="website/topkapi%20scrolls/2.webp"
                       alt="Topkapı Scroll, second detail of interlaced geometric girih patterns"
                       loading="lazy"
                       decoding="async"
                     />
                   </figure>
+                  <img
+                    class="page2-home-topkapi__feature"
+                    src="website/topkapi%20scrolls/3.webp"
+                    alt="Topkapı Scroll, full detail of interlaced geometric girih patterns"
+                    loading="lazy"
+                    decoding="async"
+                  />
                   <div class="page2-home-topkapi__text">
                     <h2
                       class="page2-home-topkapi__title"
@@ -1993,7 +2000,8 @@
       }
 
       #page2 #section-home .page2-home-topkapi__media {
-        grid-column: 2 / 7;
+        grid-column: 5 / 6;
+        min-width: 0;
         margin: 0;
         display: flex;
         flex-direction: column;
@@ -2003,9 +2011,18 @@
 
       #page2 #section-home .page2-home-topkapi__img {
         display: block;
-        width: var(--page2-topkapi-img-size);
+        width: min(var(--page2-topkapi-img-size), 100%);
         height: var(--page2-topkapi-img-size);
         object-fit: cover;
+      }
+
+      #page2 #section-home .page2-home-topkapi__feature {
+        grid-column: 2 / 5;
+        align-self: center;
+        display: block;
+        width: 100%;
+        height: auto;
+        object-fit: contain;
       }
 
       #page2 #section-home .page2-home-topkapi__text {
@@ -2828,11 +2845,13 @@
         }
 
         #page2 #section-home .page2-home-topkapi__media,
+        #page2 #section-home .page2-home-topkapi__feature,
         #page2 #section-home .page2-home-topkapi__text {
           grid-column: 1 / -1;
         }
 
-        #page2 #section-home .page2-home-topkapi__media {
+        #page2 #section-home .page2-home-topkapi__media,
+        #page2 #section-home .page2-home-topkapi__feature {
           margin-bottom: var(--page2-gutter);
         }
       }
