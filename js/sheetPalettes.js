@@ -1256,9 +1256,6 @@
     }
     lastLoadSource = sourceKey;
     syncBorderGlobals();
-    if (typeof console !== "undefined" && console.info) {
-      console.info("SheetPalettes: colors loaded from " + sourceLabel + ".");
-    }
     lastLiveSyncAt = Date.now();
     updateLiveSyncStatus(sourceLabel);
     notifyPalettesLoaded();

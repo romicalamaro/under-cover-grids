@@ -20,8 +20,8 @@
     },
     {
       id: "grid",
-      label: "Grid",
-      labelFa: "شبکه",
+      label: "Community",
+      labelFa: "جامعه",
       description:
         "This layer focuses on her sense of belonging to the Iranian community and how present her Iranian identity is in her everyday life. It maps how strongly Iran still shapes who she is.",
       descriptionFa:
@@ -235,13 +235,17 @@
       visual: { type: "canvasPreview", previewId: "helplessness" },
     },
 
-    /* —— Family —— */
+    /* —— Family ——
+       Standalone divided rectangle, drawn locally in signsPage.js. This is
+       intentionally NOT a canvasPreview of the handkerchief product engine —
+       the family sign is fully separated from the border-frame-divisions
+       product system. */
     {
       id: "family-frame-line",
       section: "family",
       label: "",
       labelFa: "",
-      visual: { type: "canvasPreview", previewId: "familyFrameLine" },
+      visual: { type: "familyDivisions", maxSegments: 5 },
     },
 
     /* —— Body autonomy —— */

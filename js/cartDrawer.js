@@ -21,6 +21,76 @@
     "(prefers-reduced-motion: reduce)"
   ).matches;
 
+  // --- Keep the cart from covering the footer -------------------------------
+  // The drawer is position:fixed, so on its own it always fills the whole
+  // screen (height: 100vh) and ends up sitting on top of the red footer once
+  // you scroll down to it. The footer, on the other hand, scrolls with the
+  // page. CSS alone can't react to a scrolling element from a fixed one, so
+  // this small helper measures where the footer currently is and trims the
+  // drawer's height to "screen height minus the part of the footer that is on
+  // screen". When the footer isn't visible, the drawer stays full height.
+  var heightSyncFrame = null;
+
+  // Returns how many pixels of footer are currently showing at the bottom of
+  // the viewport (0 when no footer is on screen).
+  function getVisibleFooterHeight() {
+    // Only the active section is displayed, so in practice one footer is live.
+    var footers = document.querySelectorAll(".page2-footer");
+    var viewportH = window.innerHeight || document.documentElement.clientHeight;
+    var maxOverlap = 0;
+
+    for (var i = 0; i < footers.length; i++) {
+      var footer = footers[i];
+      // Skip footers in hidden sections (display:none -> no layout box).
+      if (!footer.getClientRects().length) continue;
+      var rect = footer.getBoundingClientRect();
+      // Overlap between the footer and the bottom of the viewport.
+      var overlap = viewportH - Math.max(rect.top, 0);
+      // Clamp so we never subtract more than the footer's own height.
+      if (overlap > rect.height) overlap = rect.height;
+      if (overlap > maxOverlap) maxOverlap = overlap;
+    }
+    return maxOverlap;
+  }
+
+  function applyDrawerHeight() {
+    heightSyncFrame = null;
+    if (!isOpen) return;
+    var footerOnScreen = getVisibleFooterHeight();
+    // The panel starts below the header (CSS top), so its height is
+    // "screen minus header minus the visible footer".
+    drawer.style.height =
+      "calc(100vh - var(--page2-header-band-height) - " +
+      footerOnScreen +
+      "px)";
+  }
+
+  // Throttle scroll/resize work to one update per animation frame.
+  function scheduleDrawerHeight() {
+    if (heightSyncFrame !== null) return;
+    heightSyncFrame = window.requestAnimationFrame(applyDrawerHeight);
+  }
+
+  function startHeightSync() {
+    applyDrawerHeight();
+    // Scrolling happens inside inner containers, so listen in the capture
+    // phase to catch those scroll events too (not just window scrolling).
+    window.addEventListener("scroll", scheduleDrawerHeight, true);
+    window.addEventListener("resize", scheduleDrawerHeight);
+  }
+
+  function stopHeightSync() {
+    window.removeEventListener("scroll", scheduleDrawerHeight, true);
+    window.removeEventListener("resize", scheduleDrawerHeight);
+    if (heightSyncFrame !== null) {
+      window.cancelAnimationFrame(heightSyncFrame);
+      heightSyncFrame = null;
+    }
+    // Leave the last height in place so the slide-out stays smooth; the next
+    // openCart() always recomputes a fresh height before showing the drawer.
+  }
+  // -------------------------------------------------------------------------
+
   function setAriaOpen(open) {
     trigger.setAttribute("aria-expanded", open ? "true" : "false");
     drawer.setAttribute("aria-hidden", open ? "false" : "true");
@@ -174,6 +244,11 @@
     renderCart();
   }
 
+  function clearCart() {
+    items = [];
+    renderCart();
+  }
+
   function openCart() {
     if (isOpen) return;
     clearCloseTimer();
@@ -181,6 +256,7 @@
     drawer.hidden = false;
     scrim.hidden = false;
     setAriaOpen(true);
+    startHeightSync();
     window.requestAnimationFrame(function () {
       page2.classList.add("page2--cart-open");
       closeBtn.focus();
@@ -192,6 +268,7 @@
     isOpen = false;
     page2.classList.remove("page2--cart-open");
     setAriaOpen(false);
+    stopHeightSync();
     trigger.focus();
 
     clearCloseTimer();
@@ -223,6 +300,14 @@
     event.stopPropagation();
     closeCart();
   });
+
+  if (buyBtn) {
+    buyBtn.addEventListener("click", function (event) {
+      event.stopPropagation();
+      clearCart();
+      closeCart();
+    });
+  }
 
   scrim.addEventListener("click", function () {
     closeCart();

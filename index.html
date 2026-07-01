@@ -9,7 +9,7 @@
       }
     </script>
     <title>Octagons Grid — 68×180cm @ 300 DPI</title>
-    <link rel="stylesheet" href="css/styles.css?v=20260627-design-peek" />
+    <link rel="stylesheet" href="css/styles.css?v=20260701-vazirmatn-profile-answers" />
     <!-- Header grid must exist before body paints — JS refines track widths later. -->
     <style id="page2-header-critical">
       #page2 {
@@ -104,7 +104,7 @@
             <div class="page2-header-cell">
               <span class="page2-col-title">
                 <span class="page2-col-title__en">home</span
-                ><span class="page2-col-title__sep">/ </span
+                ><span class="page2-col-title__sep">/</span
                 ><span class="page2-col-title__fa" lang="fa" dir="rtl"
                   >خانه</span
                 >
@@ -118,7 +118,7 @@
             <div class="page2-header-cell">
               <span class="page2-col-title">
                 <span class="page2-col-title__en">signs</span
-                ><span class="page2-col-title__sep">/ </span
+                ><span class="page2-col-title__sep">/</span
                 ><span class="page2-col-title__fa" lang="fa" dir="rtl"
                   >نشانه‌ها</span
                 >
@@ -130,7 +130,7 @@
             <div class="page2-header-cell">
               <span class="page2-col-title">
                 <span class="page2-col-title__en">shop</span
-                ><span class="page2-col-title__sep">/ </span
+                ><span class="page2-col-title__sep">/</span
                 ><span class="page2-col-title__fa" lang="fa" dir="rtl"
                   >فروشگاه</span
                 >
@@ -144,7 +144,7 @@
             <div class="page2-header-cell">
               <span class="page2-col-title">
                 <span class="page2-col-title__en">design</span
-                ><span class="page2-col-title__sep">/ </span
+                ><span class="page2-col-title__sep">/</span
                 ><span class="page2-col-title__fa" lang="fa" dir="rtl"
                   >طراحی</span
                 >
@@ -156,7 +156,7 @@
             <div class="page2-header-cell">
               <span class="page2-col-title">
                 <span class="page2-col-title__en">archive</span
-                ><span class="page2-col-title__sep">/ </span
+                ><span class="page2-col-title__sep">/</span
                 ><span class="page2-col-title__fa" lang="fa" dir="rtl"
                   >بایگانی</span
                 >
@@ -197,11 +197,6 @@
                   <circle cx="9" cy="20" r="1.75" fill="currentColor" stroke="none" />
                   <circle cx="18" cy="20" r="1.75" fill="currentColor" stroke="none" />
                 </svg>
-                <span
-                  class="page2-cart-trigger__count"
-                  hidden
-                  aria-hidden="true"
-                ></span>
               </button>
             </div>
             <div class="page2-header-cell"></div>
@@ -363,6 +358,10 @@
                   <p class="page2-home-signs__label">
                     <span class="page2-home-signs__label-en">signs</span>
                     <span
+                      class="page2-home-signs__label-sep"
+                      aria-hidden="true"
+                    ></span>
+                    <span
                       class="page2-home-signs__label-fa"
                       lang="fa"
                       dir="rtl"
@@ -381,27 +380,27 @@
                 id="page2-home-topkapi"
                 aria-labelledby="page2-home-topkapi-title"
               >
-                <div class="page2-home-topkapi__inner">
-                  <figure class="page2-home-topkapi__media">
-                    <img
-                      class="page2-home-topkapi__img"
-                      src="website/topkapi%20scrolls/1.webp"
-                      alt="Topkapı Scroll, first detail of interlaced geometric girih patterns"
-                      loading="lazy"
-                      decoding="async"
-                    />
-                    <img
-                      class="page2-home-topkapi__img"
-                      src="website/topkapi%20scrolls/2.webp"
-                      alt="Topkapı Scroll, second detail of interlaced geometric girih patterns"
-                      loading="lazy"
-                      decoding="async"
-                    />
-                  </figure>
+                <div class="page2-home-topkapi__band">
                   <img
-                    class="page2-home-topkapi__feature"
-                    src="website/topkapi%20scrolls/3.webp"
-                    alt="Topkapı Scroll, full detail of interlaced geometric girih patterns"
+                    class="page2-home-topkapi__band-img"
+                    src="website/topkapi%20scrolls/4.webp"
+                    alt="Topkapı Scroll decorative band"
+                    loading="lazy"
+                    decoding="async"
+                  />
+                </div>
+                <div class="page2-home-topkapi__inner">
+                  <img
+                    class="page2-home-topkapi__img"
+                    src="website/topkapi%20scrolls/1.webp"
+                    alt="Topkapı Scroll, first detail of interlaced geometric girih patterns"
+                    loading="lazy"
+                    decoding="async"
+                  />
+                  <img
+                    class="page2-home-topkapi__img"
+                    src="website/topkapi%20scrolls/2.webp"
+                    alt="Topkapı Scroll, second detail of interlaced geometric girih patterns"
                     loading="lazy"
                     decoding="async"
                   />
@@ -410,7 +409,19 @@
                       class="page2-home-topkapi__title"
                       id="page2-home-topkapi-title"
                     >
-                      Topkapı Scroll
+                      <span class="page2-home-topkapi__title-en"
+                        >Topkapı Scroll</span
+                      >
+                      <span
+                        class="page2-home-topkapi__title-sep"
+                        aria-hidden="true"
+                      ></span>
+                      <span
+                        class="page2-home-topkapi__title-fa"
+                        lang="fa"
+                        dir="rtl"
+                        >طومار توپقاپی</span
+                      >
                     </h2>
                     <p
                       class="page2-home-topkapi__body page2-home-topkapi__body--fa"
@@ -420,20 +431,14 @@
                       طراحی منسوجات «زیر» از طومار توپقاپی الهام گرفته شده است؛
                       مجموعه‌ای از الگوهای هندسی از سده‌های پانزدهم و شانزدهم که
                       به‌عنوان کتابخانه‌ای مدولار از نقشه‌ها برای معماران و
-                      هنرمندان جهان ایرانی–اسلامی عمل می‌کرد. به همین شکل، هر
-                      منسوج از ماژول‌های هندسی تکرارشونده ساخته می‌شود که در هم
-                      تنیده می‌شوند تا تجربهٔ شخصی و زبان عاطفی را به یک نظام بصری
-                      از الگوها ترجمه کنند.
+                      هنرمندان جهان ایرانی–اسلامی عمل می‌کرد.
                     </p>
                     <p class="page2-home-topkapi__body">
                       The design of Under&rsquo;s textiles is inspired by the
                       Topkapi Scroll &ndash; a fifteenth&ndash;sixteenth-century
                       compendium of geometric patterns that functioned as a
                       modular drawing library for Persian-Islamic architects and
-                      artisans. In a similar way, each textile is built from
-                      repeating geometric modules that weave together to
-                      translate personal experience and emotional language into a
-                      visual system of patterns.
+                      artisans.
                     </p>
                   </div>
                 </div>
@@ -511,7 +516,7 @@
                     </div>
                     <div class="page2-footer__credit-group">
                       <span class="page2-footer__subheading"
-                        >Headscarf Designers</span
+                        >Textile Designers</span
                       >
                       <span class="page2-footer__note"
                         >Orly Noy, Sana, Kiyana, Atoosa,<br />Yael&nbsp;Izakson</span
@@ -564,6 +569,7 @@
                   role="img"
                   aria-label="Under Cover"
                 ></div>
+                <p class="page2-footer__copyright">&copy; Romi Calamaro 2026</p>
               </footer>
             </div>
           </section>
@@ -918,8 +924,8 @@
                       lang="fa"
                       dir="rtl"
                     >
-                      منسوجات خود را طراحی کنید و به اعتراض برای حق زنان بر بدن خود
-                      بپیوندید.
+                      منسوجات خود را طراحی کنید و همین حالا به این اعتراض برای حق
+                      زنان بر بدن خود بپیوندید.
                     </p>
                   </div>
                   <div class="design-intro__scroll-hint">
@@ -970,7 +976,7 @@
                         class="design-start__btn"
                         id="design-start-btn-en"
                       >
-                        Start in English
+                        Start
                       </button>
                       <button
                         type="button"
@@ -979,7 +985,7 @@
                         lang="fa"
                         dir="rtl"
                       >
-                        شروع به فارسی
+                        شروع
                       </button>
                     </div>
                   </div>
@@ -1051,8 +1057,8 @@
         <button type="button" id="grid-choose-diamonds-btn" aria-pressed="false"></button>
         <input id="octagons-n" type="range" min="1" max="10" value="5" step="1" />
         <output id="octagons-n-out" for="octagons-n">5</output>
-        <input id="inner-scale" type="range" min="1" max="10" value="10" step="1" />
-        <output id="inner-scale-out" for="inner-scale">10</output>
+        <input id="inner-scale" type="range" min="1" max="10" value="5" step="1" />
+        <output id="inner-scale-out" for="inner-scale">5</output>
 
         <span id="sheet-palette-live-status"></span>
         <div id="sheet-palette-buttons">
@@ -1070,10 +1076,10 @@
         <button type="button" data-iran-loss-type="familyFriendsConnection" aria-pressed="false"></button>
         <input id="border-frame-divisions" type="range" min="1" max="3" value="2" step="1" tabindex="-1" />
         <output id="border-frame-divisions-out" for="border-frame-divisions">Medium</output>
-        <input id="border-side-white-fill" type="range" min="0" max="100" value="0" step="25" tabindex="-1" />
-        <output id="border-side-white-fill-out" for="border-side-white-fill">0%</output>
+        <input id="border-side-white-fill" type="range" min="0" max="100" value="50" step="25" tabindex="-1" />
+        <output id="border-side-white-fill-out" for="border-side-white-fill">50%</output>
 
-        <input id="fan-leaves" type="range" min="0" max="10" value="0" step="1" />
+        <input id="fan-leaves" type="range" min="0" max="10" value="5" step="1" />
 
         <input id="anger-vertical-length" type="range" min="1" max="5" value="1" step="1" />
         <output id="anger-vertical-length-out" for="anger-vertical-length">1</output>
@@ -1297,6 +1303,7 @@
         --page2-signs-desc-size-lg: clamp(0.9375rem, 0.984vw, 1.1875rem); /* 17px @ ref — slightly larger section description */
         --page2-signs-bilingual-gap: var(--page2-space-20); /* 20px @ ref */
         --page2-signs-title-inline-gap: var(--page2-space-30); /* 30px @ ref */
+        --page2-signs-title-sep-size: clamp(0.375rem, 0.463vw, 0.625rem); /* 6px @ ref */
         --page2-signs-row-padding-block: clamp(1.5rem, 2.314vw, 2.5rem); /* ~40px @ ref — was ~70px */
         --page2-signs-hover-peek: clamp(1.5rem, 1.736vw, 2.5rem); /* 30px @ ref — hover "peek open" gap */
         --page2-signs-section-min-height: clamp(28rem, 50vh, 40rem);
@@ -1305,21 +1312,25 @@
         /* Topkapı Scroll info block — light, after the dark signs accordion */
         --page2-topkapi-bg: var(--page2-bg); /* #fff — transition back to light */
         --page2-topkapi-fg: var(--color-brown);
-        --page2-topkapi-padding-block: clamp(3.75rem, 5.787vw, 6.25rem); /* 100px @ 1728 */
+        --page2-topkapi-padding-block: clamp(5.625rem, 8.681vw, 9.375rem); /* 150px @ 1728 */
+        --page2-topkapi-padding-bottom: clamp(5.625rem, 8.681vw, 9.375rem); /* 150px @ 1728 */
         --page2-topkapi-col-gap: var(--page2-gutter);
-        --page2-topkapi-title-size: clamp(1.75rem, 2.546vw, 3rem); /* 44px @ 1728 */
+        --page2-topkapi-title-size: calc(
+          (var(--page2-space-20, 1.25rem) - var(--page2-space-4)) * 1.2 * 1.5 *
+            1.5 * 1.3
+        ); /* match signs bilingual page title (~56.2px @ ref) */
         --page2-topkapi-title-gap: var(--page2-space-30); /* 30px @ 1728 */
         --page2-topkapi-body-size: var(--page2-about-text-size); /* matches about copy */
-        --page2-topkapi-img-size: clamp(7.5rem, 8.681vw, 9.375rem); /* 150px @ 1728 */
         --page2-topkapi-stack-gap: var(--page2-space-30); /* 30px @ 1728 */
+        --page2-topkapi-band-height: clamp(7.5rem, 8.681vw, 9.375rem); /* 150px @ 1728 */
         --page2-about-media-open: 0;
         --page2-about-text-clip-top: 100%;
         --page2-about-media-exit-scale: 1;
         --page2-header-row-height: calc(var(--page2-space-20) * 1.3);
         --page2-header-row-height-bottom: var(--page2-header-top-offset);
         --page2-header-col-title-font-size: calc(
-          (var(--page2-header-row-height) - var(--page2-space-4)) * 0.8
-        ); /* −20% vs prior row-based title */
+          (var(--page2-header-row-height) - var(--page2-space-4)) * 0.85
+        ); /* enlarged for DIN Condensed (condensed font reads smaller) */
         --page2-header-nav-height: calc(
           2 * var(--page2-header-row-height) +
             var(--page2-header-row-height-bottom)
@@ -1338,7 +1349,7 @@
           var(--page2-header-top-offset) + var(--page2-header-nav-height)
         );
         --page2-header-cell-fill: #442c28;
-        --page2-cart-icon-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.625'%3E%3Cpath d='M6 6h15l-1.5 9h-12L6 6z'/%3E%3Cpath d='M6 6L5 3H2'/%3E%3Ccircle cx='9' cy='20' r='1.75' fill='%23000' stroke='none'/%3E%3Ccircle cx='18' cy='20' r='1.75' fill='%23000' stroke='none'/%3E%3C/svg%3E");
+        --page2-cart-icon-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2'%3E%3Cpath d='M6 6h15l-1.5 9h-12L6 6z'/%3E%3Cpath d='M6 6L5 3H2'/%3E%3Ccircle cx='9' cy='20' r='1.75' fill='%23000' stroke='none'/%3E%3Ccircle cx='18' cy='20' r='1.75' fill='%23000' stroke='none'/%3E%3C/svg%3E");
         --page2-cart-drawer-width: calc(
           3 * var(--page2-grid-col) + 2 * var(--page2-gutter) +
             var(--page2-margin-inline)
@@ -1758,11 +1769,18 @@
       }
 
       #page2 .page2-footer__heading {
-        margin-bottom: var(--page2-space-4);
-        font-family: "Suisse Intl", sans-serif;
-        font-size: clamp(0.8125rem, 0.95vw, 1.05rem);
-        font-weight: 500;
+        /* ~5.6px @ ref: with the column's 4px flex gap this lifts the
+           heading-to-text spacing from ~8px to ~9.6px (≈ +20%) */
+        margin-bottom: calc(var(--page2-space-4) * 1.4);
+        /* Uppercase footer headings use DIN Condensed (only ships at weight 700),
+           sized to match the header column titles via the shared header token. */
+        font-family: "DIN Condensed", sans-serif;
+        font-size: var(--page2-header-col-title-font-size);
+        font-weight: 700;
         line-height: 1.2;
+        letter-spacing: 0.02em;
+        /* Footer headings (Pages / Credits / Contact / Fonts) shown in caps. */
+        text-transform: uppercase;
         color: #fff;
       }
 
@@ -1862,6 +1880,18 @@
         line-height: 0;
       }
 
+      /* The shop/design header band includes the red banner, so the shop footer
+         is shorter than the home/archive footers by exactly the banner height.
+         Because the wordmark is height-constrained, that made the home/archive
+         logo render bigger. The shop footer is the canonical one, so on home and
+         archive we reserve the banner's height above the logo: this shrinks the
+         logo's available height to match shop while keeping it anchored to the
+         same bottom edge (and without changing the footer height itself). */
+      #page2 #section-home .page2-footer__logo,
+      #page2 #section-archive .page2-footer__logo {
+        margin-top: var(--page2-header-shop-banner-height);
+      }
+
       #page2 .page2-footer__logo svg {
         display: block;
         /* Scale to fit the available box while keeping the artwork's aspect
@@ -1877,6 +1907,30 @@
       #page2 .page2-footer__logo svg path,
       #page2 .page2-footer__logo svg rect {
         fill: #fff;
+      }
+
+      /* Copyright — sits on the logo row (row 2) to the right of the Under Cover
+         wordmark. grid-column 9 / -1 starts it flush at the left edge of the
+         4th column from the right in the 12-col grid; align-self/margin pin its
+         baseline to the bottom alongside the lifted logo. */
+      #page2 .page2-footer__copyright {
+        grid-column: 9 / -1;
+        grid-row: 2;
+        align-self: end;
+        /* Bottom margin = the logo's own lift + a measured "extra lift" set by
+           JS (alignFooterCopyright) so the text's bottom edge lands on the
+           wordmark's baseline (bottom of the "r"), not the empty space beneath
+           the logo's viewBox. Extra lift defaults to 0 before JS runs. */
+        margin: 0 0
+          calc(
+            var(--page2-footer-logo-lift) +
+              var(--page2-footer-copyright-extra-lift, 0px)
+          );
+        font-family: "Suisse Intl", sans-serif;
+        font-size: clamp(0.8125rem, 0.95vw, 1.05rem);
+        font-weight: 300;
+        line-height: 1.5;
+        color: #fff;
       }
 
       #page2 .page2-about-media__frame {
@@ -1983,7 +2037,8 @@
         position: relative;
         z-index: 2;
         box-sizing: border-box;
-        padding-block: var(--page2-topkapi-padding-block);
+        padding-top: 0;
+        padding-bottom: var(--page2-topkapi-padding-bottom);
         padding-inline: var(--page2-margin-inline);
         background-color: var(--page2-topkapi-bg);
         color: var(--page2-topkapi-fg);
@@ -1997,51 +2052,93 @@
         align-items: center;
         box-sizing: border-box;
         width: 100%;
+        margin-top: var(--page2-topkapi-padding-block);
       }
 
-      #page2 #section-home .page2-home-topkapi__media {
-        grid-column: 5 / 6;
-        min-width: 0;
-        margin: 0;
-        display: flex;
-        flex-direction: column;
-        align-items: flex-start;
-        gap: var(--page2-topkapi-stack-gap);
+      #page2 #section-home .page2-home-topkapi__band {
+        /* full-bleed: cancel the section's side padding so it spans the screen */
+        margin-inline: calc(-1 * var(--page2-margin-inline));
+        margin-top: 0;
+        margin-bottom: 0;
+        height: var(--page2-topkapi-band-height);
+        overflow: hidden;
+      }
+
+      #page2 #section-home .page2-home-topkapi__band-img {
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: fill;
       }
 
       #page2 #section-home .page2-home-topkapi__img {
         display: block;
-        width: min(var(--page2-topkapi-img-size), 100%);
-        height: var(--page2-topkapi-img-size);
-        object-fit: cover;
-      }
-
-      #page2 #section-home .page2-home-topkapi__feature {
-        grid-column: 2 / 5;
-        align-self: center;
-        display: block;
+        grid-row: 1;
+        min-width: 0;
         width: 100%;
         height: auto;
         object-fit: contain;
       }
 
+      #page2 #section-home .page2-home-topkapi__img:nth-child(1) {
+        grid-column: 2 / 4;
+      }
+
+      #page2 #section-home .page2-home-topkapi__img:nth-child(2) {
+        grid-column: 4 / 6;
+      }
+
       #page2 #section-home .page2-home-topkapi__text {
         grid-column: 7 / 12;
+        grid-row: 1;
       }
 
       #page2 #section-home .page2-home-topkapi__title {
+        display: grid;
+        grid-template-columns: 1fr auto 1fr;
+        align-items: center;
+        gap: 0;
         margin: 0 0 var(--page2-topkapi-title-gap);
         font-family: "Suisse Intl", sans-serif;
-        font-weight: 200;
+        font-weight: 400;
         font-size: var(--page2-topkapi-title-size);
-        line-height: 1.05;
+        line-height: 1.1;
         color: var(--page2-topkapi-fg);
+      }
+
+      /* English title matches signs page title: DIN Condensed, bold, uppercased. */
+      #page2 #section-home .page2-home-topkapi__title-en {
+        justify-self: start;
+        white-space: nowrap;
+        font-family: "DIN Condensed", sans-serif;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.02em;
+      }
+
+      #page2 #section-home .page2-home-topkapi__title-sep {
+        justify-self: center;
+        flex-shrink: 0;
+        width: var(--page2-signs-title-sep-size);
+        height: var(--page2-signs-title-sep-size);
+        margin-inline: calc(var(--page2-signs-title-inline-gap) / 2);
+        background-color: var(--page2-topkapi-fg);
+        transform: translateY(calc(var(--page2-space-4) * -0.75)); /* optical nudge up ~3px @ ref */
+      }
+
+      /* FA title stays on the same row, right-aligned to grid col 11
+         (right edge of this text block). */
+      #page2 #section-home .page2-home-topkapi__title-fa {
+        justify-self: end;
+        white-space: nowrap;
+        font-family: "Vazirmatn", sans-serif;
+        font-weight: 500;
       }
 
       #page2 #section-home .page2-home-topkapi__body {
         margin: 0;
         font-family: "Suisse Intl", sans-serif;
-        font-weight: 200;
+        font-weight: 300;
         font-size: var(--page2-topkapi-body-size);
         line-height: 1.3;
         color: var(--page2-topkapi-fg);
@@ -2092,20 +2189,50 @@
         display: flex;
         flex-direction: row;
         flex-wrap: nowrap;
-        align-items: baseline;
-        gap: var(--page2-signs-title-inline-gap);
+        align-items: center;
+        gap: 0;
         margin: 0 0 var(--page2-gutter);
         padding: 0;
         font-family: "Suisse Intl", sans-serif;
-        font-size: var(--page2-about-text-size);
-        font-weight: 200;
+        /* Based on the questionnaire section-question heading size
+           ((--page2-space-20 - --page2-space-4) * 1.2 * 1.5, ~28.8px @ ref),
+           then enlarged 1.5x at the designer's request via the extra * 1.5
+           (~43.2px @ ref), then +30% for the bilingual page title (~56.2px @ ref). */
+        font-size: calc(
+          (var(--page2-space-20, 1.25rem) - var(--page2-space-4)) * 1.2 * 1.5 *
+            1.5 * 1.3
+        );
+        /* One step heavier than the previous 200. Suisse Intl only ships 200
+           and 400 here, so 400 is the next weight that actually renders. */
+        font-weight: 400;
         line-height: 1.1;
         color: var(--page2-signs-fg);
       }
 
+      /* English page title matches the header column + section titles:
+         DIN Condensed, bold (its only shipped weight), uppercased. Scoped to
+         the EN span so the Persian override below (Vazirmatn) is untouched. */
+      #page2 #section-home .page2-home-signs__label-en {
+        font-family: "DIN Condensed", sans-serif;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.02em;
+      }
+
       #page2 #section-home .page2-home-signs__label-fa {
         font-family: "Vazirmatn", sans-serif;
-        font-weight: 400;
+        /* One step heavier than the previous 400. Vazirmatn is a variable font
+           (100–900), so 500 renders precisely. */
+        font-weight: 500;
+      }
+
+      #page2 #section-home .page2-home-signs__label-sep {
+        flex-shrink: 0;
+        width: var(--page2-signs-title-sep-size);
+        height: var(--page2-signs-title-sep-size);
+        margin-inline: calc(var(--page2-signs-title-inline-gap) / 2);
+        background-color: var(--page2-signs-fg);
+        transform: translateY(calc(var(--page2-space-4) * -0.75)); /* optical nudge up ~3px @ ref */
       }
 
       #page2 #section-home .page2-home-signs__list {
@@ -2186,12 +2313,13 @@
         outline-offset: 2px;
       }
 
-      #page2 #section-home .page2-home-signs__num,
-      #page2 #section-home .page2-home-signs__title {
-        font-family: "Suisse Intl", sans-serif;
+      #page2 #section-home .page2-home-signs__num {
+        /* Match section titles: DIN Condensed, bold (only shipped weight). */
+        font-family: "DIN Condensed", sans-serif;
         font-size: var(--page2-about-text-size);
-        font-weight: 200;
+        font-weight: 700;
         line-height: 1.1;
+        letter-spacing: 0.02em;
         color: var(--page2-signs-fg);
       }
 
@@ -2220,6 +2348,21 @@
         justify-self: start;
         text-align: left;
         width: fit-content;
+        /* Match the header column titles (.page2-col-title): DIN Condensed,
+           bold (the only shipped weight), with the same 0.02em letter-spacing.
+           Persian keeps its Vazirmatn override below. */
+        font-family: "DIN Condensed", sans-serif;
+        font-size: var(--page2-about-text-size);
+        font-weight: 700;
+        line-height: 1.1;
+        letter-spacing: 0.02em;
+        color: var(--page2-signs-fg);
+      }
+
+      /* Only the English title is uppercased; Persian script is unaffected by
+         text-transform but we scope it to the EN span to keep intent clear. */
+      #page2 #section-home .page2-home-signs__title-en {
+        text-transform: uppercase;
       }
 
       #page2 #section-home .page2-home-signs__desc {
@@ -2407,17 +2550,17 @@
         overflow: visible;
       }
 
-      /* —— Family: single horizontal frame line spanning 2 grid columns —— */
-      /* Length of two grid columns = 2 cols + the gutter between them.
-         Derived from the viewport (not 100%, which would resolve against the
-         narrow 2-col list container): with 12 cols, 2 outer margins and 11
-         gutters, content = 100vw - 13*gutter, one col = content/12, so
-         2*col + gutter simplifies to (100vw - 7*gutter) / 6. */
+      /* —— Family: standalone divided rectangle spanning exactly 2 grid columns ——
+         This is a self-contained SVG rectangle (no ties to the handkerchief /
+         border-frame-divisions product engine). It is exactly two grid columns
+         wide and 50px tall. "2 grid columns" = 2*col with no extra gutter:
+         with 12 cols + 2 outer margins + 11 inner gutters, content = 100vw -
+         13*gutter, one col = content/12, so 2*col = (100vw - 13*gutter) / 6. */
       #page2 #section-home .page2-home-signs__panel-list--frame-line {
         --frame-line-length: calc(
-          (100vw - 7 * var(--page2-gutter)) / 6
-        );
-        --frame-line-thickness: clamp(2.5rem, 4.05vw, 4.375rem); /* ~70px @ ref band */
+          (100vw - 13 * var(--page2-gutter)) / 6
+        ); /* exactly 2 grid columns wide */
+        --frame-line-thickness: var(--page2-space-50); /* 50px @ ref */
         grid-column: 10 / 12; /* right band, matches the other signs */
         display: flex;
         flex-direction: row;
@@ -2431,9 +2574,8 @@
         max-width: 100%;
       }
 
-      /* The captured strip is a tall, narrow vertical frame side. We size the
-         box to the final horizontal line, then rotate the SVG 90deg so it
-         reads horizontally. */
+      /* The rectangle box: exactly 2 grid columns wide, 50px tall. The SVG
+         fills it directly (no rotation / capture hacks). */
       #page2 #section-home .page2-home-signs__sign-icon--frame-line {
         position: relative;
         width: var(--frame-line-length);
@@ -2444,21 +2586,10 @@
       }
 
       #page2 #section-home .page2-home-signs__sign-icon--frame-line svg {
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        /* Pre-rotation: narrow width = final thickness, tall height = final
-           length. After rotate(90deg) it becomes the horizontal line. */
-        width: var(--frame-line-thickness);
-        height: var(--frame-line-length);
+        width: 100%;
+        height: 100%;
         max-height: none;
-        transform: translate(-50%, -50%) rotate(90deg);
-        transform-origin: center;
         display: block;
-        /* Clip to the viewBox so only the captured (left) frame side shows;
-           without this the opposite (right) frame side bleeds in as a second
-           line. */
-        overflow: hidden;
       }
 
       /* Stars grid on the Signs page: roughly fan-sized, no framing square */
@@ -2844,15 +2975,15 @@
           padding-bottom: var(--page2-signs-row-padding-block);
         }
 
-        #page2 #section-home .page2-home-topkapi__media,
-        #page2 #section-home .page2-home-topkapi__feature,
+        #page2 #section-home .page2-home-topkapi__img,
         #page2 #section-home .page2-home-topkapi__text {
           grid-column: 1 / -1;
+          grid-row: auto;
         }
 
-        #page2 #section-home .page2-home-topkapi__media,
-        #page2 #section-home .page2-home-topkapi__feature {
-          margin-bottom: var(--page2-gutter);
+        #page2 #section-home .page2-home-topkapi__img + .page2-home-topkapi__img,
+        #page2 #section-home .page2-home-topkapi__text {
+          margin-top: var(--page2-gutter);
         }
       }
 
@@ -2938,11 +3069,13 @@
         flex-wrap: wrap;
         column-gap: 0.4em;
         margin: 0;
-        font-family: "Suisse Intl Shop", sans-serif;
+        font-family: "DIN Condensed", sans-serif;
         font-size: var(--page2-product-spec-body-size);
-        font-weight: 300;
+        font-weight: 700;
         font-synthesis: none;
         line-height: 1.25;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
         color: var(--color-brown);
         text-align: left;
       }
@@ -2956,6 +3089,7 @@
         width: 0.21em;
         height: 0.21em;
         background: currentColor;
+        transform: translateY(-0.06em);
       }
 
       #page2 #section-shop .shop-card__price {
@@ -3273,10 +3407,12 @@
         padding-inline-start: calc(
           (100% - 4 * var(--page2-gutter)) / 5 + var(--page2-gutter)
         );
-        font-family: "Suisse Intl Light", sans-serif;
+        font-family: "DIN Condensed", sans-serif;
         font-size: calc(var(--page2-header-row-height) - var(--page2-space-4));
-        font-weight: normal;
+        font-weight: 700;
         line-height: 1.05;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
         color: var(--color-brown);
         text-align: left;
       }
@@ -3315,12 +3451,13 @@
 
       #page2 #section-product .product-order-btn {
         align-self: flex-start;
+        box-sizing: border-box;
+        width: var(--page2-grid-col);
         margin-inline-start: calc(
           (100% - 4 * var(--page2-gutter)) / 5 + var(--page2-gutter)
         );
         margin-top: var(--page2-gutter);
-        padding: clamp(0.35rem, 0.486vw, 0.525rem)
-          clamp(0.875rem, 1.215vw, 1.3125rem); /* 5.6–8.4px × 14–21px @ ref (−30%) */
+        padding: clamp(0.35rem, 0.486vw, 0.525rem);
         border: 1px solid var(--color-brown);
         background: var(--color-brown);
         color: #fff;
@@ -3329,6 +3466,8 @@
         font-weight: normal;
         letter-spacing: 0.04em;
         text-transform: uppercase;
+        text-align: center;
+        white-space: nowrap;
         cursor: pointer;
         transition: background 0.2s ease, color 0.2s ease;
       }
@@ -3502,8 +3641,10 @@
 
       #page2 .page2-home-intro--en {
         grid-column: 2 / span 2;
-        font-family: "Suisse Intl Light", sans-serif;
-        font-weight: normal;
+        font-family: "DIN Condensed", sans-serif;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.02em;
         text-align: left;
       }
 
@@ -3521,6 +3662,23 @@
         background: #fff;
         filter: var(--page2-soft-drop-shadow);
         pointer-events: none;
+      }
+
+      /* The white logo, intro texts and markers carry a soft drop-shadow meant to
+         sit over the hero photo. Until that photo has loaded the hero is plain
+         white, so the shadow would appear on its own as a grey "ghost". We fade the
+         shadow in only once #page2 gets the .page2--home-bg-ready class (added by JS
+         when the first hero image finishes loading). */
+      #page2 .page2-logo__layer--white,
+      #page2 .page2-home-intro,
+      #page2 .page2-home-marker {
+        transition: filter 0.6s ease;
+      }
+
+      #page2:not(.page2--home-bg-ready) .page2-logo__layer--white,
+      #page2:not(.page2--home-bg-ready) .page2-home-intro,
+      #page2:not(.page2--home-bg-ready) .page2-home-marker {
+        filter: none;
       }
 
       #page2 #section-home .page2-home-bg {
@@ -3783,10 +3941,11 @@
         display: inline-flex;
         direction: ltr;
         align-items: baseline;
-        font-family: "Suisse Intl", sans-serif;
+        font-family: "DIN Condensed", sans-serif;
         font-size: var(--page2-header-col-title-font-size);
-        font-weight: 400;
+        font-weight: 700;
         line-height: 1.05;
+        letter-spacing: 0.02em;
         color: var(--page2-bg);
         mix-blend-mode: normal;
         white-space: nowrap;
@@ -3803,13 +3962,23 @@
         mix-blend-mode: inherit;
       }
 
+      #page2 .page2-col-title__en {
+        text-transform: uppercase;
+      }
+
+      /* Breathing room on both sides of the "/" between EN and Persian titles */
+      #page2 .page2-col-title__sep {
+        margin-inline: 0.3em;
+      }
+
       #page2 .page2-col-title__fa {
         font-family: "Vazirmatn", sans-serif;
-        font-size: 1.15em; /* restores −20% cut on Persian only (0.92 ÷ 0.8) */
+        font-size: 0.87em; /* keep Persian at pre-enlargement size (1.15 × 0.64/0.85) */
         font-weight: 400;
         line-height: inherit;
         color: inherit;
         mix-blend-mode: inherit;
+        transform: translateY(-1px); /* optical nudge: lift only Persian up 1px to align with EN baseline */
       }
 
       /* Home section: invert checkerboard — filled cells → white */
@@ -3966,27 +4135,10 @@
       }
 
       #page2 .page2-cart-trigger__icon-surface {
-        display: none;
+        display: block;
         width: calc(var(--page2-header-row-height) - var(--page2-space-4));
         height: calc(var(--page2-header-row-height) - var(--page2-space-4));
-      }
-
-      #page2 .page2-cart-trigger__icon {
-        width: calc(var(--page2-header-row-height) - var(--page2-space-4));
-        height: calc(var(--page2-header-row-height) - var(--page2-space-4));
-        display: block;
-      }
-
-      /* Home hero: photo shows through cart icon (matches .page2-col-title knockout) */
-      #page2.page2--header-invert .page2-cart-trigger__icon-surface {
-        display: block;
-        background-image: var(
-          --page2-home-bg,
-          url("website/home/1.jpeg")
-        );
-        background-size: cover;
-        background-position: center center;
-        background-attachment: fixed;
+        background-color: currentColor;
         -webkit-mask-image: var(--page2-cart-icon-mask);
         mask-image: var(--page2-cart-icon-mask);
         -webkit-mask-size: 100% 100%;
@@ -3997,30 +4149,20 @@
         mask-position: center;
       }
 
-      #page2.page2--header-invert .page2-cart-trigger__icon {
+      #page2 .page2-cart-trigger__icon {
         display: none;
       }
 
-      #page2 .page2-cart-trigger__count {
-        position: absolute;
-        top: calc(var(--page2-space-4) * 0.5);
-        right: calc(var(--page2-space-4) * 0.5);
-        min-width: clamp(0.875rem, 1.042vw, 1.125rem); /* 14–18px @ ref */
-        height: clamp(0.875rem, 1.042vw, 1.125rem);
-        padding: 0 clamp(0.1875rem, 0.231vw, 0.3125rem);
-        border-radius: 999px;
-        background: var(--page2-header-shop-banner-surface, #e85d04);
-        color: #fff;
-        font-family: "Suisse Intl Light", sans-serif;
-        font-size: clamp(0.625rem, 0.694vw, 0.75rem); /* 10–12px @ ref */
-        font-weight: normal;
-        line-height: clamp(0.875rem, 1.042vw, 1.125rem);
-        text-align: center;
-        pointer-events: none;
-      }
-
-      #page2 .page2-cart-trigger__count[hidden] {
-        display: none;
+      /* Home hero: photo shows through cart icon (matches .page2-col-title knockout) */
+      #page2.page2--header-invert .page2-cart-trigger__icon-surface {
+        background-color: transparent;
+        background-image: var(
+          --page2-home-bg,
+          url("website/home/1.jpeg")
+        );
+        background-size: cover;
+        background-position: center center;
+        background-attachment: fixed;
       }
 
       #page2 .page2-cart-trigger:focus-visible {
@@ -4033,7 +4175,10 @@
         position: fixed;
         inset: 0;
         z-index: 3.5;
-        background: rgba(0, 0, 0, 0.2);
+        /* Transparent on purpose: the layer still captures clicks so tapping
+           outside the cart closes it, but it must not tint the page (no gray
+           wash over the questionnaire / shop / any section). */
+        background: transparent;
         opacity: 0;
         pointer-events: none;
         transition: opacity 0.45s cubic-bezier(0.22, 1, 0.36, 1);
@@ -4050,11 +4195,13 @@
 
       #page2 .page2-cart-drawer {
         position: fixed;
-        top: 0;
+        /* Start the panel just below the fixed top header so its white
+           background no longer paints over the header band. */
+        top: var(--page2-header-band-height);
         right: 0;
         z-index: 4;
         width: var(--page2-cart-drawer-width);
-        height: 100vh;
+        height: calc(100vh - var(--page2-header-band-height));
         box-sizing: border-box;
         background: var(--page2-bg);
         box-shadow: var(--page2-panel-layer-shadow-left);
@@ -4084,6 +4231,9 @@
         line-height: 1;
         color: var(--page2-header-cell-fill);
         cursor: pointer;
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
       }
 
       #page2 .page2-cart-drawer__close:focus-visible {
@@ -4159,8 +4309,10 @@
       }
 
       #page2 .page2-cart-drawer__item-remove {
+        justify-self: end;
         margin: 0;
-        padding: clamp(0.25rem, 0.347vw, 0.375rem);
+        padding-block: clamp(0.25rem, 0.347vw, 0.375rem);
+        padding-inline: clamp(0.25rem, 0.347vw, 0.375rem) 0;
         border: none;
         background: transparent;
         color: var(--color-brown);
@@ -4168,6 +4320,9 @@
         font-size: clamp(1.125rem, 1.389vw, 1.5rem);
         line-height: 1;
         cursor: pointer;
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
       }
 
       #page2 .page2-cart-drawer__item-remove:hover {
@@ -4181,18 +4336,24 @@
 
       #page2 .page2-cart-drawer__buy {
         display: block;
-        width: 100%;
+        box-sizing: border-box;
+        /* Site grid col — 100vw so width isn't re-resolved to the narrow drawer body */
+        width: calc(
+          (100vw - 2 * var(--page2-margin-inline) - 11 * var(--page2-gutter)) / 12
+        );
+        margin-inline: auto;
         margin-top: calc(var(--page2-gutter) * 1.5);
-        padding: clamp(0.55rem, 0.81vw, 0.75rem)
-          clamp(0.875rem, 1.215vw, 1.3125rem); /* match product-order-btn scale */
+        padding: clamp(0.35rem, 0.486vw, 0.525rem);
         border: 1px solid var(--color-brown);
         background: var(--color-brown);
         color: #fff;
         font-family: "Suisse Intl Light", sans-serif;
-        font-size: clamp(0.8rem, 0.926vw, 1rem);
+        font-size: clamp(0.7rem, 0.81vw, 0.875rem); /* match product-order-btn */
         font-weight: normal;
         letter-spacing: 0.04em;
         text-transform: uppercase;
+        text-align: center;
+        white-space: nowrap;
         cursor: pointer;
         transition: background 0.2s ease, color 0.2s ease;
       }
@@ -5181,8 +5342,88 @@
             }
           }
 
+          /* Raise the "© Romi Calamaro" line so its bottom edge sits on the
+             wordmark's baseline (bottom of the "r"). We measure the letters'
+             real on-screen baseline and the copyright's box, then nudge our
+             extra-lift variable by the leftover gap. It is self-correcting:
+             each run converges the text bottom onto the baseline, at any screen
+             size. */
+          function alignFooterCopyright(footer) {
+            var logoSvg = footer.querySelector(".page2-footer__logo svg");
+            var copyright = footer.querySelector(".page2-footer__copyright");
+            if (!logoSvg || !copyright) return;
+            /* Logo viewBox is "0 0 72.15 33.64". */
+            var vbW = 72.15;
+            var vbH = 33.64;
+            var box = logoSvg.getBoundingClientRect();
+            if (!box.width || !box.height) return; /* hidden / not laid out yet */
+            var glyphs;
+            try {
+              glyphs = logoSvg.getBBox();
+            } catch (e) {
+              return;
+            }
+            if (!glyphs || !glyphs.height) return;
+            /* "meet" scale: the artwork fits inside the svg box keeping aspect
+               ratio. preserveAspectRatio yMax anchors the viewBox bottom to the
+               box bottom, so a point at user-y Y renders at box.bottom −
+               (vbH − Y) * scale. */
+            var scale = Math.min(box.width / vbW, box.height / vbH);
+            /* Target the MAIN letter baseline (the bottom of the "r" and the
+               other letters), NOT the overall wordmark bbox: one decorative
+               flourish dips all the way to the viewBox bottom and would make the
+               baseline read as "already at the box bottom". We collect every
+               glyph's bottom and take the lowest one that still belongs to a
+               cluster (≥2 shapes within TOL), discarding lone outliers below. */
+            var baselineUnits = glyphs.y + glyphs.height; /* fallback */
+            try {
+              var bottoms = [];
+              var bn = logoSvg.querySelectorAll("path, rect, polygon, circle");
+              for (var bni = 0; bni < bn.length; bni++) {
+                var bbb = bn[bni].getBBox();
+                bottoms.push(bbb.y + bbb.height);
+              }
+              if (bottoms.length) {
+                bottoms.sort(function (a, b) {
+                  return a - b;
+                });
+                var TOL = 1.5; /* user units */
+                baselineUnits = bottoms[bottoms.length - 1];
+                for (var si = bottoms.length - 1; si > 0; si--) {
+                  if (bottoms[si] - bottoms[si - 1] <= TOL) {
+                    baselineUnits = bottoms[si];
+                    break;
+                  }
+                  baselineUnits = bottoms[si - 1];
+                }
+              }
+            } catch (e) {}
+            var glyphBottomScreen = box.bottom - (vbH - baselineUnits) * scale;
+            var copyRect = copyright.getBoundingClientRect();
+            if (!copyRect.height) return;
+            var prev =
+              parseFloat(
+                copyright.style.getPropertyValue(
+                  "--page2-footer-copyright-extra-lift"
+                )
+              ) || 0;
+            /* Positive gap = text bottom is BELOW the glyph baseline → lift more.
+               Self-correcting: converges the text bottom onto the baseline. */
+            var next = prev + (copyRect.bottom - glyphBottomScreen);
+            if (next < 0) next = 0;
+            /* Skip sub-pixel churn so we don't loop forever on tiny rounding. */
+            if (Math.abs(next - prev) < 0.5) return;
+            copyright.style.setProperty(
+              "--page2-footer-copyright-extra-lift",
+              next + "px"
+            );
+          }
+
+          var wiredFooters = [];
+
           /* Home footer (already in the DOM). */
           wireFooter(sourceFooter);
+          wiredFooters.push(sourceFooter);
 
           /* Clone the footer into the shop and archive sections. */
           ["section-shop", "section-archive"].forEach(function (sectionId) {
@@ -5195,7 +5436,61 @@
             if (clonedLogoTarget) clonedLogoTarget.innerHTML = "";
             section.appendChild(footerClone);
             wireFooter(footerClone);
+            wiredFooters.push(footerClone);
           });
+
+          function alignAllFooterCopyrights() {
+            wiredFooters.forEach(alignFooterCopyright);
+          }
+
+          /* Run a few passes spaced across frames so we catch the FINAL laid-out
+             size (fonts, logo scaling, scroll settling) rather than a transient
+             one. */
+          function alignFooterRepeatedly(footer) {
+            alignFooterCopyright(footer);
+            requestAnimationFrame(function () {
+              alignFooterCopyright(footer);
+              setTimeout(function () {
+                alignFooterCopyright(footer);
+              }, 250);
+            });
+          }
+
+          /* Recompute whenever a footer logo actually gets/changes its rendered
+             size — fires on first layout and when page 2 becomes visible. */
+          if (typeof ResizeObserver !== "undefined") {
+            wiredFooters.forEach(function (footer) {
+              var svg = footer.querySelector(".page2-footer__logo svg");
+              if (!svg) return;
+              var ro = new ResizeObserver(function () {
+                alignFooterCopyright(footer);
+              });
+              ro.observe(svg);
+            });
+          }
+
+          /* The decisive trigger: recompute when each footer scrolls into the
+             viewport. This is what the earlier load/resize/page2:show hooks
+             missed when you simply scrolled down to an already-visible page 2. */
+          if (typeof IntersectionObserver !== "undefined") {
+            wiredFooters.forEach(function (footer) {
+              var io = new IntersectionObserver(
+                function (entries) {
+                  entries.forEach(function (entry) {
+                    if (entry.isIntersecting) alignFooterRepeatedly(footer);
+                  });
+                },
+                { threshold: 0.01 }
+              );
+              io.observe(footer);
+            });
+          }
+
+          /* Fallbacks for late layout / browsers without the observers. */
+          requestAnimationFrame(alignAllFooterCopyrights);
+          window.addEventListener("load", alignAllFooterCopyrights);
+          window.addEventListener("resize", alignAllFooterCopyrights);
+          page2.addEventListener("page2:show", alignAllFooterCopyrights);
         })();
 
         header.querySelectorAll(".page2-header-cell").forEach(function (cell) {
@@ -5612,17 +5907,23 @@
         }
 
         function forwardHomeSignsWheel(event) {
-          if (!isSignsCoverScrollLocked()) return false;
+          if (!isSignsCoverScrollLocked()) {
+            return false;
+          }
 
           var maxScroll = homeOverlay.scrollHeight - homeOverlay.clientHeight;
           /* No room to scroll through the cover — never swallow the wheel here,
              or the user would be frozen on the Signs cover with no way out.
              Letting the event through lets the browser/state machine continue. */
-          if (maxScroll <= 0) return false;
+          if (maxScroll <= 0) {
+            return false;
+          }
 
           var current = homeOverlay.scrollTop;
           var delta = wheelDeltaToPixels(event);
-          if (!delta) return false;
+          if (!delta) {
+            return false;
+          }
 
           var next = Math.min(maxScroll, Math.max(0, current + delta));
 
@@ -5644,7 +5945,9 @@
           /* Genuinely at a boundary in the direction of travel — release control
              to the browser instead of swallowing the event, so the user can
              never get stuck. */
-          if (next === current) return false;
+          if (next === current) {
+            return false;
+          }
 
           homeOverlay.scrollTop = next;
           event.preventDefault();
@@ -5744,6 +6047,20 @@
           "10.webp",
           "11.webp",
         ];
+
+        // Reveal the soft drop-shadow only once the first hero image is ready, so the
+        // white logo/intro/markers never show orphaned shadows over the blank hero.
+        (function () {
+          function markHomeBgReady() {
+            page2.classList.add("page2--home-bg-ready");
+          }
+          var firstImage = new Image();
+          firstImage.onload = markHomeBgReady;
+          firstImage.onerror = markHomeBgReady; // fail open — never leave content hidden
+          firstImage.src =
+            "website/home/" + encodeURIComponent(HOME_BG_IMAGES[0]);
+          if (firstImage.complete) markHomeBgReady(); // already cached
+        })();
 
         HOME_BG_IMAGES.forEach(function (filename, index) {
           var slide = document.createElement("div");

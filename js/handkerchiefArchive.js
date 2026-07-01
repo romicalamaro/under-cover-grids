@@ -91,28 +91,60 @@
     });
   }
 
-  function deleteEntryFromDb(id) {
-    return openDb().then(function (db) {
-      return new Promise(function (resolve, reject) {
-        var tx = db.transaction(STORE_NAME, "readwrite");
-        var store = tx.objectStore(STORE_NAME);
-        store.delete(id);
-        tx.oncomplete = function () {
-          resolve();
-        };
-        tx.onerror = function () {
-          reject(tx.error || new Error("Could not delete archive entry"));
-        };
-      });
-    });
+  function getEntryTitle() {
+    return getEntryProfile().name;
   }
 
-  function getEntryTitle() {
-    if (window.Questionnaire && window.Questionnaire.getNameLabelText) {
-      var label = String(window.Questionnaire.getNameLabelText() || "").trim();
-      if (label) return label;
+  function getEntryProfile() {
+    var profile = {
+      name: "",
+      age: "",
+      nowIn: "",
+    };
+
+    if (window.Questionnaire) {
+      if (typeof window.Questionnaire.getNameLabelText === "function") {
+        profile.name = String(window.Questionnaire.getNameLabelText() || "").trim();
+      }
+      if (typeof window.Questionnaire.getAnswers === "function") {
+        var answers = window.Questionnaire.getAnswers();
+        profile.age = String(answers.age || "").trim();
+        profile.nowIn = String(answers.nowIn || "").trim();
+      }
     }
-    return "Untitled";
+
+    if (!profile.name) profile.name = "Untitled";
+
+    return profile;
+  }
+
+  function getArchiveCardLineParts(entry) {
+    var profile = entry && entry.profile;
+    var name = profile && profile.name ? profile.name : entry && entry.title;
+    var row = profile ? { age: profile.age, nowIn: profile.nowIn } : null;
+
+    if (
+      window.ProductComboSpec &&
+      typeof window.ProductComboSpec.getShopCardLineParts === "function"
+    ) {
+      return window.ProductComboSpec.getShopCardLineParts(name, row);
+    }
+
+    return name ? [String(name).trim()] : ["Untitled"];
+  }
+
+  function renderArchiveCardTitle(titleEl, entry) {
+    var parts = getArchiveCardLineParts(entry);
+
+    if (
+      window.ProductComboSpec &&
+      typeof window.ProductComboSpec.renderShopCardName === "function"
+    ) {
+      window.ProductComboSpec.renderShopCardName(titleEl, parts);
+      return;
+    }
+
+    titleEl.textContent = parts.length ? parts.join(", ") : "Untitled";
   }
 
   function canvasToBlob(canvas, type, quality) {
@@ -367,33 +399,26 @@
         var img = document.createElement("img");
         img.className = "archive-card__image";
         img.src = imageSrc;
-        img.alt = entry.title || "Saved handkerchief";
+        img.alt = getArchiveCardLineParts(entry).join(", ") || "Saved handkerchief";
         img.decoding = "async";
         figure.appendChild(img);
-
-        var deleteBtn = document.createElement("button");
-        deleteBtn.type = "button";
-        deleteBtn.className = "archive-card__delete";
-        deleteBtn.setAttribute("aria-label", "Delete handkerchief");
-        deleteBtn.textContent = "\u00D7";
-        deleteBtn.addEventListener("click", function (event) {
-          event.stopPropagation();
-          deleteEntry(entry.id);
-        });
-        figure.appendChild(deleteBtn);
         thumb.appendChild(figure);
 
-        var title = document.createElement("h3");
+        var title = document.createElement("p");
         title.className = "archive-card__title";
-        title.textContent = entry.title || "Untitled";
+        renderArchiveCardTitle(title, entry);
 
         var date = document.createElement("p");
         date.className = "archive-card__date";
         date.textContent = formatSavedDate(entry.savedAt);
 
+        var meta = document.createElement("div");
+        meta.className = "archive-card__meta";
+        meta.appendChild(title);
+        meta.appendChild(date);
+
         card.appendChild(thumb);
-        card.appendChild(title);
-        card.appendChild(date);
+        card.appendChild(meta);
         grid.appendChild(card);
       })(visibleEntries[i]);
     }
@@ -425,10 +450,12 @@
     return captureDesignPng()
       .then(compressImageForStorage)
       .then(function (encoded) {
+        var profile = getEntryProfile();
         var entry = {
           id: Date.now() + "-" + Math.random().toString(36).slice(2, 9),
           savedAt: new Date().toISOString(),
-          title: getEntryTitle(),
+          title: profile.name,
+          profile: profile,
           mimeType: encoded.mimeType,
           image: encoded.blob,
         };
@@ -438,19 +465,6 @@
             return savedEntry;
           });
         });
-      });
-  }
-
-  function deleteEntry(id) {
-    return deleteEntryFromDb(id)
-      .then(function () {
-        return getAllEntries();
-      })
-      .then(function (entries) {
-        renderArchiveGridWithEntries(entries);
-      })
-      .catch(function (err) {
-        console.warn("[HandkerchiefArchive] Could not delete entry:", err);
       });
   }
 
@@ -494,7 +508,6 @@
 
   window.HandkerchiefArchive = {
     saveCurrentDesign: saveCurrentDesign,
-    deleteEntry: deleteEntry,
     renderArchiveGrid: renderArchiveGrid,
     revealDesignArchive: revealDesignArchive,
     getEntries: getAllEntries,

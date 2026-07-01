@@ -9123,10 +9123,25 @@
     var ys = [];
     var y;
     var heights;
+    var ratios;
     var i;
 
-    ensureBorderSideSegmentRatios();
-    heights = distributeLengthsByRatios(span, cachedBorderSideSegmentRatios);
+    if (signPreviewBypass) {
+      // Signs page only: the frame-line sign auto-animates through the 3
+      // division states. The handkerchief uses random, varied row heights for
+      // an organic look, but on the Signs page that randomness regenerated on
+      // every state change and made the divisions reshuffle/"jump". Here we use
+      // deterministic, evenly-spaced divisions so the line subdivides cleanly
+      // and stays put. We also never touch the shared random cache, keeping the
+      // Signs preview fully separated from the handkerchief system.
+      ratios = [];
+      for (i = 0; i < segments; i++) ratios.push(1);
+    } else {
+      ensureBorderSideSegmentRatios();
+      ratios = cachedBorderSideSegmentRatios;
+    }
+
+    heights = distributeLengthsByRatios(span, ratios);
     y = divY.top;
     for (i = 0; i < segments - 1; i++) {
       y += heights[i];
@@ -12788,6 +12803,20 @@
     } catch (e) {}
   }
 
+  /**
+   * Pick a random side-sign index from the pool, avoiding `excludeIndex` (the
+   * previously shown sign) when possible so each build lands on a different
+   * side sign rather than potentially repeating the last one.
+   */
+  function pickRandomLabelBarTagIndex(pool, excludeIndex) {
+    if (!pool || pool.length <= 1) return 0;
+    var index;
+    do {
+      index = Math.floor(Math.random() * pool.length);
+    } while (index === excludeIndex);
+    return index;
+  }
+
   function loadLabelBarEndCapSvgFile() {
     var pool = getLabelBarTagSvgPool();
     var index = 0;
@@ -12798,6 +12827,8 @@
       window.SectionProgression.isProfileRubrickComplete("labelBarTag")
     ) {
       index = getSavedLabelBarTagIndex();
+    } else {
+      index = pickRandomLabelBarTagIndex(pool, getSavedLabelBarTagIndex());
     }
     saveLabelBarTagIndex(index);
     return pool[index];
@@ -21531,12 +21562,7 @@
 
   function initSheetPaletteAutoRefresh() {
     if (!window.SheetPalettes || !window.SheetPalettes.onPalettesLoaded) return;
-    window.SheetPalettes.onPalettesLoaded(function (_palettes, source) {
-      if (typeof console !== "undefined" && console.info) {
-        console.info(
-          "SheetPalettes: UI refresh (" + (source || "unknown") + ")."
-        );
-      }
+    window.SheetPalettes.onPalettesLoaded(function (_palettes, _source) {
       refreshUiFromSheetPalettes();
     });
   }
@@ -24946,11 +24972,17 @@
       height: CANVAS_H * 0.42,
     };
     /** Top fan only — crop tuned to upper semicircle (Signs accordion). */
+    var SIGN_PREVIEW_FAN_SIGNS_TOP = CANVAS_H * 0.048;
     var SIGN_PREVIEW_FAN_SIGNS_CROP = {
       x: CANVAS_W * 0.06,
-      y: CANVAS_H * 0.048,
+      y: SIGN_PREVIEW_FAN_SIGNS_TOP,
       width: CANVAS_W * 0.88,
-      height: CANVAS_H * 0.16,
+      /* Extend through the hinge (HALF_CIRCLE_FOCAL_Y) plus stroke padding —
+         the previous 0.16*CANVAS_H height ended ~8px above the focal point. */
+      height:
+        HALF_CIRCLE_FOCAL_Y -
+        SIGN_PREVIEW_FAN_SIGNS_TOP +
+        HALF_CIRCLE_FAN_STROKE_WIDTH * 4,
     };
     var SIGN_PREVIEW_INNER_CROP = {
       x: CANVAS_W * 0.15,

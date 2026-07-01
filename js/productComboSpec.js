@@ -23,35 +23,14 @@
   var DISPLAY_SECTIONS = [
     {
       id: "profile",
-      title: "Profile",
-      keys: [
-        "livingInIran",
-        "livingDuration",
-        "leavingYear",
-        "from",
-        "nowIn",
-        "name",
-        "nameDisplayMode",
-        "age",
-        "homeAt",
-        "labelBarTagIndex",
-      ],
-    },
-    {
-      id: "family",
-      title: "Family",
-      keys: ["borderFrameDivisions", "borderSideWhiteFill"],
-    },
-    {
-      id: "bodyAutonomy",
-      title: "Body autonomy",
-      keys: ["fanLeaves"],
+      title: "",
+      keys: ["livingDuration", "leavingYear", "from", "nowIn", "homeAt"],
     },
   ];
 
   var LABELS = {
     livingInIran: "Did you ever live in Iran?",
-    livingDuration: "How much of your life did you live in Iran?",
+    livingDuration: "I lived in Iran",
     leavingYear: "Year of leaving",
     from: "From",
     nowIn: "Now in",
@@ -69,9 +48,9 @@
   var ENUM_LABELS = {
     livingInIran: { yes: "Yes", no: "No" },
     livingDuration: {
-      smallPart: "Small part of my life",
-      partOfLife: "Yes, part of my life",
-      mostAll: "Yes, most / all of my life",
+      smallPart: "a small part of my life",
+      partOfLife: "part of my life",
+      mostAll: "most / all of my life",
     },
     nameDisplayMode: {
       anonymous: "Anonymous",
@@ -184,10 +163,12 @@
       var sectionEl = document.createElement("section");
       sectionEl.className = "product-spec__section";
 
-      var heading = document.createElement("h3");
-      heading.className = "product-spec__heading";
-      heading.textContent = section.title;
-      sectionEl.appendChild(heading);
+      if (section.title) {
+        var heading = document.createElement("h3");
+        heading.className = "product-spec__heading";
+        heading.textContent = section.title;
+        sectionEl.appendChild(heading);
+      }
 
       var dl = document.createElement("dl");
       dl.className = "product-spec__list";
@@ -404,6 +385,8 @@
     render: renderProductSpec,
     clear: clearProductSpec,
     populateShopGalleryCards: populateShopGalleryCards,
+    getShopCardLineParts: getShopCardLineParts,
+    renderShopCardName: renderShopCardName,
     SHOP_FOLDER_TO_COMBO: SHOP_FOLDER_TO_COMBO,
   };
 

@@ -247,12 +247,12 @@
       from: "",
       nowIn: "",
       name: "",
-      nameDisplayMode: "anonymous",
+      nameDisplayMode: "name",
       age: "",
       homeAt: null,
-      gridType: null,
+      gridType: "octagon",
       octagonsN: 5,
-      innerScale: 10,
+      innerScale: 5,
       palette:
         typeof DEFAULT_SHEET_PALETTE_NUM !== "undefined"
           ? DEFAULT_SHEET_PALETTE_NUM
@@ -260,8 +260,8 @@
       closeFamilyInIran: null,
       iranLossTypes: null,
       borderFrameDivisions: 2,
-      borderSideWhiteFill: 0,
-      fanLeaves: 0,
+      borderSideWhiteFill: 50,
+      fanLeaves: 5,
       angerVerticalLength: 0,
       anxietyVerticalStroke: 0,
       angerTriangleDensity: 0,
@@ -692,7 +692,6 @@
       type: "name",
       modes: [
         { value: "anonymous" },
-        { value: "initials" },
         { value: "name" },
       ],
     },
@@ -742,7 +741,6 @@
     palette: {
       letter: "",
       type: "palette-picker",
-      hideHeading: true,
     },
     borderFrameDivisions: {
       letter: "",
@@ -1413,6 +1411,16 @@
   function ensureQuestionnaireGridReady() {
     if (!answers.gridType || !window.SectionProgression) return;
     if (window.SectionProgression.isGridTypeChosen()) return;
+    // Don't auto-commit the (now pre-selected) default grid type before the
+    // user has actually reached the grid section. This function runs while
+    // building every section's card up front — including "feelings" — and
+    // committing here would unlock the octagon grid on the headscarf during
+    // earlier sections like the profile. Once the user has passed the grid
+    // section, gridStepsReached.gridType is true and the commit proceeds, so
+    // the grid stays visible when navigating back.
+    if (!gridStepsReached.gridType && !gridStepsReached[GRID_ALL_STEP_ID]) {
+      return;
+    }
     syncGridTypeToPanel();
   }
 

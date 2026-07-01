@@ -381,7 +381,9 @@
       var thumb = createGalleryThumb(slide, i, isClone);
       thumb.addEventListener("click", function (event) {
         event.stopPropagation();
-        setProductSelection(album, i);
+        // Jump straight to the clicked color — no scroll-through animation past
+        // the thumbnails in between.
+        setProductSelection(album, i, { instant: true });
       });
       track.appendChild(thumb);
     });
@@ -389,6 +391,9 @@
 
   function normalizeGalleryScroll() {
     if (!productGallery || !productGallery._loopEnabled || productGallery._normalizing) return;
+    // While a click-driven smooth scroll is running we may temporarily land in a
+    // clone region; suppress re-centering until the animation ends (scrollend).
+    if (productGallery._programmaticScrolling) return;
 
     var count = productGallery._count;
     var stride = getGalleryStride();
@@ -432,17 +437,56 @@
     if (!stride || !thumbHeight) return;
 
     var edgePad = getGalleryEdgePad();
-    var physical = count + safeIndex;
+    var curPhys = getGalleryPhysicalIndexFromScroll();
+
+    // Instant jumps (open/resize) center on the real set. Click-driven smooth
+    // scrolls instead target the copy of safeIndex nearest to the current
+    // position, so a loop always takes the shortest visual path (never a long
+    // scroll through every thumbnail in between).
+    var physical;
+    if (instant) {
+      physical = count + safeIndex;
+    } else {
+      var curLogical = wrapIndex(curPhys, count);
+      var delta = safeIndex - curLogical;
+      if (delta > count / 2) delta -= count;
+      else if (delta < -count / 2) delta += count;
+      physical = curPhys + delta;
+    }
+
     var scrollTop =
       edgePad + physical * stride + thumbHeight / 2 - productGallery.clientHeight / 2;
 
     if (instant) {
+      // Hard reset: cancel any in-flight click animation bookkeeping.
+      if (productGallery._galleryScrollEndHandler) {
+        productGallery.removeEventListener("scrollend", productGallery._galleryScrollEndHandler);
+        productGallery._galleryScrollEndHandler = null;
+      }
+      productGallery._programmaticScrolling = false;
       setGallerySnapEnabled(false);
       productGallery.scrollTop = scrollTop;
       void productGallery.offsetHeight;
       setGallerySnapEnabled(true);
+    } else if (Math.abs(scrollTop - productGallery.scrollTop) < 1) {
+      // Already at the target (clicked the current thumb) — nothing to animate.
     } else {
-      productGallery.scrollTo({ top: scrollTop, behavior: "smooth" });
+      var gallery = productGallery;
+      // A fresh click supersedes any in-flight programmatic scroll.
+      if (gallery._galleryScrollEndHandler) {
+        gallery.removeEventListener("scrollend", gallery._galleryScrollEndHandler);
+      }
+      var onScrollEnd = function () {
+        gallery.removeEventListener("scrollend", onScrollEnd);
+        gallery._galleryScrollEndHandler = null;
+        gallery._programmaticScrolling = false;
+        // Re-center from any clone region back onto the real set (invisible jump).
+        normalizeGalleryScroll();
+      };
+      gallery._galleryScrollEndHandler = onScrollEnd;
+      gallery._programmaticScrolling = true;
+      gallery.addEventListener("scrollend", onScrollEnd);
+      gallery.scrollTo({ top: scrollTop, behavior: "smooth" });
     }
   }
 
@@ -837,7 +881,6 @@
   }
 
   var orderBtn = document.getElementById("product-order-btn");
-  var orderBtnResetTimer = null;
 
   function resetOrderButton() {
     if (!orderBtn) return;
@@ -853,17 +896,7 @@
       if (!window.Page2Cart || typeof window.Page2Cart.add !== "function") return;
 
       window.Page2Cart.add(snapshot);
-
-      orderBtn.classList.add("product-order-btn--added");
-      orderBtn.textContent = "Added";
-
-      if (orderBtnResetTimer) {
-        window.clearTimeout(orderBtnResetTimer);
-      }
-      orderBtnResetTimer = window.setTimeout(function () {
-        orderBtnResetTimer = null;
-        resetOrderButton();
-      }, 1400);
+      closeProduct();
     });
   }
 })();

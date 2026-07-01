@@ -687,69 +687,211 @@
   }
 
   /**
-   * Family section frame-line divisions slider: 3 discrete steps that map to
-   * the engine's border-frame-divisions levels (1 = Minimum, 2 = Medium,
-   * 3 = Maximum). Controls how many divisions the single horizontal frame
-   * line is split into.
+   * Family section standalone divided rectangle.
+   *
+   * This sign is drawn locally as its OWN small SVG and is intentionally NOT
+   * tied to the handkerchief / border-frame-divisions product engine. It is a
+   * plain outlined rectangle (white stroke, no fill) split by evenly spaced
+   * vertical divider lines into `segments` equal parts (segments - 1 lines).
+   *
+   * The drawing uses a fixed viewBox and preserveAspectRatio="none" so the SVG
+   * stretches to fill the CSS box (exactly 2 grid columns wide x 50px tall),
+   * while `vector-effect: non-scaling-stroke` keeps the line thickness uniform
+   * even though x and y scale by different amounts.
    */
-  var FAMILY_DIVISIONS_DEFAULT = 2;
-  var FAMILY_DIVISIONS_CONFIG = {
-    ariaLabel:
-      "Number of divisions in the family frame line. Minimum to maximum.",
-    ariaLabelFa: "تعداد بخش‌های خط قاب خانواده. از کمینه تا بیشینه.",
-    min: 1,
-    max: 3,
-    step: 1,
-  };
+  var FAMILY_DIVISIONS_VIEWBOX_W = 200;
+  var FAMILY_DIVISIONS_VIEWBOX_H = 50;
+  var FAMILY_DIVISIONS_INSET = 2; /* keep the outer stroke inside the viewBox */
+  var FAMILY_DIVISIONS_STROKE = "#fff";
+  var FAMILY_DIVISIONS_STROKE_WIDTH = 2;
+  var FAMILY_DIVISIONS_LINES_CLASS = "page2-home-signs__family-divisions-lines";
 
-  function updateFamilyFramePreview(panel, step) {
-    var row = panel.querySelector('[data-preview-id="familyFrameLine"]');
-    if (
-      !row ||
-      !window.UnderCoverSignPreviews ||
-      typeof window.UnderCoverSignPreviews.renderPreview !== "function"
-    ) {
-      return;
-    }
+  /* The rectangle is always split into this many segments; the animation now
+     toggles individual cells between filled (shape shown) and empty (shape
+     hidden) instead of changing the segment count. */
+  var FAMILY_DIVISIONS_COUNT = 5; /* always 5 segments now */
+  var FAMILY_DIVISIONS_STEP_MS = 800; /* time between fill/empty toggles */
+  var FAMILY_DIVISIONS_MAX_TOGGLE = 2; /* flip 1..N random cells per step */
 
-    var iconWrap = row.querySelector(".page2-home-signs__sign-icon");
-    if (!iconWrap) return;
+  var SVG_NS = "http://www.w3.org/2000/svg";
 
-    var previewSvg = window.UnderCoverSignPreviews.renderPreview(
-      "familyFrameLine",
-      { borderFrameDivisions: step }
+  function createFamilyDivisionsSvg() {
+    var svg = document.createElementNS(SVG_NS, "svg");
+    svg.setAttribute(
+      "viewBox",
+      "0 0 " + FAMILY_DIVISIONS_VIEWBOX_W + " " + FAMILY_DIVISIONS_VIEWBOX_H
     );
-    if (!previewSvg) return;
+    svg.setAttribute("preserveAspectRatio", "none");
+    svg.setAttribute("focusable", "false");
+    svg.setAttribute("aria-hidden", "true");
+    svg.style.overflow = "visible";
 
-    iconWrap.innerHTML = "";
-    iconWrap.appendChild(previewSvg);
-    applySignIconColors(iconWrap, "familyFrameLine");
-    row.setAttribute("data-preview-hydrated", "true");
+    var rect = document.createElementNS(SVG_NS, "rect");
+    rect.setAttribute("x", String(FAMILY_DIVISIONS_INSET));
+    rect.setAttribute("y", String(FAMILY_DIVISIONS_INSET));
+    rect.setAttribute(
+      "width",
+      String(FAMILY_DIVISIONS_VIEWBOX_W - FAMILY_DIVISIONS_INSET * 2)
+    );
+    rect.setAttribute(
+      "height",
+      String(FAMILY_DIVISIONS_VIEWBOX_H - FAMILY_DIVISIONS_INSET * 2)
+    );
+    rect.setAttribute("fill", "none");
+    rect.setAttribute("stroke", FAMILY_DIVISIONS_STROKE);
+    rect.setAttribute("stroke-width", String(FAMILY_DIVISIONS_STROKE_WIDTH));
+    rect.setAttribute("vector-effect", "non-scaling-stroke");
+    svg.appendChild(rect);
+
+    var linesGroup = document.createElementNS(SVG_NS, "g");
+    linesGroup.setAttribute("class", FAMILY_DIVISIONS_LINES_CLASS);
+    svg.appendChild(linesGroup);
+
+    return svg;
   }
 
-  function appendFamilyDivisionsSlider(panel) {
-    appendSignsPanelSlider(
-      panel,
-      FAMILY_DIVISIONS_CONFIG,
-      FAMILY_DIVISIONS_DEFAULT,
-      "page2-home-signs-family-divisions",
-      function (step) {
-        updateFamilyFramePreview(panel, step);
-      },
-      {
-        modifierClass: "page2-home-signs__panel-controls--compact",
-        hideHeading: true,
-        hideRangeLabels: true,
-        hideOutput: true,
-      }
-    );
-    if (
-      window.UnderCoverSignPreviews &&
-      window.UnderCoverSignPreviews.isReady &&
-      window.UnderCoverSignPreviews.isReady()
-    ) {
-      updateFamilyFramePreview(panel, FAMILY_DIVISIONS_DEFAULT);
+  /**
+   * Redraw only the internal divider lines so the rectangle is split into
+   * `segments` equal parts (segments - 1 evenly spaced vertical lines). The
+   * outer rectangle is left untouched.
+   */
+  function appendFamilyLine(group, x1, y1, x2, y2) {
+    var line = document.createElementNS(SVG_NS, "line");
+    line.setAttribute("x1", String(x1));
+    line.setAttribute("y1", String(y1));
+    line.setAttribute("x2", String(x2));
+    line.setAttribute("y2", String(y2));
+    line.setAttribute("stroke", FAMILY_DIVISIONS_STROKE);
+    line.setAttribute("stroke-width", String(FAMILY_DIVISIONS_STROKE_WIDTH));
+    line.setAttribute("vector-effect", "non-scaling-stroke");
+    group.appendChild(line);
+  }
+
+  function appendFamilyPolygon(group, pointsStr, fill) {
+    var poly = document.createElementNS(SVG_NS, "polygon");
+    poly.setAttribute("points", pointsStr);
+    poly.setAttribute("fill", fill);
+    poly.setAttribute("stroke", FAMILY_DIVISIONS_STROKE);
+    poly.setAttribute("stroke-width", String(FAMILY_DIVISIONS_STROKE_WIDTH));
+    poly.setAttribute("vector-effect", "non-scaling-stroke");
+    poly.setAttribute("stroke-linejoin", "miter");
+    group.appendChild(poly);
+  }
+
+  function renderFamilyDivisions(svg, segments, filled) {
+    if (!svg) return;
+    var linesGroup = svg.querySelector("." + FAMILY_DIVISIONS_LINES_CLASS);
+    if (!linesGroup) return;
+
+    var count = Math.max(1, Math.round(segments));
+    while (linesGroup.firstChild) {
+      linesGroup.removeChild(linesGroup.firstChild);
     }
+
+    var step = FAMILY_DIVISIONS_VIEWBOX_W / count;
+    var top = FAMILY_DIVISIONS_INSET;
+    var bottom = FAMILY_DIVISIONS_VIEWBOX_H - FAMILY_DIVISIONS_INSET;
+    var i;
+
+    // Internal divider lines (count - 1 evenly spaced verticals). These form
+    // the fixed structure and are always drawn, regardless of fill state.
+    for (i = 1; i < count; i++) {
+      var x = step * i;
+      appendFamilyLine(linesGroup, x, top, x, bottom);
+    }
+
+    // Fill each segment (1-based) with a shape, in an alternating pattern:
+    //  - ODD segments (1st, 3rd, 5th ...) get a rhombus whose 4 corners touch
+    //    the midpoints of the segment cell's edges.
+    //  - EVEN segments (2nd, 4th ...) get an X.
+    // `filled` (optional boolean array) controls which cells actually draw their
+    // shape: an "empty" cell (filled[i - 1] === false) shows no X / rhombus.
+    // When `filled` is omitted, every cell is drawn (all filled).
+    var midY = (top + bottom) / 2;
+    var innerLeftBound = FAMILY_DIVISIONS_INSET;
+    var innerRightBound = FAMILY_DIVISIONS_VIEWBOX_W - FAMILY_DIVISIONS_INSET;
+    for (i = 1; i <= count; i++) {
+      if (filled && !filled[i - 1]) continue; // empty cell: draw no shape
+
+      var cellLeft = (i - 1) * step;
+      var cellRight = i * step;
+
+      if (i % 2 === 1) {
+        // Rhombus: corners touch the cell edges. For the outer cells the cell
+        // edge is the viewBox border (0 / W), so clamp to the rectangle's inner
+        // frame so no corner pokes past the outline.
+        var rLeft = Math.max(cellLeft, innerLeftBound);
+        var rRight = Math.min(cellRight, innerRightBound);
+        var rMidX = (rLeft + rRight) / 2;
+        var rhombus = document.createElementNS(SVG_NS, "polygon");
+        rhombus.setAttribute(
+          "points",
+          rMidX + "," + top + " " +
+            rRight + "," + midY + " " +
+            rMidX + "," + bottom + " " +
+            rLeft + "," + midY
+        );
+        rhombus.setAttribute("fill", FAMILY_DIVISIONS_STROKE);
+        rhombus.setAttribute("stroke", FAMILY_DIVISIONS_STROKE);
+        rhombus.setAttribute(
+          "stroke-width",
+          String(FAMILY_DIVISIONS_STROKE_WIDTH)
+        );
+        rhombus.setAttribute("vector-effect", "non-scaling-stroke");
+        rhombus.setAttribute("stroke-linejoin", "miter");
+        linesGroup.appendChild(rhombus);
+      } else {
+        // X: span the FULL cell width so the white triangles reach the divider
+        // lines with no brown sliver in between. Clamp to the rectangle's inner
+        // frame so an edge cell's X never pokes past the outline.
+        var left = Math.max(cellLeft, innerLeftBound);
+        var right = Math.min(cellRight, innerRightBound);
+        var cx = (left + right) / 2;
+
+        // Fill the two HORIZONTAL triangles of the X (left one pointing right,
+        // right one pointing left) in white. Their apexes meet at the X centre;
+        // the top and bottom triangles stay empty. Drawn first so the crisp X
+        // lines sit on top.
+        appendFamilyPolygon(
+          linesGroup,
+          left + "," + top + " " + cx + "," + midY + " " + left + "," + bottom,
+          FAMILY_DIVISIONS_STROKE
+        );
+        appendFamilyPolygon(
+          linesGroup,
+          right + "," + top + " " + cx + "," + midY + " " + right + "," + bottom,
+          FAMILY_DIVISIONS_STROKE
+        );
+
+        appendFamilyLine(linesGroup, left, top, right, bottom);
+        appendFamilyLine(linesGroup, left, bottom, right, top);
+      }
+    }
+  }
+
+  function getFamilyDivisionsSvg(panel) {
+    if (!panel) return null;
+    return panel.querySelector(
+      ".page2-home-signs__sign-icon--frame-line svg"
+    );
+  }
+
+  function createFamilyDivisionsRow(entry) {
+    var row = document.createElement("article");
+    row.className =
+      "page2-home-signs__sign-row page2-home-signs__sign-row--frame-line";
+    row.setAttribute("data-sign-id", entry.id);
+    row.setAttribute("data-sign-section", entry.section || "");
+
+    var iconWrap = document.createElement("div");
+    iconWrap.className =
+      "page2-home-signs__sign-icon page2-home-signs__sign-icon--frame-line";
+
+    var svg = createFamilyDivisionsSvg();
+    renderFamilyDivisions(svg, FAMILY_DIVISIONS_COUNT);
+    iconWrap.appendChild(svg);
+    row.appendChild(iconWrap);
+    return row;
   }
 
   function populateFamilyAccordionPanel(panel) {
@@ -761,9 +903,8 @@
       "page2-home-signs__panel-list page2-home-signs__panel-list--frame-line";
     listWrap.setAttribute("data-sign-count", "1");
 
-    listWrap.appendChild(createSignListRow(entries[0]));
+    listWrap.appendChild(createFamilyDivisionsRow(entries[0]));
     panel.appendChild(listWrap);
-    appendFamilyDivisionsSlider(panel);
     panel.setAttribute("data-populated", "true");
   }
 
@@ -910,11 +1051,14 @@
       staticValue: 4,
     },
     family: {
-      kind: "family",
-      min: 1,
-      max: 3,
-      sweepMs: 1500,
-      staticValue: 2,
+      // Standalone divided rectangle with a FIXED segment count. The animation
+      // toggles random cells between filled (shape) and empty (no shape) on a
+      // discrete timer. Handled by its own loop (startFamilyDivisionsLoop), not
+      // the generic sweep below.
+      kind: "familyDivisions",
+      count: FAMILY_DIVISIONS_COUNT,
+      stepMs: FAMILY_DIVISIONS_STEP_MS,
+      maxTogglePerStep: FAMILY_DIVISIONS_MAX_TOGGLE,
     },
   };
 
@@ -1076,8 +1220,8 @@
 
   /**
    * Draw one frame for a section. Grid flows continuously; fan reveals a
-   * continuous angular wedge over a single open frame; family redraws on step
-   * change.
+   * continuous angular wedge over a single open frame. (The family sign toggles
+   * its cells' fill state in its own loop, so it never reaches here.)
    */
   function renderSignsAnimationFrame(panel, cfg, valueFloat, loopState) {
     if (cfg.kind === "grid") {
@@ -1099,11 +1243,83 @@
       applyFanWedge(loopState.fanBase, span);
       return;
     }
+  }
 
-    var step = Math.round(valueFloat);
-    if (loopState.lastStep === step) return;
-    loopState.lastStep = step;
-    updateFamilyFramePreview(panel, step);
+  /**
+   * Flip the filled/empty state of `k` random distinct cells in place, where
+   * `k` is a random number between 1 and maxToggle. A "filled" cell shows its
+   * shape (X / rhombus); an "empty" cell shows nothing.
+   */
+  function toggleRandomFamilyCells(filled, maxToggle) {
+    var count = filled.length;
+    if (!count) return;
+
+    var maxK = Math.max(1, Math.min(maxToggle || 1, count));
+    var k = 1 + Math.floor(Math.random() * maxK);
+
+    // Pick k distinct indices to flip.
+    var indices = [];
+    var i;
+    for (i = 0; i < count; i++) indices.push(i);
+    // Partial Fisher-Yates: shuffle just the first k slots.
+    for (i = 0; i < k; i++) {
+      var j = i + Math.floor(Math.random() * (count - i));
+      var tmp = indices[i];
+      indices[i] = indices[j];
+      indices[j] = tmp;
+    }
+    for (i = 0; i < k; i++) {
+      var idx = indices[i];
+      filled[idx] = !filled[idx];
+    }
+  }
+
+  /**
+   * Family divisions loop: the rectangle keeps a fixed number of segments, and
+   * on each step a random handful of cells flip between filled (shape shown) and
+   * empty (shape hidden), looping forever. Stored in signsAnimationLoops so the
+   * shared pause/resume/stop helpers (which cancel loop.raf) clean it up too.
+   * When the user prefers reduced motion we draw every cell filled and stop.
+   */
+  function startFamilyDivisionsLoop(sectionId, cfg, panel) {
+    if (!cfg || !panel) return;
+    stopSignsAnimationLoop(sectionId);
+
+    var svg = getFamilyDivisionsSvg(panel);
+    if (!svg) return;
+
+    var count = cfg.count || FAMILY_DIVISIONS_COUNT;
+
+    // Start with every cell filled.
+    var filled = [];
+    var i;
+    for (i = 0; i < count; i++) filled.push(true);
+    renderFamilyDivisions(svg, count, filled);
+
+    if (prefersReducedMotionSigns()) {
+      return; // stays all-filled, no animation
+    }
+
+    var stepMs = cfg.stepMs || FAMILY_DIVISIONS_STEP_MS;
+    var maxToggle = cfg.maxTogglePerStep || FAMILY_DIVISIONS_MAX_TOGGLE;
+    // Start at index 0 so the first toggle happens after one full step, letting
+    // the all-filled starting state show for a beat.
+    var loopState = { raf: 0, startTime: null, lastIndex: 0, filled: filled };
+
+    function frame(now) {
+      if (loopState.startTime === null) loopState.startTime = now;
+      var elapsed = now - loopState.startTime;
+      var index = Math.floor(elapsed / stepMs);
+      if (index !== loopState.lastIndex) {
+        loopState.lastIndex = index;
+        toggleRandomFamilyCells(loopState.filled, maxToggle);
+        renderFamilyDivisions(svg, count, loopState.filled);
+      }
+      loopState.raf = window.requestAnimationFrame(frame);
+    }
+
+    loopState.raf = window.requestAnimationFrame(frame);
+    signsAnimationLoops[sectionId] = loopState;
   }
 
   function stopSignsAnimationLoop(sectionId) {
@@ -1133,6 +1349,12 @@
    */
   function startSignsAnimationLoop(sectionId, cfg, panel) {
     if (!cfg || !panel) return;
+
+    if (cfg.kind === "familyDivisions") {
+      startFamilyDivisionsLoop(sectionId, cfg, panel);
+      return;
+    }
+
     stopSignsAnimationLoop(sectionId);
 
     var min = cfg.min;
@@ -1141,15 +1363,13 @@
 
     var loopState = { raf: 0, lastStep: null, startTime: null };
 
-    if (prefersReducedMotionSigns()) {
+    if (cfg.static || prefersReducedMotionSigns()) {
       var staticValue =
         cfg.staticValue != null ? cfg.staticValue : (min + max) / 2;
       if (cfg.kind === "grid") {
         setGridIconsInnerScaleContinuous(panel, staticValue);
       } else if (cfg.kind === "fan") {
         updateFanPreview(panel, Math.round(staticValue));
-      } else if (cfg.kind === "family") {
-        updateFamilyFramePreview(panel, Math.round(staticValue));
       }
       return;
     }
@@ -1409,14 +1629,6 @@
     return Number(slider.value);
   }
 
-  function getFamilyDivisionsStepFromPanel(row) {
-    var panel = row.closest(".page2-home-signs__panel");
-    if (!panel) return null;
-    var slider = panel.querySelector("#page2-home-signs-family-divisions");
-    if (!slider) return null;
-    return Number(slider.value);
-  }
-
   function hydrateCanvasPreviewRow(row) {
     var previewId = row.getAttribute("data-preview-id");
     if (!previewId) return;
@@ -1446,11 +1658,6 @@
           signsFanTightCrop: true,
           signsFanPreserveClip: true,
         };
-      }
-    } else if (previewId === "familyFrameLine") {
-      var divStep = getFamilyDivisionsStepFromPanel(row);
-      if (divStep !== null && isFinite(divStep)) {
-        previewOptions = { borderFrameDivisions: divStep };
       }
     }
 
@@ -1500,17 +1707,17 @@
     }
 
     if (sectionId === "family") {
-      var framePanel = document.getElementById(
+      // The family sign is a standalone, locally-drawn rectangle (not a canvas
+      // preview of the product engine). Draw its initial all-filled state; the
+      // fill/empty toggle loop then animates individual cells.
+      var familyPanel = document.getElementById(
         "page2-home-signs-panel-family"
       );
-      if (framePanel && framePanel.getAttribute("data-populated") === "true") {
-        var divSlider = framePanel.querySelector(
-          "#page2-home-signs-family-divisions"
+      if (familyPanel && familyPanel.getAttribute("data-populated") === "true") {
+        renderFamilyDivisions(
+          getFamilyDivisionsSvg(familyPanel),
+          FAMILY_DIVISIONS_COUNT
         );
-        var divStepValue = divSlider
-          ? Number(divSlider.value)
-          : FAMILY_DIVISIONS_DEFAULT;
-        updateFamilyFramePreview(framePanel, divStepValue);
       }
       return;
     }

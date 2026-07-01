@@ -12,8 +12,8 @@
   var en = buildLocale({
     sectionLabels: {
       profile: { num: 1, name: "profile" },
-      grid: { num: 2, name: "Grid" },
-      family: { num: 3, name: "Family and friends in Iran" },
+      grid: { num: 2, name: "Community" },
+      family: { num: 3, name: "Family" },
       bodyAutonomy: { num: 4, name: "Body autonomy" },
       feelings: { num: 5, name: "Feelings" },
       colors: { num: 6, name: "Colors" },
@@ -60,8 +60,8 @@
       sectionAriaPrefix: "Section ",
       profileAria: "Profile",
       feelingsAria: "Feelings",
-      gridAria: "Grid",
-      familyAria: "Family and friends in Iran",
+      gridAria: "Community",
+      familyAria: "Family",
       palettePrefix: "Palette ",
       nameModes: {
         anonymous: "Anonymous",
@@ -91,15 +91,16 @@
         [
           { t: "text", v: "I lived in Iran " },
           { t: "blank", id: "livingDuration", size: "medium", kind: "select" },
-          { t: "break" },
+        ],
+        [
           { t: "text", v: "until " },
           { t: "blank", id: "leavingYear", size: "short" },
           { t: "text", v: "." },
         ],
         [
-          { t: "text", v: "I came from " },
+          { t: "text", v: "I came from (city / state) " },
           { t: "blank", id: "from", size: "medium" },
-          { t: "text", v: " to " },
+          { t: "text", v: " to (city / state) " },
           { t: "blank", id: "nowIn", size: "medium" },
           { t: "text", v: "." },
         ],
@@ -187,7 +188,7 @@
         rangeLabels: ["Very much in the background", "At the center of my life"],
       },
       palette: {
-        label: "Palette",
+        label: "choose your palette",
         ariaLabel: "Switch between palettes 1 to 12",
       },
       borderFrameDivisions: {
@@ -290,8 +291,8 @@
   var fa = buildLocale({
     sectionLabels: {
       profile: { num: 1, name: "پروفایل" },
-      grid: { num: 2, name: "شبکه" },
-      family: { num: 3, name: "خانواده و دوستان در ایران" },
+      grid: { num: 2, name: "جامعه" },
+      family: { num: 3, name: "خانواده" },
       bodyAutonomy: { num: 4, name: "خودمختاری بدن" },
       feelings: { num: 5, name: "احساسات" },
       colors: { num: 6, name: "رنگ‌ها" },
@@ -338,8 +339,8 @@
       sectionAriaPrefix: "بخش ",
       profileAria: "پروفایل",
       feelingsAria: "احساسات",
-      gridAria: "شبکه",
-      familyAria: "خانواده و دوستان در ایران",
+      gridAria: "جامعه",
+      familyAria: "خانواده",
       palettePrefix: "پالت ",
       nameModes: {
         anonymous: "ناشناس",
@@ -464,7 +465,7 @@
         rangeLabels: ["بسیار در پس‌زمینه", "در مرکز زندگی‌ام"],
       },
       palette: {
-        label: "پالت",
+        label: "پالت خود را انتخاب کنید",
         ariaLabel: "جابه‌جایی بین پالت‌های ۱ تا ۱۲",
       },
       borderFrameDivisions: {
